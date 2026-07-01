@@ -633,9 +633,10 @@ impl<T> EVMBlockFilter<T> {
 			.transactions
 			.iter()
 			.any(|condition| {
-				// If the status is not Any, and there are no logs, we need a receipt to validate the transaction most likely failed
-				let status_needs_receipt =
-					condition.status != TransactionStatus::Any && logs.is_empty();
+				// Always fetch receipt when monitoring for Failure status since failed txs emit no
+				// logs but other txs in the same block may, making block-level logs.is_empty() unreliable
+				let status_needs_receipt = condition.status == TransactionStatus::Failure
+					|| (condition.status != TransactionStatus::Any && logs.is_empty());
 				// If the expression contains gas_used, we need a receipt to get the gas used
 				let gas_used_in_expr = condition
 					.clone()
