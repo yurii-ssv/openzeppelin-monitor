@@ -374,12 +374,13 @@ class Worker:
 
     # ---- scheduler
 
-    def _ctx(self, check, block: int, reasons, chain=None, events=None, inbox=None, reorg_ancestor=None) -> Ctx:
+    def _ctx(self, check, block: int, reasons, chain=None, events=None, inbox=None, reorg_ancestor=None,
+             reorg_keys=frozenset()) -> Ctx:
         return Ctx(
             check_id=check.id, block=block, rpc=chain or Chain(self.rpc, block, self.cfg.max_log_range), db=self.db,
             params=self.params, config=check.config, settings=self.cfg.raw, clock=self.clock,
             log=logging.getLogger(f"eb-reconcile.{check.id}"), reasons=frozenset(reasons),
-            reorg_ancestor=reorg_ancestor,
+            reorg_ancestor=reorg_ancestor, reorg_keys=reorg_keys,
             _events=events, _inbox=inbox, _inventory=self.inventory.get, _health=self.alerts.health,
         )
 
@@ -470,8 +471,13 @@ class Worker:
         chain = Chain(self.rpc, block, self.cfg.max_log_range)
         events = (lambda: self.db.events_after(cursor, block, kinds)) if kinds else None
         reorg_ancestor = self.db.meta(f"reorg:{check.id}")
+        reorg_keys = frozenset()
+        if reorg_ancestor is not None:  # open incidents whose latest support may come from a deleted block
+            reorg_keys = frozenset(r[0] for r in self.db.conn.execute(
+                "SELECT key FROM incidents WHERE check_id=? AND state='open' AND last_seen_block>?",
+                (check.id, reorg_ancestor)))
         ctx = self._ctx(check, block, reasons, chain=chain, events=events, inbox=lambda: entries,
-                        reorg_ancestor=reorg_ancestor)
+                        reorg_ancestor=reorg_ancestor, reorg_keys=reorg_keys)
         now = self.clock()
         with self.db.tx():
             if check.id not in self.prepared or "params" in reasons:
@@ -481,6 +487,9 @@ class Worker:
                 if f.check != check.id:
                     raise ValueError(f"check {check.id} returned a finding for {f.check!r}")
             self.alerts.apply(findings, block)
+            if reorg_ancestor is not None:  # the reorg re-find rule (checks/README.md §6.2)
+                self.alerts.resolve_not_refound(check.id, reorg_keys - {f.key for f in findings}, block,
+                                                reorg_ancestor)
             if check.resolve_on_absence:
                 self.alerts.resolve_absent(check.id, {f.key for f in findings if not f.resolve}, block)
             self.db.set_meta(f"cursor:events:{check.id}", [block, END_OF_BLOCK])
@@ -583,6 +592,7 @@ class Worker:
             "checks": {c: {**self.db.meta(f"run:{c}", {}), "state": self.db.meta(f"check:{c}:last_sweep")}
                        for c in self.checks},
             "params_block": self.params.block,
+            "reorg_pending": {c: a for c in self.checks if (a := self.db.meta(f"reorg:{c}")) is not None},
             "params": {"enabled": self.params.enabled, "ok": self.params.ok, "block": self.params.block,
                        "error": self.params.error},
             "inbox": {"enabled": self.inbox is not None, "ok": not inbox_down,
@@ -594,12 +604,16 @@ class Worker:
         }
 
     def degraded(self) -> list[str]:
-        """Inputs the checks need but cannot currently read (the step still succeeded)."""
+        """Inputs the checks need but cannot currently read, and reorgs whose re-evaluation has not committed
+        (incidents may still rest on deleted blocks; the step still succeeded)."""
         out = []
         if not self.params.ok:
             out.append(f"live parameters unavailable: {self.params.error}")
         if down := self._inbox_problem():
             out.append(f"inbox unavailable: {down['error']}")
+        pending = sorted(c for c in self.checks if self.db.meta(f"reorg:{c}") is not None)
+        if pending:
+            out.append(f"reorg re-evaluation pending for check(s) {', '.join(pending)}")
         return out
 
     def write_status(self, healthy: bool, error: str | None = None) -> None:

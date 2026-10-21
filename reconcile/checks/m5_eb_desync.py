@@ -12,6 +12,12 @@ Incident semantics (unchanged; the pre-framework severities map critical -> page
   unknown            keeps any open incident open; a monitor-health message names the clusters
 A storage-layout drift against the pin suspends the check with a health message.
 
+After a reorg (checks/README.md §6.2) the run is a full sweep over every cluster with stored logs AND every
+cluster M5 has persisted state for (`evaluations`, open `m5_incidents`, `ctx.reorg_keys`): a cluster whose
+whole history left the canonical chain loses its evaluation and its incident is resolved ("evidence left the
+canonical chain"); a confirmed/candidate incident the new chain only supports as latent is resolved the same
+way and re-tracked as latent; an incident whose re-evaluation is unknown is re-reported, so it stays open.
+
 M5-specific bookkeeping (shortfall, root blocks, kind) lives in `m5_incidents` and `evaluations`;
 the framework's `incidents` row shares the incident id.
 """
@@ -96,7 +102,8 @@ class M5EbDesync(Check):
         for ev in ctx.events():
             if ev.cluster_id:
                 self.dirty.add(ev.cluster_id.hex())
-        if "*" in self.dirty or "reorg" in ctx.reasons:
+        reorg = ctx.reorg_ancestor is not None or "reorg" in ctx.reasons
+        if "*" in self.dirty or reorg:
             self.dirty.discard("*")
             self.dirty.update(ctx.db.clusters(explicit_only=False))
         now = ctx.clock()
@@ -104,7 +111,7 @@ class M5EbDesync(Check):
             return []
         force = "force" in ctx.reasons
         periodic = force or now - self.last_sweep >= self.config["sweep_interval_s"]
-        full = force or now - self.last_full_sweep >= self.config["full_sweep_interval_s"]
+        full = force or reorg or now - self.last_full_sweep >= self.config["full_sweep_interval_s"]
         if not (periodic or full or self.dirty):
             return []
 
@@ -112,6 +119,11 @@ class M5EbDesync(Check):
         if problems:
             self.layout_ok = False
             self.last_evals = []
+            if ctx.reorg_ancestor is not None:
+                # Cannot re-evaluate on the new chain: fail the run (rolled back, retried every step, the
+                # reorg marker kept) instead of leaving incidents from deleted blocks to the re-find rule.
+                raise RuntimeError("storage layout guard failed during the reorg re-evaluation; retried every "
+                                   "step: " + "; ".join(problems))
             ctx.health("layout", "Storage layout guard failed; reconciliation suspended:\n- " + "\n- ".join(problems),
                        dedup="layout:" + "|".join(problems))
             return []
@@ -120,20 +132,61 @@ class M5EbDesync(Check):
                        dedup=f"layout-ok:{block}")
         self.layout_ok = True
 
-        if full:
-            cids = ctx.db.clusters(explicit_only=False)
+        if full:  # the persisted keys too: a cluster whose every log was deleted by a reorg has none left
+            cids = ctx.db.clusters(explicit_only=False) + self.persisted(ctx.db) + list(ctx.reorg_keys)
         elif periodic:
             cids = ctx.db.clusters(explicit_only=True) + list(self.dirty)
         else:
             cids = list(self.dirty)
         evals = self.evaluate(ctx.rpc, ctx.db, cids, block)
+        vanished = sorted(set(cids) - {e.cluster_id.hex() for e in evals})
         self.dirty.clear()
         self.last_sweep = now
         if full:
             self.last_full_sweep = now
             self.last_full_evals = evals
         self.last_evals = evals
-        return self.record(ctx, evals, block, full)
+        return self.record(ctx, evals, block, full) + self.forget(ctx, vanished, block)
+
+    @staticmethod
+    def persisted(db) -> list[str]:
+        """Clusters M5 keeps state for (an evaluation or an open incident)."""
+        return [r[0] for r in db.conn.execute(
+            "SELECT cluster_id FROM evaluations UNION SELECT cluster_id FROM m5_incidents WHERE state='open'")]
+
+    def forget(self, ctx: Ctx, cids: list[str], block: int) -> list[Finding]:
+        """Clusters with persisted state but no stored log at `block` (only after a reorg deleted their whole
+        history): drop the evaluation and resolve the open incident, whose evidence left the canonical chain."""
+        out = []
+        for cid in cids:
+            ctx.db.conn.execute("DELETE FROM evaluations WHERE cluster_id=?", (cid,))
+            row = ctx.db.conn.execute("SELECT * FROM m5_incidents WHERE cluster_id=? AND state='open'",
+                                      (cid,)).fetchone()
+            if row is None:
+                continue
+            self._close(ctx.db, row, block, ctx.clock())
+            out.append(Finding(
+                check=self.id, key=cid, severity=SEVERITY_FROM_LEGACY[row["severity"]],
+                title="#94775 incident resolved: evidence left the canonical chain",
+                body="\n".join([
+                    f"Cluster: 0x{cid}",
+                    f"Resolved because its evidence left the canonical chain: a chain reorganisation replaced the "
+                    f"blocks after {ctx.reorg_ancestor}, and no event of this cluster remains on the canonical "
+                    f"chain at block {block}. The earlier {row['kind']} alert(s) were based on blocks that are no "
+                    f"longer canonical.",
+                ]),
+                subject={"cluster_id": "0x" + cid},
+                evidence={**json.loads(row["evidence"]), "resolved_by_reorg": {"ancestor": ctx.reorg_ancestor,
+                                                                               "block": block}},
+                resolve=True, notify=row["kind"] != "latent"))
+        return out
+
+    def _close(self, db, row, block: int, now: float) -> None:
+        db.conn.execute(
+            "UPDATE m5_incidents SET state='resolved', resolved_block=?, last_seen_block=?, shortfall_vunits=0, "
+            "updated_at=? WHERE id=?",
+            (block, block, now, row["id"]),
+        )
 
     # ---- layout guard
 
@@ -195,19 +248,19 @@ class M5EbDesync(Check):
     # ---- evaluation
 
     def evaluate(self, chain, db, cids: list[str], block: int) -> list[M.Evaluation]:
-        cids = sorted(set(cids))
+        """Evaluations of the clusters that have stored events at `block` (the others are skipped)."""
+        history = {cid: db.cluster_events(cid, block) for cid in sorted(set(cids))}
+        history = {cid: events for cid, events in history.items() if events}
         slots = []
-        for cid in cids:
+        for cid in history:
             cb = bytes.fromhex(cid)
             slots += [cluster_eb_slot(cb), eth_cluster_slot(cb), ssv_cluster_slot(cb)]
         words = chain.storage(self.proxy, slots, block) if slots else []
         out = []
-        for i, cid in enumerate(cids):
+        for i, (cid, events) in enumerate(history.items()):
             w = words[3 * i : 3 * i + 3]
             storage = M.StorageView(block, w[0], u256(w[1]), u256(w[2]))
-            events = db.cluster_events(cid, block)
-            if events:
-                out.append(M.evaluate(events, storage, self.start_block, self.history_complete, self.guards_from))
+            out.append(M.evaluate(events, storage, self.start_block, self.history_complete, self.guards_from))
         return out
 
     # ---- incidents
@@ -263,10 +316,38 @@ class M5EbDesync(Check):
     def _incident(self, ctx: Ctx, ev: M.Evaluation, block: int) -> list[Finding]:
         db = ctx.db
         cid = ev.cluster_id.hex()
-        now = ctx.clock()
         row = db.conn.execute(
             "SELECT * FROM m5_incidents WHERE cluster_id=? AND state='open' ORDER BY created_at DESC LIMIT 1", (cid,)
         ).fetchone()
+        if ctx.reorg_ancestor is None or row is None:
+            return self._transition(ctx, ev, block, row)
+        if ev.status == M.LATENT and row["kind"] != "latent":
+            # The removals that made it confirmed (or the candidate sequence) are gone with the deleted blocks:
+            # close it plainly, then track the latent baseline the canonical chain still has.
+            self._close(db, row, block, ctx.clock())
+            body = "\n".join([
+                f"Cluster: 0x{cid}",
+                f"Resolved because its evidence left the canonical chain: a chain reorganisation replaced the "
+                f"blocks after {ctx.reorg_ancestor}, and the removals that made this a {row['kind']} #94775 "
+                f"incident are not on the canonical chain at block {block}. The cluster is latent again (added keys "
+                f"still registered; tracked silently).",
+            ])
+            closed = self._finding(cid, row["severity"], row["kind"], body, ev,
+                                   title="#94775 incident resolved: evidence left the canonical chain", resolve=True)
+            return [closed] + self._transition(ctx, ev, block, None)
+        if ev.status == M.UNKNOWN:
+            # Re-evaluation incomplete on the new chain: report the key again so the reorg re-find rule keeps it.
+            body = "\n".join(self._cluster_lines(ev) + [
+                f"Re-evaluation after a chain reorganisation (blocks after {ctx.reorg_ancestor} replaced) is "
+                f"UNKNOWN at block {block} ({'; '.join(ev.reasons[:2])}); the incident stays open."])
+            return [self._finding(cid, row["severity"], row["kind"], body, ev, title=TITLES[row["kind"]],
+                                  incident_id=row["id"])]
+        return self._transition(ctx, ev, block, row)
+
+    def _transition(self, ctx: Ctx, ev: M.Evaluation, block: int, row) -> list[Finding]:
+        db = ctx.db
+        cid = ev.cluster_id.hex()
+        now = ctx.clock()
 
         if ev.status == M.CONFIRMED:
             severity = "critical" if ev.active else "warning"
@@ -331,13 +412,11 @@ class M5EbDesync(Check):
             return []  # keep any open incident open while inputs are incomplete
 
         # Discrepancy closed (clean / overbilled / implicit / reset / not ETH): resolve.
-        db.conn.execute(
-            "UPDATE m5_incidents SET state='resolved', resolved_block=?, last_seen_block=?, shortfall_vunits=0, "
-            "updated_at=? WHERE id=?",
-            (block, block, now, row["id"]),
-        )
-        return [self._finding(cid, row["severity"], row["kind"], self._msg_resolved(row, ev, block), ev,
-                              title="#94775 incident resolved", resolve=True)]
+        self._close(db, row, block, now)
+        orphan = ctx.reorg_ancestor is not None and row["first_seen_block"] > ctx.reorg_ancestor
+        return [self._finding(cid, row["severity"], row["kind"], self._msg_resolved(row, ev, block, ctx), ev,
+                              title="#94775 incident resolved" + (": evidence left the canonical chain" if orphan else ""),
+                              resolve=True)]
 
     def _open(self, db, now, inc_id, cid, kind, severity, ev, block, evidence) -> None:
         db.conn.execute(
@@ -421,13 +500,21 @@ class M5EbDesync(Check):
             f"at block {block}",
         ])
 
-    def _msg_resolved(self, row, ev: M.Evaluation, block: int) -> str:
-        return "\n".join([
+    def _msg_resolved(self, row, ev: M.Evaluation, block: int, ctx: Ctx) -> str:
+        lines = [
             f"Cluster: 0x{row['cluster_id']}",
             f"Discrepancy closed at block {block}: status {ev.status}, last consumed root S={ev.ref_block}",
             f"Max shortfall seen: {row['max_shortfall_vunits']:,} vUnits "
             f"({vunits_to_eth_str(row['max_shortfall_vunits'])} ETH) from block {row['first_seen_block']} to {block}",
-        ])
+        ]
+        if ctx.reorg_ancestor is not None and row["first_seen_block"] > ctx.reorg_ancestor:
+            lines.insert(1, f"Resolved because its evidence left the canonical chain: the incident was raised on "
+                            f"blocks that a chain reorganisation replaced (after {ctx.reorg_ancestor}); the earlier "
+                            f"alert(s) were based on blocks that are no longer canonical.")
+        elif ctx.reorg_ancestor is not None:
+            lines.append(f"Re-evaluated on the canonical chain after a reorganisation replaced the blocks after "
+                         f"{ctx.reorg_ancestor}.")
+        return "\n".join(lines)
 
     # ---- digest
 

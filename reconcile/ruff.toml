@@ -15,3 +15,7 @@ known-first-party = ["alerts", "checks", "db", "eb_events", "eb_model", "eb_reco
 "checks/__init__.py" = ["I001"]
 # QA attempt-2 probes kept in their original one-line style so they diff against the QA report.
 "tests/test_qa2_regressions.py" = ["E701", "E702"]
+# QA attempt-3 Appendix A and B, byte for byte except the ROOT line (style only: one-line statements, the
+# probes' own sys.path/import layout and unused imports).
+"tests/qa3_orphan_repro.py" = ["E401", "E402", "E702", "F401", "I001"]
+"tests/test_qa3_appendix_b.py" = ["E401", "E402", "E701", "E702", "F401", "I001"]

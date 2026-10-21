@@ -22,6 +22,9 @@ The worker is read-only against the chain. Each step:
    canonical (the Monitor writes at 2 confirmations: inbox evidence waits for the worker's 12).
 3. Reloads the live parameters after a parameter event (spec M15) or a reorg, then runs every due check
    (interval, event, inbox, near-set-per-block) and turns its findings into incidents and outbox rows.
+   After a reorg, an open incident last seen above the common ancestor that the check's re-evaluation run
+   does not report again is resolved as "evidence left the canonical chain" ([checks/README.md
+   §6.2](checks/README.md)).
    A failed read invalidates the parameters (checks that read them do not run) and is retried every
    step; see [checks/README.md §5.1](checks/README.md).
 4. Re-alerts open incidents (page 6 h, warn 24 h), sends the daily digest, delivers the outbox.

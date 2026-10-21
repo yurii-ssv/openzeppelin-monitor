@@ -98,6 +98,9 @@ class Ctx:
     # lowest common ancestor of the reorgs since the check's last successful run (None: no reorg); state the
     # check derived from blocks above it (own tables, ctx.set_state, open incidents) came from deleted blocks
     reorg_ancestor: int | None = None
+    # (reorg runs only) keys of the check's open incidents last seen above `reorg_ancestor`: the run must report
+    # each again (a finding keeps it, resolve=True closes it); the framework resolves a key it does not report
+    reorg_keys: frozenset[str] = frozenset()
     _events: Callable[[], Iterator] = None
     _inbox: Callable[[], list] = None
     _inventory: Callable[[int | None], Any] = None

@@ -9,8 +9,11 @@ Lifecycle, keyed by (check, key):
   - a new `revision` re-sends under the same id (a check-defined material change);
   - `resolve=True` closes it and sends a resolution (info, on the incident's route) for page/warn
     incidents that were sent;
-  - absence of a finding never resolves, unless the check declares `resolve_on_absence`;
-  - while open, page re-alerts every 6 h and warn every 24 h; info is sent once plus the digest.
+  - absence of a finding never resolves, unless the check declares `resolve_on_absence`, with one exception:
+    in a run with reason `reorg`, an open incident last seen above the reorg's common ancestor that the run
+    does not report again is resolved as "evidence left the canonical chain" (`resolve_not_refound`);
+  - while open, page re-alerts every 6 h and warn every 24 h; info is sent once plus the digest. An incident
+    last seen above a pending reorg's ancestor is not re-alerted until the check's reorg run commits.
 Restart idempotency: incidents and outbox keys are durable, so an open incident re-found after a
 restart produces nothing new before its re-alert is due.
 """
@@ -177,14 +180,40 @@ class Alerts:
                                              body="Condition no longer observed.", resolve=True), block)
         return n
 
+    def resolve_not_refound(self, check: str, keys, block: int, ancestor: int) -> int:
+        """The reorg re-find rule (checks/README.md §6.2): close the open incidents of `keys` (last seen above the
+        reorg's common ancestor) that the check's reorg run did not report again. Their evidence came from
+        blocks the canonical chain no longer has; the resolution says so (info, on the incident's route)."""
+        from checks.base import Finding
+
+        n = 0
+        for key in sorted(keys):
+            row = self.open_incident(check, key)
+            if row is None:
+                continue
+            evidence = {**json.loads(row["evidence"]), "resolved_by_reorg": {"ancestor": ancestor, "block": block}}
+            body = (f"Resolved because its evidence left the canonical chain: a chain reorganisation replaced the "
+                    f"blocks after {ancestor}, and check {check} did not find this condition again on the new chain "
+                    f"(re-evaluated at block {block}). The earlier alert(s) for this incident were based on blocks "
+                    f"that are no longer canonical.")
+            n += self._apply_one(Finding(check=check, key=key, severity=row["severity"],
+                                         title=f"Evidence left the canonical chain: {row['title']}", body=body,
+                                         evidence=evidence, resolve=True), block)
+        return n
+
     def realert(self) -> int:
         now = self.clock()
         n = 0
+        reorg: dict[str, int | None] = {}
         for r in self.db.conn.execute(
                 "SELECT * FROM incidents WHERE state='open' AND notify=1 AND last_alert_at IS NOT NULL").fetchall():
             every = self.realert_s.get(r["severity"])
             if not every or now - r["last_alert_at"] < every:
                 continue
+            if r["check_id"] not in reorg:
+                reorg[r["check_id"]] = self.db.meta(f"reorg:{r['check_id']}")
+            if reorg[r["check_id"]] is not None and r["last_seen_block"] > reorg[r["check_id"]]:
+                continue  # possibly orphaned evidence: re-alerted only once the check's reorg run kept it open
             title = f"Still open (alert {r['alerts'] + 1}): {r['title']}"
             if self.enqueue(f"{r['id']}:realert:{r['alerts']}", r["severity"],
                             self._text(r["severity"], title, r["body"], r["id"]), "realert", r["check_id"], r["id"]):

@@ -75,7 +75,11 @@ Rules:
 - In-memory state is lost on restart; persist what matters in your own tables or with `ctx.set_state`.
   Override `on_reorg(ancestor)` to drop in-memory state derived from rewound blocks. State you persisted
   from blocks above `ctx.reorg_ancestor` (own rows, `ctx.set_state`, open incidents) came from deleted
-  blocks: correct it in the run with reason `reorg` (§6.1).
+  blocks: correct it in the run with reason `reorg` (§6.2). **Enumerate the keys to re-check from your
+  persisted state, not only from surviving logs/inventory**: a key whose every supporting log was deleted
+  is no longer found there. Report every key of `ctx.reorg_keys` again (a finding keeps it open, `resolve=True`
+  closes it); a key you do not report is resolved by the framework (§6.2). If the run cannot evaluate,
+  **raise** (rolled back, retried every step, the reorg marker kept) — never return silently.
 
 ## 3. Schedules
 
@@ -125,9 +129,12 @@ Incidents are keyed by `(check, key)`; two checks never share an incident. Per r
 | open, new `revision` | send under the same id (a check-defined material change) | `update` |
 | open, same severity and revision | update `last_seen_block`, evidence; nothing sent | — |
 | open, `resolve=True` | close; if it was sent at page/warn, send a resolution (info, on the incident's route) | `resolved` |
-| no finding for an open key | nothing — **absence never resolves**, unless the class sets `resolve_on_absence = True` (then every open key not reported by a run is resolved: only for checks whose every run is complete) | — |
+| no finding for an open key | nothing — **absence never resolves**, unless the class sets `resolve_on_absence = True` (then every open key not reported by a run is resolved: only for checks whose every run is complete), or the reorg re-find rule below applies | — |
+| **reorg run** (reason `reorg`): no finding for a key of `ctx.reorg_keys` | the one exception to "absence never resolves" (§6.2): resolved, and if it was sent at page/warn an info resolution goes to the incident's route, titled `Evidence left the canonical chain: <title>` and saying "Resolved because its evidence left the canonical chain …" | `resolved` |
 
 Re-alerts while open (`alerts.realert_s`): page every 6 h, warn every 24 h, info never (once + digest).
+An incident last seen above the ancestor of a reorg whose re-evaluation run has not committed yet is not
+re-alerted until that run keeps it open (§6.2).
 Restart idempotency: incidents and outbox keys are durable; an open incident re-found after a restart
 sends nothing before its re-alert is due (V1B.4). Use `revision` for "escalate on repetition" rules
 (e.g. M1 re-poison) instead of new keys, so the incident id stays stable.
@@ -151,6 +158,7 @@ worker status file (`<db>.status.json`) has `healthy: false` with the reason in 
 |---|---|
 | `ctx.check_id`, `ctx.block` | the check id; the checkpoint block of this run |
 | `ctx.reorg_ancestor` | the lowest common ancestor of the reorgs since the check's last successful run, or None (§6.1) |
+| `ctx.reorg_keys` | reorg runs only (else empty): `frozenset` of the keys of this check's **open** incidents whose `last_seen_block` > `ctx.reorg_ancestor`. Each must be reported again by this run, or the framework resolves it (§6.2) |
 | `ctx.rpc` | `rpc.Chain` pinned to `block`: `call(to, data) -> bytes`, `call_many([(to, data), …])`, `balance(addr)`, `balances([…])`, `storage(addr, [slots])`, `code(addr)`, `transaction(hash)`, `logs(address, [topic0, …], start, end=None)` (any contract, raw logs). A revert raises `RpcError` with `.data` = revert data. `ctx.rpc.counts` is a `Counter` of JSON-RPC calls made by this run (also stored as `rpc_calls` in `meta run:<id>`). |
 | `ctx.params` | live parameters at the last successful reload (`params.py`; failed reads: §5.1): `network_fee`, `network_fee_ssv`, `liquidation_threshold_period`, `liquidation_threshold_period_ssv`, `minimum_liquidation_collateral`, `minimum_liquidation_collateral_ssv`, `operator_fee_increase_limit`, `maximum_operator_fee`, `minimum_operator_eth_fee`, `validators_per_operator_limit`, `quorum_bps`, `cooldown_duration`, `active_oracle_ids` (4 ids, 0 = empty slot), `oracles` ({id: address}), `min_blocks_between_updates`; `ctx.params.block` = read block; `ctx.params.enabled` is False when `views` is not configured; `ctx.params.ok` is False while the values are invalid (`ctx.params.error` says why). Attribute, item or `.get` access; ints, raw units (wei, blocks, bps). Access while invalid raises `params.ParamsUnavailable`. |
 | `ctx.inventory(block=None)` | `inventory.Inventory` at the block (cached per block): `.clusters` {`0x…` id: `ClusterInfo`}, `.operators` {op id: {"clusters", "validators"}} over validated clusters, `.invalid` (exist in storage, no candidate tuple validates — M1 input), `.stats()`. `ClusterInfo`: `cluster_id`, `owner`, `operator_ids`, `version` ("ETH" / "SSV" from storage; None = not in storage), `cluster` (`eb_storage.Cluster`, storage-validated, or None), `valid`, `legacy`, `tuple_source` ("logs" / "api"), `sources`, `api_migrated`, `api` (raw API row). API pages are refetched at most every `inventory.api_refresh_s`. |
@@ -255,12 +263,74 @@ where stated):
 | `NearSetEveryBlock` progress | `Worker.last_block` (memory) | reset: the check runs at the new checkpoint (`reorg`, `block`) and at every following block | was masked by the shorter-chain failure → `test_near_set_check_runs_after_a_reorg_onto_a_shorter_chain` |
 | `Every` progress | `Worker.last_run` (memory, time) | not block-derived; the `reorg` reason runs the check anyway | by design |
 | Check in-memory state | check attributes (M5 `dirty`, a check's `near_set`) | `on_reorg(ancestor)`, also at start for a reorg whose run had not committed | M5: `test_reorg_rewinds_and_replays` (1), `test_m5_reorg_depth_n_reevaluates_on_the_new_chain` (N) |
-| Check persisted state | own tables, `ctx.set_state` | the check's job in the run with reason `reorg`: rows derived from blocks above `ctx.reorg_ancestor` came from deleted blocks (M5 re-evaluates and rewrites every cluster) | contract (§2); M5 tests above |
-| Open incidents found on deleted blocks | `incidents` | kept (a sent alert cannot be unsent; the `reorg` health message says so); the check re-evaluates in its `reorg` run and resolves keys the new chain does not support (absence never resolves) | contract; M5 tests above |
+| Check persisted state | own tables, `ctx.set_state` | the check's job in the run with reason `reorg` (§6.2 contract): rows derived from blocks above `ctx.reorg_ancestor` came from deleted blocks; the keys to re-check are enumerated from the persisted rows themselves, not only from surviving logs | contract (§2, §6.2); M5 rows below |
+| Open incidents found on deleted blocks | `incidents` | kept until the check's reorg run (a sent alert cannot be unsent; the `reorg` health message says so). **Reorg re-find rule** (§6.2): every open incident last seen above the ancestor is in `ctx.reorg_keys`; one the run does not report again is resolved ("evidence left the canonical chain", info on its route); one reported again stays open at the reported severity (a lower one recorded silently); one the run resolves closes with the check's text | **wrong** before repair 3 (QA attempt 3: absence never resolves, so a key whose evidence vanished stayed open and re-paged every 6 h) → `test_reorg_refind::test_reorg_key_not_reported_is_resolved_as_evidence_left_the_canonical_chain`, `…surviving_evidence_reported_nothing_is_resolved_then_reopened`, `…reported_again_is_kept_and_a_lower_severity_is_recorded_silently`, `…reorg_keys_are_only_incidents_last_seen_above_the_ancestor`, `…re_find_rule_survives_a_restart_before_the_reorg_run`, `…re_find_text_wins_over_resolve_on_absence` |
+| Re-alert schedule of open incidents | `incidents.last_alert_at`, `alerts` | an incident last seen above the ancestor of a pending reorg marker (`meta reorg:<id>`) is not re-alerted until the check's reorg run commits; it then closes (rule above) or resumes its cadence | **wrong** before repair 3 (a reorg run that kept failing let orphan incidents re-page) → `test_reorg_refind::test_reorg_run_that_raises_keeps_incidents_marker_and_defers_realerts` |
+| A check that cannot evaluate in its reorg run | `run_check` transaction | it raises: the run rolls back (no incident change, cursors and marker kept), `check-error` health, retried every step; while any marker is pending the status file is `healthy: false` (`reorg re-evaluation pending for check(s) …`, `status.reorg_pending`) | new → same test; M5: `test_reorg_refind::test_m5_layout_guard_failure_in_the_reorg_run_raises_and_retries` |
+| Undelivered outbox rows of an orphaned incident | `outbox` (`sent_at` NULL) | history as of their enqueue: delivered in order, followed by the resolution that says the evidence left the canonical chain (never deleted, never re-sent) | by design → `test_reorg_refind::test_undelivered_alert_of_an_orphaned_incident_is_followed_by_its_resolution` |
+| Incidents derived from inbox entries | `incidents`, `inbox.canonical` | a delivered entry is not delivered again (inbox cursor): in its reorg run the check re-derives `ctx.reorg_keys` from `inbox` rows with `canonical = 1` (re-confirmed before the run in the same step); an entry of a deleted block becomes `canonical = 0` and its key, not reported, is resolved by the rule | **wrong** before repair 3 (stayed open) → `test_reorg_refind::test_inbox_derived_incidents_after_a_reorg` |
+| M5 `evaluations`, `m5_incidents` | M5 tables | the reorg run is a full sweep over the clusters with stored logs **and** every cluster with an evaluation or an open M5 incident (and `ctx.reorg_keys`): a cluster with no log left loses its evaluation and its incident is resolved ("no event of this cluster remains on the canonical chain"); a confirmed/candidate incident the new chain only supports as latent is resolved plainly and re-tracked as a silent latent one; an UNKNOWN re-evaluation re-reports the key (stays open); a resolution of an incident first seen above the ancestor says its evidence left the canonical chain | **wrong** before repair 3 (QA attempt 3 finding; also the latent case, previously asserted on the evaluation only) → `test_qa3_regressions::test_qa3_appendix_a_orphan_repro[0,12]`, `test_qa3_appendix_b::test_m5_orphan_only_cluster_incident_removed[0,12]`, `test_reorg_refind::test_m5_reorg_removing_only_the_confirming_removal_resolves_plainly_and_tracks_latent`, `…m5_reorg_unknown_re_evaluation_keeps_the_incident_open`, `…m5_reorg_resolution_of_an_incident_raised_on_deleted_blocks_says_so`, `…m5_evaluation_of_a_cluster_whose_history_was_deleted_is_dropped` |
+| M5 digest input | `last_full_evals` (memory) | refreshed by the reorg run (a full sweep) | **wrong** before repair 3 (deleted clusters listed until the next hourly sweep) → `test_reorg_refind::test_m5_reorg_run_is_a_full_sweep_so_the_digest_forgets_deleted_clusters` |
 | Default incident id `<check>-<key>-<block>` | `incidents.id` | an id taken by the deleted chain's incident gets `-2`, `-3`, … (a check-proposed `incident_id` must still be unique) | **wrong** (`ValueError`, check-error, the run lost) → `test_default_incident_id_reused_by_a_reorganised_block_gets_a_suffix` |
 | Outbox keys with a block or revision (`…:escalate:<sev>:<block>`, `…:resolved:<block>`, `<id>:<revision>`, `digest:<block>`) | `outbox.key` | a send the incident state machine decided is never dropped: a taken key gets `#2`, `#3`, … (health keys still de-duplicate by design) | **wrong** (silently dropped while `incidents.alerts` counted it) → `test_escalation_replayed_on_a_reorganised_block_is_sent_again` |
 | Status file, `/metrics` checkpoint and lag | `meta` | read at each write/scrape: follow the rewind | correct → `test_reorg_depth_n_replays_only_new_chain_events_once` (gauge) |
 | Reorg deeper than the search | `check_reorg` | the worker stops (`reorg deeper than … recorded blocks`) instead of guessing an ancestor | correct, untested → `test_reorg_deeper_than_the_search_stops_the_worker` |
+
+Whole-class check: `tests/test_reorg_sweep.py` (90 deterministic cases: fork depth 1–30 × confirmations 0/2/12;
+M5 survivor / latent-then-orphaned-removal / orphan-only clusters, inbox lines, a parameter change and an
+injected parameter outage after the reorg, re-inclusion on the new chain, shorter and longer new chains; M5
+plus a second check module) compares the worker that lived through the reorg with a fresh worker on the final
+chain: same open incidents (no open incident without canonical evidence, no dropped alert), every page after
+the reorg supported by the canonical chain at its block (including the 6 h re-alerts), `healthy: true`.
+
+### 6.2 Reorg re-find rule (contract for every check)
+
+A key that a check only re-evaluates when it enumerates it from surviving data (logs, the inventory, new
+inbox entries) is never revisited once a reorg deletes that data. The framework therefore applies one rule
+to the run with reason `reorg` (`ctx.reorg_ancestor` = A, set until that run commits, also across a restart):
+
+1. `ctx.reorg_keys` = the keys of the check's **open** incidents with `last_seen_block > A` (their latest
+   support may come from a deleted block). Incidents last seen at or below A are untouched.
+2. The run must report every key of `ctx.reorg_keys` again, evaluated on the new chain: a finding (any
+   severity, `notify`, `revision`) keeps the incident open under its id — a lower severity is recorded
+   silently, as always; `resolve=True` closes it with the check's own text.
+3. A key of `ctx.reorg_keys` the run does not report is **resolved by the framework** after the findings are
+   applied (before `resolve_on_absence`): state `resolved`, `evidence.resolved_by_reorg = {ancestor, block}`,
+   and, if it was sent at page/warn, an info message on the incident's route titled
+   `Evidence left the canonical chain: <title>`: "Resolved because its evidence left the canonical chain: a
+   chain reorganisation replaced the blocks after A, and check <id> did not find this condition again on the
+   new chain (re-evaluated at block B). The earlier alert(s) for this incident were based on blocks that are
+   no longer canonical." It is never re-paged; if the condition is found again later it opens a new incident
+   (new id, normal `open` alert).
+4. A check that cannot evaluate in its reorg run (an input it needs is missing, a guard fails) must **raise**
+   (or re-report the keys it must keep, e.g. an UNKNOWN evaluation): the run is rolled back, retried every
+   step, the marker and `ctx.reorg_keys` stay, its incidents last seen above A are not re-alerted, and the
+   worker reports `healthy: false` until the run commits. Returning `[]` instead closes every reorg key.
+5. Own tables and `ctx.set_state`: enumerate the keys to re-check from what you persisted (e.g. `SELECT key
+   FROM m<N>_state`) as well as from surviving data; delete or rewrite rows derived from blocks above A.
+   Inbox-derived keys: re-derive from `inbox` rows with `canonical = 1` (`SELECT tx_hash FROM inbox WHERE
+   canonical = 1`); delivered entries are not delivered again.
+
+Pattern (see `tests/test_reorg_sweep.py::Watch`, `tests/test_reorg_refind.py::FailedTxWatch`):
+
+```python
+def run(self, ctx, block):
+    found = {f.key: f for f in self.evaluate(ctx, block)}        # from surviving data, as usual
+    if ctx.reorg_ancestor is not None:
+        for key in ctx.reorg_keys | self.persisted_keys(ctx):    # what this check stored or opened
+            if key not in found:
+                found[key] = self.reevaluate(ctx, key, block)    # a finding, a resolve=True, or raise
+    return list(found.values())
+```
+
+**Plan §6 amendment** (for the coordinator; plan.md is not edited by this lane). In "Incident lifecycle",
+the sentence "absence of a finding never resolves unless the check declares `resolve_on_absence = True`"
+gains: "…, except in a check's run with reason `reorg`: an open incident of that check last seen above the
+reorg's common ancestor (`ctx.reorg_keys`) that the run does not report again is resolved with a resolution
+saying its evidence left the canonical chain (info, on the incident's route); such incidents are not
+re-alerted while that run is pending." In "Check interface", the `Ctx` offers list gains `reorg_ancestor`
+and `reorg_keys`, and `prepare`'s comment gains "and after a reorg" (repair 2). `Check`, `Finding` and the
+schedules are unchanged.
 
 ## 7. Configuration
 
