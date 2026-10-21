@@ -1,0 +1,8 @@
+{
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "block": 26241465,
+ "getNetworkValidatorsCount": 58762,
+ "api_active_eth_validators": 58762,
+ "api_active_eth_clusters": 548,
+ "api_max_block": 26240967
+}

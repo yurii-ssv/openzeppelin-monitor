@@ -13,11 +13,11 @@ Task contract: [plan.md §8 CP2a](../../plan.md) · Attempt log: [attempts.md](a
 | Step | Status | Latest evidence | Exact next action |
 |---|---|---|---|
 | S1 setup (venv, reading) | DONE | attempts §1 | — |
-| S2 M3 check + tests | see attempts | | |
-| S3 M4 check + tests | see attempts | | |
-| S4 M14 check + tests | see attempts | | |
-| S5 V rows, falsifiers, self-review | see attempts | | |
-| S6 commit, status, worker_done | see attempts | | |
+| S2 M3 check + tests | DONE | `21f1f91`, `756237b`, `2e47211` | — |
+| S3 M4 check + tests + LIVE probe | DONE | `21f1f91`, `f74b8d4`; `live/m4-probe-26241393.json` | — |
+| S4 M14 check + tests | DONE | `21f1f91` | — |
+| S5 V rows, falsifiers, self-review | DONE | attempts §Verification, §Falsifiers | — |
+| S6 commit, status, worker_done | DONE | plan.md CP2a status line | Codex QA |
 
 ## Design (as implemented)
 
@@ -27,5 +27,19 @@ See the module docstrings of `reconcile/checks/m3_liquidation_zone.py`, `m4_cons
 ## Completion handoff (≤ 250 words, also sent as the `worker_done` summary)
 
 ```text
-(filled at completion)
+Task / live dispatch: task_2d232c728871 / ctx_c6e862b982c3 (CP2a, M3 M4 M14).
+Assignment outcome: implemented; acceptance pending Codex QA.
+Base -> result: 96d1c32 -> lane mtabasco/ms-cp2a head (plan.md CP2a status line); coordinator merge 33bf02d (ruling v2.1).
+Changed paths: reconcile/checks/{m3_views,m3_liquidation_zone,m4_conservation_deficit,m4_probe,m14_deposit_frontrun}.py,
+  one line in checks/__init__.py, checks.m3/m4/m14 in config.example.json, tests/{fixtures_liquidation,test_m3,test_m4,
+  test_m14}.py, workers/cp2a/**, CP2a status line. No CP1B file changed by this lane; no deletions.
+Verification: V2x.1 M3 35 / M4 25 / M14 29 passed; V2x.2 10; V2x.3 4; V2x.4 3; V2a.7 9; V2x.6 329 passed, ruff clean.
+  LIVE (publicnode): M4 A surplus +457,600,000 wei vs B -208.6 ETH at 26,241,393; M3 views 530 clusters, 0
+  liquidatable, 0 zero at 26,241,455; validators 58,762 = 58,762. NOT RUN: none.
+Falsifiers: 15, all red (F9 after a test fix), restored, porcelain 0.
+Findings: M4 spec term "staking ETH owed" = getNetworkEarnings (ruled A; spec amendment at closure).
+  Framework test gap resolved centrally (500abe4). Permission guard blocked my edits of CP1B tests and the merge.
+Pending human input: none.
+Next owner: Codex QA on the lane head.
+Preservation: everything committed; scratch only in the session scratchpad.
 ```

@@ -25,7 +25,7 @@ Same entry shape as execution-log.md events, worker-side. Append only. Measured 
 | `reconcile/config.example.json` (edited) | `checks.m3`, `checks.m4`, `checks.m14` only |
 | `reconcile/tests/fixtures_liquidation.py` | `LiquidationChain` (FakeChain subclass computing the cluster views from a balance model and the chain's own parameter stubs; hash validation like `validateHashedCluster`), `Clusters` (real storage words + logs), M4/M14 helpers |
 | `reconcile/tests/test_m3.py`, `test_m4.py`, `test_m14.py` | scenarios |
-| `plans/monitoring-service/workers/cp2a/*` | this record, the worker plan, `live-m4-probe-26241393.json` |
+| `plans/monitoring-service/workers/cp2a/*` | this record, the worker plan, `live/m4-probe-26241393.json` |
 
 ### Questions, rulings, deviations
 
@@ -75,22 +75,22 @@ Same entry shape as execution-log.md events, worker-side. Append only. Measured 
 
 ### Verification
 
-Environment for all rows: `reconcile/.venv/bin/python -m pytest -q …`, macOS, 2026-10-21. Counts at lane head
-(after the coordinator's merge `33bf02d`).
+Environment for all rows: `reconcile/.venv/bin/python -m pytest -q …`, macOS, 2026-10-21. Counts at lane tree `f74b8d4`
+(after the coordinator's merge `33bf02d`), 2026-10-21T14:12Z.
 
 | Verification ID | Exact command | Exit / result / counts | Evidence |
 |---|---|---|---|
-| V2x.1 M3 | `pytest -q reconcile/tests/test_m3.py` | RESULT_M3 | scenarios listed below |
-| V2x.1 M4 | `pytest -q reconcile/tests/test_m4.py` | RESULT_M4 | |
-| V2x.1 M14 | `pytest -q reconcile/tests/test_m14.py` | RESULT_M14 | |
-| V2x.2 | `pytest -q reconcile/tests/test_m{3,4,14}.py -k thresholds_from_chain` (each file) | RESULT_V2 | |
-| V2x.3 | `… -k restart` (each file) | RESULT_V3 | |
-| V2x.4 | `… -k rpc_budget` (each file) | RESULT_V4 | M3 full sweep ≤ 3 × 350 eth_call and near-set run ≤ 3 × 5 with no inventory rebuild; M4 ≤ 350 + 40 + 2; M14 ≤ 4 per entry |
-| V2a.7 | `pytest -q reconcile/tests/test_m14.py -k v2a7` | RESULT_V2A7 | same block, previous block, 2 blocks earlier (silent), value ≥ burn (silent), deposit after the failure (silent), order unknown, not liquidatable (silent), other failed tx (silent), liquidateSSV |
-| V2x.5 | falsifiers below | 13 mutations, each named test red, restored, `git status --porcelain` empty | `scratchpad/falsifiers.log` (copied below) |
-| V2x.6 | `pytest -q reconcile/tests` ; `reconcile/.venv/bin/ruff check reconcile` | RESULT_V6 | |
-| LIVE M4 | `cd reconcile && .venv/bin/python -m checks.m4_probe --probe --rpc https://ethereum-rpc.publicnode.com` | exit 0, block 26,241,393 (hash `0x01303113…60bd`), 4 min 39 s | `live-m4-probe-26241393.json` |
-| LIVE M3 views | scratch read-only script (not committed) running `checks.m3_views.evaluate` on the LIVE storage-validated inventory | RESULT_LIVE_M3 | |
+| V2x.1 M3 | `pytest -q reconcile/tests/test_m3.py` | exit 0, 35 passed | scenarios listed below |
+| V2x.1 M4 | `pytest -q reconcile/tests/test_m4.py` | exit 0, 25 passed | |
+| V2x.1 M14 | `pytest -q reconcile/tests/test_m14.py` | exit 0, 29 passed | |
+| V2x.2 | `pytest -q reconcile/tests/test_m{3,4,14}.py -k thresholds_from_chain` (each file) | exit 0; M3 5 passed, M4 2 passed, M14 3 passed (selected by `-k`) | |
+| V2x.3 | `… -k restart` (each file) | exit 0; M3 2, M4 1, M14 1 passed | |
+| V2x.4 | `… -k rpc_budget` (each file) | exit 0; M3 1, M4 1, M14 1 passed | M3 full sweep ≤ 3 × 350 eth_call and near-set run ≤ 3 × 5 with no inventory rebuild; M4 ≤ 350 + 40 + 3 (+1 = the completeness count; M3 likewise + 1); M14 ≤ 4 per entry |
+| V2a.7 | `pytest -q reconcile/tests/test_m14.py -k v2a7` | exit 0, 9 passed (20 deselected) | same block, previous block, 2 blocks earlier (silent), value ≥ burn (silent), deposit after the failure (silent), order unknown, not liquidatable (silent), other failed tx (silent), liquidateSSV |
+| V2x.5 | falsifiers below | 15 mutations, each named test red (F9 after a test fix), restored, porcelain 0 | table below |
+| V2x.6 | `pytest -q reconcile/tests` ; `reconcile/.venv/bin/ruff check reconcile` | exit 0, **329 passed** (240 CP1B + 89 CP2a); ruff `All checks passed!` exit 0 | |
+| LIVE M4 | `cd reconcile && .venv/bin/python -m checks.m4_probe --probe --rpc https://ethereum-rpc.publicnode.com` | exit 0, block 26,241,393 (hash `0x01303113…60bd`), 4 min 39 s | `live/m4-probe-26241393.json` |
+| LIVE M3 views | read-only `live/m3_live.py` (`reconcile/.venv/bin/python -I live/m3_live.py <reconcile dir> <rpc>`) running `checks.m3_views.evaluate` on the LIVE storage-validated inventory | exit 0, publicnode, block 26,241,455 (hash `0x1d449084…6b94`): 530 active ETH clusters with validators evaluated, 0 unknown, 0 liquidatable, 0 at computed zero, 0 within 300 blocks, 24 within 7,200 blocks (pre-alert digest), 1,607 eth_call (17 params + 3 × 530); `live/m3-views-26241455.json`. Completeness guard: `getNetworkValidatorsCount()` 58,762 = 58,762 validators of the 548 active ETH API rows at block 26,241,465, publicnode (`live/valcount-26241465.json`, script `live/valcount.py`; the endpoint field was added to the JSON by hand, the script did not print it) | |
 
 V2x.1 scenario names (one per spec trigger line at its severity, then its benign twin):
 
@@ -125,7 +125,29 @@ reaches the full sweep even while the near set runs every block (`test_full_swee
 
 ### Falsifiers (V2x.5)
 
-FALSIFIERS
+Each mutation applied with an exact one-occurrence replace, the named test run with a fresh `PYTHONPYCACHEPREFIX` (see the note), the file restored with `git checkout --`; last column = `git status --porcelain | wc -l` after the restore. Run 2026-10-21T14:1xZ on the tree of `2e47211`+attempt draft (check code identical to the head).
 
-- Resulting head: HEAD_HASH
+| ID | Mutation | Test | Result with the mutation | porcelain after restore |
+|---|---|---|---|---|
+| F1 | `reconcile/checks/m3_liquidation_zone.py`: `elif age >= n:` → `elif age > n:` | `reconcile/tests/test_m3.py::test_still_liquidatable_after_n_blocks_warns_exactly_at_n` | 1 failed in 0.13s | 0 |
+| F2 | `reconcile/checks/m3_liquidation_zone.py`: `elif age >= n2:` → `elif age > n2:` | `reconcile/tests/test_m3.py::test_still_liquidatable_after_n2_blocks_pages` | 1 failed in 0.13s | 0 |
+| F3 | `reconcile/checks/m3_liquidation_zone.py`: `if view.liquidatable or view.balance == 0:` → `if view.liquidatable:` | `reconcile/tests/test_m3.py::test_computed_zero_pages_even_when_the_view_says_not_liquidatable` | 1 failed in 0.14s | 0 |
+| F4 | `reconcile/checks/m3_liquidation_zone.py`: `        ctx.db.conn.execute("DELETE FROM m3_zone WHERE onset_block > ?", (ancestor,))` → `        pass` | `reconcile/tests/test_m3.py::test_reorg_onset_above_ancestor_still_liquidatable_is_reported_again` | 2 failed in 0.14s | 0 |
+| F5 | `reconcile/checks/m3_liquidation_zone.py`: `            unknown_rows.append(("inventory", "unknown: " + gap))` → `            pass` | `reconcile/tests/test_m3.py::test_unknown_incomplete_inventory_is_health_on_every_full_sweep` | 1 failed in 0.13s | 0 |
+| F6 | `reconcile/checks/m4_conservation_deficit.py`: `        if deficit > 0:` → `        if deficit >= 0:` | `reconcile/tests/test_m4.py::test_deficit_benign_exact_cover_and_surplus_stay_silent` | 1 failed in 0.11s | 0 |
+| F7 | `reconcile/checks/m4_conservation_deficit.py`: `    liabilities = clusters + operators + network` → `    liabilities = clusters + operators + network + (pool or 0)` | `reconcile/tests/test_m4.py::test_staking_pool_is_not_added_as_a_separate_liability` | 1 failed in 0.12s | 0 |
+| F8 | `reconcile/checks/m4_conservation_deficit.py`: `        if not s["complete"]:` → `        if False:` | `reconcile/tests/test_m4.py` | 7 failed, 18 passed in 0.28s | 0 |
+| F9 | `reconcile/checks/m4_conservation_deficit.py`: `            ctx.db.conn.execute("DELETE FROM m4_scans WHERE block > ?", (ctx.reorg_ancestor,))` → `            pass` | `reconcile/tests/test_m4.py::test_reorg_removing_the_deficit_resolves_and_never_repages` | first run **2 passed (survived)**: the reorg run's scan landed on the same block number and `INSERT OR REPLACE` overwrote the stale row; test fixed in `f74b8d4` (the new checkpoint differs, asserted) → re-run **2 failed** | 0 |
+| F10 | `reconcile/checks/m14_deposit_frontrun.py`: `            if liquidatable and value < burn:` → `            if liquidatable and value <= burn:` | `reconcile/tests/test_m14.py::test_v2a7_benign_deposit_of_at_least_one_block_of_burn` | 1 failed in 0.12s | 0 |
+| F11 | `reconcile/checks/m14_deposit_frontrun.py`: `if ev.block >= e.block - 1]` → `if ev.block >= e.block - 2]` | `reconcile/tests/test_m14.py::test_v2a7_benign_deposit_two_blocks_earlier` | 1 failed in 0.13s | 0 |
+| F12 | `reconcile/checks/m14_deposit_frontrun.py`: `and (ev.block < e.block or tx_index is None or ev.tx_index < tx_index)]` → `]` | `reconcile/tests/test_m14.py::test_v2a7_benign_deposit_after_the_failed_liquidation_in_the_same_block` | 1 failed in 0.12s | 0 |
+| F13 | `reconcile/checks/m14_deposit_frontrun.py`: `        elif len(recent) >= repeat:` → `        elif len(hits) >= repeat:` | `reconcile/tests/test_m14.py::test_three_hits_benign_spread_beyond_the_window_stay_info` | 1 failed in 0.12s | 0 |
+| F14 | `reconcile/checks/m14_deposit_frontrun.py`: `            ctx.db.conn.execute("DELETE FROM m14_hits WHERE block > ?", (A,))` → `            pass` | `reconcile/tests/test_m14.py::test_reorg_removing_the_front_run_resolves_and_never_repages` | 2 failed in 0.13s | 0 |
+| F15 | `reconcile/checks/m14_deposit_frontrun.py`: `            if liquidatable and value < burn:` → `            if value < burn:` | `reconcile/tests/test_m14.py::test_v2a7_benign_cluster_not_liquidatable` | 1 failed in 0.12s | 0 |
+
+Note (method): a first pass without a fresh bytecode cache reported F2 as surviving: F1 and F2 change the same file by the same size within one second, so Python reused F1's mutant `.pyc` (mtime+size validation). Every row above is from the second pass with `PYTHONPYCACHEPREFIX=$(mktemp -d)` per mutation; F2 is red there.
+
+- Completeness guard added after the first falsifier pass (commit `2e47211`): M3 and M4 compare the inventory's active ETH validators with `getNetworkValidatorsCount()` (LIVE equal), so a cluster missing from both the API and the logs is UNKNOWN, not clean (F5, `test_incomplete_inputs_are_unknown_not_resolved[hidden_cluster]`).
+- NOT RUN: none of the owned rows. Out of scope, not run: an anvil fork end-to-end of these checks (CP3).
+- Resulting head: the commit recorded on plan.md's CP2a status line (this log is part of it).
 - Next action: Codex QA on the lane head.
