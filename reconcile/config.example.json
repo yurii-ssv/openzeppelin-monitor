@@ -62,6 +62,32 @@
           }
         }
       }
+    },
+    "m9": {
+      "interval_s": 60,
+      "round_timeout_s": 1800,
+      "max_commit_gap_s": 32400,
+      "dissent_streak": 3,
+      "min_committing_slots": 3,
+      "absent_rounds": 6,
+      "seconds_per_block": 12
+    },
+    "m10": {
+      "interval_s": 300
+    },
+    "m11": {
+      "interval_s": 300,
+      "update_window_s": 3600,
+      "zero_rounds_page": 2,
+      "revert_rate": 0.1,
+      "updater": null,
+      "updater_slot": 4,
+      "history_rounds": 6,
+      "proof_api": "https://ssv-oracle.ssv.network/api/v1",
+      "proof_api_timeout_s": 15,
+      "proof_api_abort_after": 3,
+      "full_state_interval_s": 604800,
+      "seconds_per_block": 12
     }
   }
 }
