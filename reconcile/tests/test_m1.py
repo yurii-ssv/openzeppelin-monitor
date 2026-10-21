@@ -599,3 +599,50 @@ def test_m1_missing_required_settings_are_config_errors(tmp_path):
     with pytest.raises(SystemExit, match="inbox_functions"):
         make_worker(tmp_path / "c", only=["m1"], chain=chain, views=VIEWS,
                     checks={"m1": m1_config(inbox_functions=["deposit"])})
+
+
+def test_m1_unresolved_inbox_revert_of_our_sender_is_health_not_clean(tmp_path):
+    chain, w, ssv, path = inbox_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    data_tx = failed_tx(chain, path, "updateClusterBalance", OWNER, OPS, current_tuple(ssv), UPDATER, INCORRECT_STATE)
+    chain.call_stubs.clear()  # the replay at block - 1 has no answer and there is no Blockscout: unresolved
+    stub_params(chain)
+    for _ in range(6):
+        chain.mine()
+        advance(w)
+    row = w.db.conn.execute("SELECT revert_source FROM inbox WHERE tx_hash=?", (data_tx,)).fetchone()
+    assert row["revert_source"] == "unresolved"
+    assert outbox(w, "kind='health' AND check_id='m1' AND text LIKE '%could not be resolved%'")
+    assert [r for r in out(w) if r["kind"] != "health"] == [] and detections(w) == []
+
+
+def test_m1_inbox_transaction_lookup_returning_nothing_raises(tmp_path):
+    chain, w, ssv, path = inbox_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    tx = failed_tx(chain, path, "liquidate", OWNER, OPS, current_tuple(ssv), LIQUIDATOR, INCORRECT_STATE)
+    w.check_reorg()
+    w.scan()
+    w.poll_inbox()
+    assert w.db.conn.execute("SELECT revert_name FROM inbox WHERE tx_hash=?", (tx,)).fetchone()[0] == \
+        "IncorrectClusterState"
+    del chain.txs[tx]
+    del chain.senders[tx]
+    with pytest.raises(RpcError, match="returned nothing"):
+        w.run_checks()
+    assert detections(w) == [] and w.db.meta("cursor:inbox:m1", 0) == 0
+
+
+def test_m1_inventory_failure_is_health_and_receipts_are_still_validated(tmp_path):
+    chain, w, ssv = make_m1(tmp_path, inventory={"api_url": "https://api.invalid", "api_refresh_s": 0})
+
+    def down(url):
+        raise OSError("api down")
+
+    w.inventory.http_get = down
+    deposit(ssv, value=10**18)
+    poison(ssv)
+    advance(w)
+    assert outbox(w, "kind='health' AND check_id='m1' AND text LIKE '%inventory could not be built%'")
+    assert [(r["severity"], r["kind"]) for r in out(w) if r["kind"] != "health"] == [("warn", "open")]

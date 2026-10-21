@@ -418,3 +418,20 @@ def test_m2_missing_views_is_a_config_error(tmp_path):
     chain.mine()
     with pytest.raises(SystemExit, match="views"):
         make_worker(tmp_path, only=["m2"], chain=chain, checks={"m2": {}})
+
+
+def test_m2_unresolved_inbox_revert_is_health_not_clean(tmp_path):
+    chain, w, ssv, rows, path = inbox_setup(tmp_path, eth=0)
+    advance(w)
+    cl = ssv._cluster(ssv._get(LEG, LEG_OPS)[1])
+    tx = failed_tx(chain, path, "migrateClusterToETH", LEG, LEG_OPS, cl, LEG, exceed_limit(1))
+    chain.call_stubs.clear()  # no answer for the replay at block - 1, no Blockscout: unresolved
+    stub_params(chain)
+    for op in LEG_OPS:
+        set_operator(chain, op, eth=0, ssv=20)
+    for _ in range(6):
+        chain.mine()
+        advance(w)
+    assert w.db.conn.execute("SELECT revert_source FROM inbox WHERE tx_hash=?", (tx,)).fetchone()[0] == "unresolved"
+    assert outbox(w, "kind='health' AND check_id='m2' AND text LIKE '%could not be resolved%'")
+    assert alerts(w) == []

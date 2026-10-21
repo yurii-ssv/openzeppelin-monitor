@@ -226,7 +226,15 @@ class M1StaleTuple(Check):
     def _ingest_inbox(self, ctx: Ctx, block: int) -> set[str]:
         keys = set()
         for e in ctx.inbox:
-            if e.revert_selector != ERR_INCORRECT_CLUSTER_STATE or (e.sender or "").lower() not in self.senders:
+            if (e.sender or "").lower() not in self.senders:
+                continue
+            if e.revert_selector is None and (e.function or "").split("(", 1)[0] in self.functions:
+                # unresolved revert of one of our senders: it may be IncorrectClusterState, never read as clean
+                ctx.health("m1-inbox-unresolved", f"M1: the revert of {e.function} {e.tx_hash} (block {e.block}) from "
+                           f"our sender {e.sender} could not be resolved ({e.revert_source}); check it by hand.",
+                           dedup=f"m1-inbox-unresolved:{e.tx_hash}")
+                continue
+            if e.revert_selector != ERR_INCORRECT_CLUSTER_STATE:
                 continue
             tx = ctx.rpc.transaction(e.tx_hash)
             if not tx:

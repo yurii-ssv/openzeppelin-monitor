@@ -220,10 +220,14 @@ class M2OperatorCapacity(Check):
 
     def _ingest_inbox(self, ctx: Ctx, block: int) -> None:
         for e in ctx.inbox:
-            if e.revert_selector != ERR_EXCEED_VALIDATOR_LIMIT:
-                continue
             fn = FUNCTION_BY_SELECTOR.get((e.selector or "").lower()) or (e.function or "").split("(", 1)[0]
             if fn not in self.functions:
+                continue
+            if e.revert_selector is None:  # it may be ExceedValidatorLimitWithData: never read as clean
+                ctx.health("m2-inbox-unresolved", f"M2: the revert of {fn} {e.tx_hash} (block {e.block}) could not "
+                           f"be resolved ({e.revert_source}); check it by hand.", dedup=f"m2-inbox-unresolved:{e.tx_hash}")
+                continue
+            if e.revert_selector != ERR_EXCEED_VALIDATOR_LIMIT:
                 continue
             row = ctx.db.conn.execute("SELECT revert_data FROM inbox WHERE id = ?", (e.id,)).fetchone()
             op = decode_uint_arg(row["revert_data"] if row else None)
