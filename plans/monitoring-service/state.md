@@ -2,12 +2,12 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-21T19:30Z
-- Last recorded event / last processed Orca delivery: event-0053 / delivery_74e5dcaed91f (acked)
+- Updated at: 2026-10-21T19:45Z (PAUSED)
+- Last recorded event / last processed Orca delivery: event-0054 / delivery_74e5dcaed91f (acked); later deliveries queued and unprocessed
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); QA worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` @ `9772b2d` (event-0010)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
-- Mode: **Codex credits exhausted; all new QA on Opus 5.5 (D13). Running: CP2e impl; CP2a, CP2b, CP2d repairs; CP2c QA; CP1A QA — attended**
+- Mode: **PAUSED by Marco (event-0054): laptop unplugged; live workers finish on their own; coordinator dispatches nothing and processes no deliveries until resumed**
 - Overall acceptance: pending
 - Current checkpoint: CP1A repair; CP2a–e (wave 2)
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
@@ -26,9 +26,9 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 
 ## Next transition
 
-- Exact next authorized action and owner: coordinator waits (`orca orchestration check --wait`) for worker_done; per delivery inspect diff vs allowed writes, re-run cheapest V row, log, start that lane's fresh Codex QA via approval-mode route 2 and, when a wave-2 slot frees, start CP2e (task `task_78dba27a67d8`, worktree new-child `ms-cp2e` from `plan/monitoring-service`). CP3 needs CP1A and CP2a–e VERIFIED and Marco's approval.
+- Exact next authorized action and owner: Marco resumes the coordinator; resume procedure in event-0054 (verify workspace, reuse Run `run_96be3e0c7302`, check queued deliveries, reconcile with this table in arrival order). Live at pause: CP2a repair 2, CP2b QA 2, CP2c QA 2, CP2d repair 2, CP1A QA 5, CP2e implementer.
 - Ready work with no active dispatch: none.
-- Waiting for: CP2e worker_done; CP2a, CP2b, CP2c QA worker_done; CP2d repair 1 and CP1A repair 4 worker_done. Codex 5h limit under 50%: a stall would pause QA. Open owner items (non-blocking): live `config/` duplicate trigger names; `.gitignore` for `data/**/*.jsonl`; inbox file must pre-exist; spec amendments at closure (M13 row 3, M4, M6, M12); cleanup of QA terminals/worktrees at closure.
+- Waiting for: Marco (resume). Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
 - Next check/wake mechanism: attended; `orca orchestration check --wait` on the coordinator's Run (15 min) while workers run. Unattended recovery UNVERIFIED (DEF-4).
 - Context resume: verify HEAD/status/runtime, read this file, inspect the next task's latest attempt, continue the first unproven action. Do not reload whole history.
 
