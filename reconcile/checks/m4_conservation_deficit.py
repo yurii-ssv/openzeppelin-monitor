@@ -141,6 +141,8 @@ class M4ConservationDeficit(Check):
         super().__init__(config, settings)
         if not settings.get("views"):
             raise SystemExit("checks.m4 needs the SSVNetworkViews address in the top-level 'views' setting")
+        if not config["interval_s"] > 0:
+            raise SystemExit(f"checks.m4: need interval_s > 0; got {config}")
         self.views, self.proxy = settings["views"].lower(), settings["proxy"].lower()
         self.schedule = (Every(config["interval_s"]), OnEvents({"RootCommitted"}))
 

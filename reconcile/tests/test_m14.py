@@ -767,3 +767,67 @@ def test_sweep_m14_no_deposit_below_one_block_of_burn_is_decided_before_the_posi
     advance(w)
     assert not hits(w) and not incidents(w, "m14") and not unknown_health(w)
     assert not w.db.conn.execute("SELECT * FROM m14_pending").fetchall()
+
+
+# ---------------------------------------------------------------- DEFECT-CLASSES.md gaps found by the state table
+
+
+def test_class2_window_resolution_on_deleted_blocks_reopens_on_a_shorter_chain(tmp_path):
+    """The resolution came from the chain time of blocks a reorg replaces by a shorter chain: the hit is inside
+    the window again at the new checkpoint and the incident is found again."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}})
+    frontrun(chain, cl, path)
+    advance(w)
+    chain.mine(7_200)
+    w.clock.advance(600)
+    advance(w)
+    assert sent(w, "m14") == [("open", "warn"), ("resolved", "info")]
+    chain.reorg(chain.number - 100)
+    chain.mine(2)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m14")] == ["resolved", "open"]
+    assert sent(w, "m14") == [("open", "warn"), ("resolved", "info"), ("open", "warn")]
+
+
+def test_class10_restart_while_an_entry_is_pending_retries_it(tmp_path):
+    chain, w, cl, path = make(tmp_path)
+    tx = frontrun(chain, cl, path)
+    saved = chain.txs.pop(tx)
+    advance(w)
+    w2 = restart(tmp_path, w, checks=M14, inbox={"path": str(path)})
+    chain.txs[tx] = saved
+    chain.mine()
+    w2.clock.advance(600)
+    advance(w2)
+    assert len(hits(w2)) == 1 and sent(w2, "m14") == [("open", "info")]
+
+
+def test_class10_restart_while_the_reorg_run_raises_keeps_the_marker_until_it_can_evaluate(tmp_path):
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}})
+    fork, old = chain.number, cl.tuple()
+    frontrun(chain, cl, path)
+    chain.mine(2)
+    advance(w)
+    chain.reorg(fork)
+    cl.state[cluster_id(OWNER, OPS)].update(index=old.index, nfi=old.network_fee_index, balance=old.balance)
+    chain.mine()
+    cl.deposit(value=1, mine=False)
+    tx, _ = failed_liquidation(chain, cl, path, tuple_=old)
+    saved = chain.txs.pop(tx)
+    chain.mine(2)
+    advance(w)
+    assert w.db.meta("reorg:m14") is not None
+    w2 = restart(tmp_path, w, checks=M14, cfg={"m14": {"repeat_count": 1}}, inbox={"path": str(path)})
+    advance(w2)
+    assert w2.db.meta("reorg:m14") is not None and open_incidents(w2, "m14")
+    chain.txs[tx] = saved
+    chain.mine()
+    advance(w2)
+    assert w2.db.meta("reorg:m14") is None and open_incidents(w2, "m14")
+    assert sent(w2, "m14") == [("open", "warn")]
+
+
+@pytest.mark.parametrize("cfg", [{"window_s": 0}, {"repeat_count": 0}, {"sweep_interval_s": 0}])
+def test_class11_invalid_configuration_is_a_startup_error(tmp_path, cfg):
+    with pytest.raises(SystemExit, match="checks.m14"):
+        make(tmp_path, cfg={"m14": cfg})

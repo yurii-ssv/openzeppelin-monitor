@@ -132,6 +132,9 @@ class LiquidationChain(FakeChain):
         self.dao_validators.append((self.number, now + delta))
 
     def reorg(self, from_block: int) -> None:
+        """FakeChain.reorg, plus everything this chain models per block: balances, call stubs, chain time."""
+        self.balances = {a: [x for x in v if x[0] < from_block] for a, v in self.balances.items()}
+        self.call_stubs = {k: [x for x in v if x[0] < from_block] for k, v in self.call_stubs.items()}
         self.gaps = [g for g in self.gaps if g[0] < from_block]
         self.stamps = {b: t for b, t in self.stamps.items() if b < from_block}
         self.dao_validators = [d for d in self.dao_validators if d[0] < from_block]

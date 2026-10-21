@@ -17,7 +17,10 @@ tuples (`ctx.inventory`, D9); the projection reads `liquidation_threshold_period
 `minimum_liquidation_collateral` from `ctx.params` (live). N and N2 are config (D5), never constants.
 
 Sweep policy: a full sweep (every ETH cluster of the inventory) every `full_sweep_interval_s`, after
-every `RootCommitted`, after a parameter change, after a reorg and at the first run; the clusters of
+every `RootCommitted` and `OperatorFeeExecuted` (an operator fee increase raises burn rates without any
+cluster event: a cluster it pushes over its threshold is seen at that block, not up to one interval later,
+so an onset that a top-up heals before the next interval is not lost), after a parameter change, after a
+reorg and at the first run; the clusters of
 any stored cluster event at the next run; the projected-near set (liquidatable now or crossing within
 `near_blocks`) at every checkpoint block. A near-set run reuses the tuple of the last validated read:
 the views themselves validate the tuple hash, so a changed tuple reverts and is re-read from the
@@ -105,14 +108,20 @@ class M3LiquidationZone(Check):
     defaults = {"n_blocks": 50, "n2_blocks": 7_200, "full_sweep_interval_s": 600, "near_blocks": 300,
                 "pre_alert_blocks": 7_200}
     schema = SCHEMA
+    events = {"OperatorFeeExecuted": "OperatorFeeExecuted(address,uint64,uint256,uint256)"}
 
     def __init__(self, config: dict, settings: dict):
         super().__init__(config, settings)
         if not settings.get("views"):
             raise SystemExit("checks.m3 needs the SSVNetworkViews address in the top-level 'views' setting")
+        c = config
+        if not (1 <= c["n_blocks"] <= c["n2_blocks"] and c["full_sweep_interval_s"] > 0 and c["near_blocks"] >= 0
+                and c["pre_alert_blocks"] >= 0):
+            raise SystemExit(f"checks.m3: need 1 <= n_blocks <= n2_blocks, full_sweep_interval_s > 0, near_blocks >= "
+                             f"0, pre_alert_blocks >= 0; got {c}")
         self.views, self.proxy = settings["views"].lower(), settings["proxy"].lower()
-        self.schedule = (Every(config["full_sweep_interval_s"]), OnEvents(CLUSTER_KINDS | {"RootCommitted"}),
-                         NearSetEveryBlock())
+        self.schedule = (Every(config["full_sweep_interval_s"]),
+                         OnEvents(CLUSTER_KINDS | {"RootCommitted", "OperatorFeeExecuted"}), NearSetEveryBlock())
         self.near_set: frozenset = frozenset()
         self.tuples: dict = {}  # cluster id -> ClusterInfo of the last validated read (near-set runs)
         self.last_full: float | None = None
@@ -154,7 +163,7 @@ class M3LiquidationZone(Check):
         self.rewound = self.rewind(ctx, ctx.reorg_ancestor) if reorg else {}
         touched, root = set(), False
         for ev in ctx.events():
-            if ev.kind == "RootCommitted":
+            if ev.kind in ("RootCommitted", "OperatorFeeExecuted"):
                 root = True
             elif ev.cluster_id:
                 touched.add("0x" + ev.cluster_id.hex())

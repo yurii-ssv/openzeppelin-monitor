@@ -136,6 +136,8 @@ class M14DepositFrontrun(Check):
         super().__init__(config, settings)
         if not settings.get("views"):
             raise SystemExit("checks.m14 needs the SSVNetworkViews address in the top-level 'views' setting")
+        if not (config["window_s"] > 0 and config["repeat_count"] >= 1 and config["sweep_interval_s"] > 0):
+            raise SystemExit(f"checks.m14: need window_s > 0, repeat_count >= 1, sweep_interval_s > 0; got {config}")
         self.views, self.proxy = settings["views"].lower(), settings["proxy"].lower()
         self.schedule = (OnInbox(), Every(config["sweep_interval_s"]))
 

@@ -681,3 +681,32 @@ def test_qa1_h1_reorg_key_listed_nowhere_without_identity_raises(tmp_path):
     chain.mine(2)
     advance(w)
     assert [r["state"] for r in incidents(w, "m3")] == ["open"] and w.db.meta("reorg:m3") is not None
+
+
+# ---------------------------------------------------------------- DEFECT-CLASSES.md gaps found by the state table
+
+
+def test_class5_fee_increase_onset_is_seen_at_its_block_even_if_healed_before_the_next_sweep(tmp_path):
+    """An operator fee increase pushes a cluster over its threshold without any cluster event; a top-up heals it
+    before the 10-minute full sweep. OperatorFeeExecuted triggers a full sweep, so the onset is not lost."""
+    from fakechain import _enc, _topic_addr
+
+    chain, w, cl = setup(tmp_path)
+    cl.create(balance=THRESHOLD + 100_000 * BURN)  # far outside the near set
+    advance(w)
+    cl.set_burn(burn=10 * BURN)
+    chain.emit_event("OperatorFeeExecuted", [_topic_addr("0x" + "0f" * 20), "0x%064x" % OPS[0]],
+                     _enc(["uint", "uint"], [chain.number, 10**9]))
+    chain.mine()
+    advance(w)
+    assert sent(w, "m3") == [("open", "info")] and evidence(w)["onset_block"] == chain.sealed
+    cl.deposit(value=10**18)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["resolved"]
+
+
+@pytest.mark.parametrize("cfg", [{"n_blocks": 0}, {"n_blocks": 60, "n2_blocks": 50}, {"full_sweep_interval_s": 0},
+                                 {"near_blocks": -1}])
+def test_class11_invalid_configuration_is_a_startup_error(tmp_path, cfg):
+    with pytest.raises(SystemExit, match="checks.m3"):
+        setup(tmp_path, cfg={"m3": cfg})

@@ -18,6 +18,7 @@ from fixtures_liquidation import (
     setup,
     stub_m4,
 )
+from fakechain import PROXY
 from harness import VIEWS, advance, outbox
 
 from checks.m3_views import GET_NETWORK_EARNINGS, GET_OPERATOR_EARNINGS
@@ -314,3 +315,34 @@ def test_reorg_crash_between_rewind_and_reorg_run_is_replayed(tmp_path):
     advance(w2)
     assert [r["state"] for r in incidents(w2, "m4")] == ["resolved"] and w2.db.meta("reorg:m4") is None
 
+
+
+# ---------------------------------------------------------------- DEFECT-CLASSES.md gaps found by the state table
+
+
+@pytest.mark.parametrize("confirmations,depth", [(0, 1), (12, 20)])
+def test_class2_resolution_on_a_deleted_block_is_paged_again(tmp_path, confirmations, depth):
+    """The block that covered the deficit is replaced: the reorg run recomputes the equation and pages again."""
+    chain, w, cl = balanced(tmp_path, surplus=10**15, confirmations=confirmations)
+    cl.deposit(OWNER, OPS, value=2 * 10**15)
+    root(chain)
+    chain.mine(confirmations)
+    advance(w)
+    assert sent(w, "m4") == [("open", "page")]
+    fork = chain.number
+    chain.set_balance(PROXY, liabilities(chain, chain.number) + 10**16)  # covered from this block on
+    root(chain)
+    chain.mine(confirmations + depth)
+    advance(w)
+    assert sent(w, "m4") == [("open", "page"), ("resolved", "info")]
+    chain.reorg(fork)
+    chain.mine(confirmations + depth + 2)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m4")] == ["resolved", "open"]
+    assert sent(w, "m4") == [("open", "page"), ("resolved", "info"), ("open", "page")]
+
+
+@pytest.mark.parametrize("interval", [0, -1])
+def test_class11_invalid_configuration_is_a_startup_error(tmp_path, interval):
+    with pytest.raises(SystemExit, match="checks.m4"):
+        setup(tmp_path, checks=M4, cfg={"m4": {"interval_s": interval}})
