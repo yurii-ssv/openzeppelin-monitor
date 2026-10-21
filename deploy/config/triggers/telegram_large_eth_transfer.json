@@ -1,0 +1,18 @@
+{
+  "telegram_large_eth_transfer": {
+    "name": "Telegram Large ETH Transfer Alert",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "Large ETH Transfer (>1 ETH)",
+        "body": "Value: ${transaction.value} wei\nFrom: ${transaction.from}\nTo: ${transaction.to}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})\n\n${functions}"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "telegram_dao_success": {
+    "name": "DAO Success Alert",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "DAO Action",
+        "body": "Called by: ${transaction.from}\nTo: ${transaction.to}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})${functions}${events}"
+      }
+    }
+  }
+}

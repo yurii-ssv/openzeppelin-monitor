@@ -1,0 +1,16 @@
+{
+  "discord_liquidation_failed": {
+    "name": "Discord Liquidation Failed Alert",
+    "trigger_type": "discord",
+    "config": {
+      "discord_url": {
+        "type": "environment",
+        "value": "DISCORD_WEBHOOK_LIQUIDATION_FAILED"
+      },
+      "message": {
+        "title": "FAILED Liquidation",
+        "body": "Function: ${functions.0.signature}\nCluster Owner: ${functions.0.args.clusterOwner}\nOperator IDs: ${functions.0.args.operatorIds}\nCalled by: ${transaction.from}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})\n\n${functions}"
+      }
+    }
+  }
+}
