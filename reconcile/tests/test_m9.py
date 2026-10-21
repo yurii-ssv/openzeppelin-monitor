@@ -868,3 +868,30 @@ def test_reorg_orphaning_the_clearance_of_a_resolved_dissent_reopens_it(tmp_path
     tick(w, oc, 2)
     assert open_keys(w, "m9") == {"dissent:3": "warn"}
     assert [k for k, s, kind in pages_warns(w)] == ["dissent:3", "dissent:3"]  # a new incident on the new chain
+
+
+def test_a_round_superseded_within_its_30_minutes_is_not_failed_and_one_superseded_later_is(tmp_path):
+    """Found by the adversarial sweep: a newer blockNum committed within the 30 min delivered a root (the older round
+    can no longer commit, nothing failed); a round still uncommitted at its deadline is a failed round, listed in the
+    page of its run even when the run's other rounds were already resolved by the same commit."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    a = oc.c.number - 1
+    oc.vote(a, 1)
+    oc.vote(a, 2)  # round a: no quorum
+    tick(w, oc, 5)
+    oc.round()  # a newer round commits 1 min later
+    tick(w, oc, 200)
+    assert pages_warns(w) == []
+    b = oc.c.number - 1
+    oc.vote(b, 1)
+    oc.vote(b, 2)
+    tick(w, oc, 155)  # b failed
+    c = oc.c.number - 1
+    oc.vote(c, 3)
+    oc.vote(c, 4)  # c: no quorum yet
+    oc.round(ref=oc.c.number - 1)  # d commits: closes b (late) and c (inside its 30 min)
+    tick(w, oc, 200)
+    texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"]
+    assert len(texts) == 2 and str(b) in texts[0] and "can no longer commit" in texts[1]
+    assert all(f"blockNum {c}" not in t for t in texts) and open_keys(w, "m9") == {}

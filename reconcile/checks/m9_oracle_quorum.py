@@ -5,7 +5,7 @@ and reports, through the episode book (`m9_episodes`):
 
 | Trigger (spec) | Key | Severity | Rule here |
 |---|---|---|---|
-| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no commit of that `blockNum` with a chain timestamp within `round_timeout_s` of its first vote, once the horizon (m9_oracle_common `BlockTimes`: the checkpoint's timestamp, or the clock when blocks stop) is past that deadline; consecutive failed rounds are one incident re-sent per failed round (`revision`); healed by a late commit or a superseding commit |
+| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no commit closing the round (its own, or a later `blockNum`'s, which makes it un-committable) with a chain timestamp within `round_timeout_s` of its first vote, once the horizon (m9_oracle_common `BlockTimes`: the checkpoint's timestamp, or the clock when blocks stop) is past that deadline; consecutive failed rounds are one incident re-sent per failed round (`revision`); healed by a late commit or a superseding commit |
 | no `RootCommitted` for > 9 h | `cadence` | page | horizon − timestamp of the last commit block (or of `start_block`) > `max_commit_gap_s`: the clock keeps it growing while blocks or events stop; healed by the next commit. A gap that opened and closed while the worker was not evaluating is reported once from the commits' timestamps |
 | two roots for one `blockNum` | `split` | warn | as soon as a round has two distinct roots and no reference root yet (not committed and inside its 30 min, or settled with tied roots): immediate, unattributed; healed when the round settles with a reference root (the dissent moves to `dissent:<slot>`) or a later round commits |
 | two roots for one `blockNum`, attributed | `dissent:<slot>` | warn | per settled round (committed, superseded or timed out), a slot that voted any root other than the reference root (committed root; for an uncommitted round the unique plurality root), also when the same slot voted the reference root too (e.g. across an owner change); re-sent per new dissenting round (`revision`); healed only by positive proof: the slot votes the reference root and nothing else in a settled round |
@@ -136,7 +136,8 @@ class M9OracleQuorum(Check):
             reference = leaders[0] if len(leaders) == 1 else None
         else:
             reference = None
-        in_time = rnd.commit is not None and self.times(rnd.commit.block) <= deadline
+        # a commit that closes the round (its own, or a later blockNum's: the oracle delivered a newer root) in time
+        in_time = close is not None and self.times(close.block) <= deadline
         failed = not in_time and self.now > deadline
         return SimpleNamespace(rnd=rnd, ref=rnd.ref, first_at=first_at, deadline=deadline, close=close,
                                settled=settled, reference=reference, failed=failed,
