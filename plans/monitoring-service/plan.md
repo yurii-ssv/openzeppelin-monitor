@@ -92,6 +92,31 @@ Parallelism rules: disjoint writes only; each CP2 lane adds files, it never edit
 
 **Dispatch commands (the coordinator's own Run).** Placement precondition (F14, event-0009): Orca resolves `--worktree current` and the lineage of `new-child` from the coordinator's own Orca tab (`ORCA_WORKSPACE_ID`), not from the shell cwd. The coordinator therefore runs in an Orca tab of the `ssv-network-monitor` workspace (`ORCA_WORKSPACE_ID` = `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a::/Users/marco/ssv/repos/ssv-network-monitor`), checked before run-create, and every `worker-start` also passes `--repo id:316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`; the receipt's worktree effect must name that repo id and a path under the monitor repo or its Orca workspaces, else stop. The coordinator loads the orchestration skill (`orca skills get orchestration`) and creates a fresh Run; the commands below are shapes, the skill is authoritative for syntax. Before the first dispatch the coordinator checks `orca --version` works (F13); if it does not, it uses the full app path and tells workers to do the same. Every task spec says: "export PATH=$HOME/.foundry/bin:$PATH". Implementer: `orca orchestration task-create --spec "<packet>" --task-title "<CP> implement" --json`, then `orca orchestration worker-start --task <task_id> --worktree new-child --name ms-<cp> --base-branch plan/monitoring-service --agent claude --model <opus|sonnet> --effort high --json`. QA, always Codex GPT Sol 6.1 high: `orca orchestration task-create --spec "<qa/QA-CONTRACT.md + checkpoint id + lane branch head hash>" --task-title "<CP> QA" --json`, then `orca orchestration worker-start --task <qa_task_id> --worktree new-child --name ms-qa-<cp> --base-branch plan/ms/<cp> --agent codex --model gpt-6.1-sol --effort high --json`. Compare `launch.requested` with `launch.effective` and refuse to proceed on a mismatch. Wait with `orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 900000 --json`; after settlement `worker-release --dispatch <id>`.
 
+**Codex QA approval mode (2026-10-21).** Every new Codex QA session must use automatic approval review, equivalent to `codex --approve-for-me`: effective `approval_policy = "on-request"`, `approvals_reviewer = "auto_review"`, and workspace-write sandboxing. A task prompt cannot set runtime permissions. The coordinator verifies these effective settings from session configuration/startup evidence before QA execution and records them with the dispatch; the existing model/effort receipt alone is insufficient. Keep the plan's human verification and scope gates. Automatic review can reject an action: try a materially safer authorized alternative, or report the rejected action and reason to the coordinator. Do not replace this mode with `approval_policy = "never"` or disabled sandboxing.
+
+The installed Orca `worker-start` and `agent launch` commands expose no approval-mode or arbitrary-argv flag. Use one of these supported routes:
+
+1. **Inherited Codex configuration:** retain the normal QA `worker-start --agent codex` command above when the execution host supplies the following Codex settings and the fresh session proves they took effect. A user-wide configuration change affects other Codex sessions too; do not make that broader change implicitly. Orca launch overrides or managed requirements may affect the effective settings.
+
+   ```toml
+   approval_policy = "on-request"
+   approvals_reviewer = "auto_review"
+   sandbox_mode = "workspace-write"
+   ```
+
+2. **Explicit CLI mode for this QA worker:** when inherited settings are unavailable, use Orca's custom-argv terminal route and attach that terminal through `worker-start --terminal` to preserve supervised lifecycle ownership. Create the fresh QA worktree without `--agent`, then launch Codex exactly once. Shapes below use the exact worktree selector and terminal handle returned by Orca, not guessed identifiers:
+
+   ```text
+   orca worktree create --repo id:316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a --name ms-qa-<cp> --parent-worktree active --base-branch plan/ms/<cp> --json
+   orca terminal create --worktree <qa_worktree_selector> --title "<CP> Codex QA" --command 'codex --approve-for-me --model gpt-6.1-sol -c model_reasoning_effort="high"' --json
+   orca terminal wait --terminal <qa_terminal_handle> --for tui-idle --timeout-ms 60000 --json
+   orca orchestration worker-start --task <qa_task_id> --worktree <qa_worktree_selector> --terminal <qa_terminal_handle> --json
+   ```
+
+   Load the version-matched orchestration `references/low-level-topology.md` before this route and inspect current CLI help. Verify model, effort and approval mode from the running Codex session; `--terminal` cannot be combined with `--model`/`--effort`. Preserve the frozen lane head and setup/environment preconditions. Use the returned Dispatch for normal completion and release. Do not substitute `dispatch --inject`, which leaves a custom terminal unsupervised. Apply this route to future QA starts; do not interrupt an active attempt or create a duplicate worker to change its permissions.
+
+Configuration semantics: [OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). CLI mode: [OpenAI CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli). This section records the launch requirement and procedure; it does not claim that host configuration or an active session has already changed.
+
 **Alert routing (D2).** Severity `page`, `warn` → Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`); `info`, `digest` → Discord (`DISCORD_WEBHOOK_INFO`). Development and QA set `TEST_TELEGRAM_TOKEN`, `TEST_TELEGRAM_CHAT_ID`, `TEST_DISCORD_WEBHOOK`, or run the worker with `alerts.mode: "record"`. Re-alert cadence while an incident stays open: page every 6 h, warn every 24 h, info once plus the daily digest. Escalation re-sends under the same incident id.
 
 **Failed-transaction inbox (Monitor → worker).** Append-only JSONL at `data/inbox/failed-tx.jsonl` in the Monitor container, mounted read-only at `/inbox/failed-tx.jsonl` in the worker. One line per matched failed transaction:
