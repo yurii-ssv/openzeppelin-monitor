@@ -9,6 +9,13 @@ reconciled with logs, every tuple validated against storage at the evaluated blo
   getBalanceSSV == 0 while active (and burning: validatorCount > 0)                         -> page
   weekly digest: legacy clusters, validators, SSV/yr burn                                    -> digest
 
+Coordinator rulings (2026-10-21, spec amendment at closure): the warn window is a fraction of the live chain
+window (Q1); a cluster without validators burns nothing and is never paged at balance 0 — it is listed in the
+digest instead, and the block that gives it a validator at balance 0 pages (Q2).
+
+Schedule: a full sweep every `sweep_interval_s`, plus a run scoped to the clusters of new cluster events
+(validator added/removed, liquidated, reactivated, migrated), so such a change is evaluated at its block.
+
 One incident per cluster (key = cluster id): warn escalates to page under the same id; it resolves when the
 cluster is liquidated, migrated to ETH or no longer meets either condition. Every value is read at the run's
 block through Views (`getBalanceSSV`, `isLiquidatableSSV`, `getBurnRateSSV`) and `ctx.params`; nothing is
