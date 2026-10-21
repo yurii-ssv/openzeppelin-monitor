@@ -178,6 +178,23 @@ def test_m7_unpriced_legacy_cluster_is_unknown_not_clean(tmp_path):
     assert incidents(lw.w)["surplus"]["revision"] == str(SSV)
 
 
+def test_m7_legacy_cluster_missing_from_the_inventory_is_unknown_not_a_smaller_liability(tmp_path):
+    lw, a = world(tmp_path)
+    advance(lw.w)
+    lw.rows.clear()  # the API drops the row; storage still holds the legacy cluster
+    lw.clock.advance(DAY)
+    lw.chain.mine()
+    advance(lw.w)
+    assert len(findings_out(lw.w)) == 1 and incidents(lw.w)["surplus"]["revision"] == str(SSV)
+    assert "missing from the inventory" in outbox(lw.w, "severity='health'")[0]["text"]
+    lw.ssv.migrate(a.owner, a.ops)  # now it really left VERSION_SSV (and the ETH log lists it again)
+    lw.views(a, balance=0)
+    lw.ledger(proxy_ssv=BALANCED - CLUSTER, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    day(lw)
+    assert lw.w.db.conn.execute("SELECT COUNT(*) FROM m7_legacy").fetchone()[0] == 0
+    assert incidents(lw.w)["surplus"]["revision"] == str(SSV) and len(findings_out(lw.w)) == 1
+
+
 def test_m7_unknown_still_pages_when_the_upper_bound_is_below_the_floor(tmp_path):
     lw, a = world(tmp_path, proxy=BALANCED - CLUSTER - SSV)  # even without the cluster's claim: below
     lw.views(a, balance=CLUSTER, revert=True)

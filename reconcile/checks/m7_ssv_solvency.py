@@ -24,9 +24,15 @@ operator count of 0 next to existing legacy clusters leaves a claim unpriced. Th
 upper bound of the surplus: below the floor it still pages (more claims can only lower it); otherwise a
 health message says M7 cannot evaluate and the open incidents are re-reported unchanged.
 
-Reorg rule (README §6.2): M7 keeps no table of its own; every run (reorg runs included) recomputes the whole
-ledger at its block from the canonical chain and reports both keys (a finding, `resolve=True`, or an
-UNKNOWN re-report), so `ctx.reorg_keys` is always covered. The unstake sums come from the worker's stored
+Completeness guard: `m7_legacy` remembers every legacy cluster id the inventory listed; one that disappears
+from the inventory while storage still holds it as `VERSION_SSV` is an unpriced claim (UNKNOWN), not a
+smaller liability. Ids leave the table only when storage says the cluster was migrated or no longer exists.
+
+Reorg rule (README §6.2): every run (reorg runs included) recomputes the whole ledger at its block from the
+canonical chain and reports both keys (a finding, `resolve=True`, or an UNKNOWN re-report), so
+`ctx.reorg_keys` is always covered. `m7_legacy` holds ids only, never values, and is not rewound: a legacy
+cluster cannot be created after the v2 activation, so an id first listed on a deleted block was legacy on the
+canonical chain too, and every run re-checks each id against storage at its own block. The unstake sums come from the worker's stored
 logs, which the reorg rewinds; the prefix sum covers only blocks below `start_block`.
 """
 
@@ -43,7 +49,7 @@ from checks.m6_legacy_coverage import (
     word,
 )
 from checks.registry import register
-from eb_storage import MAIN_BASE, keccak, u256
+from eb_storage import MAIN_BASE, eth_cluster_slot, keccak, ssv_cluster_slot, u256
 
 MAIN_TOKEN = MAIN_BASE + 7  # StorageData.token (IERC20), SSVStorage.sol at the pin
 MAIN_LAST_OPERATOR_ID = MAIN_BASE + 8  # StorageData.lastOperatorId (Counters.Counter)
@@ -80,6 +86,7 @@ class M7SsvSolvency(Check):
         "unstake_history_from": None,  # required: first block of the staking module (no unstake log before it)
     }
     events = UNSTAKE_EVENTS
+    schema = "CREATE TABLE IF NOT EXISTS m7_legacy (cluster_id TEXT PRIMARY KEY, first_block INTEGER NOT NULL)"
 
     def __init__(self, config: dict, settings: dict):
         super().__init__(config, settings)
@@ -183,6 +190,25 @@ class M7SsvSolvency(Check):
         for cid, why in failed.items():
             unknown[f"cluster:{cid}"] = why
         clusters = sum(v["balance"] for v in values.values())
+        # a legacy cluster seen before that the inventory no longer lists (an API page or row missing) is an
+        # unpriced claim unless storage says it left VERSION_SSV
+        listed = {c.cluster_id for c in legacy}
+        for c in legacy:
+            ctx.db.conn.execute("INSERT OR IGNORE INTO m7_legacy (cluster_id, first_block) VALUES (?, ?)",
+                                (c.cluster_id, block))
+        gone = [r[0] for r in ctx.db.conn.execute("SELECT cluster_id FROM m7_legacy ORDER BY cluster_id")
+                if r[0] not in listed]
+        if gone:
+            slots = []
+            for cid in gone:
+                raw = bytes.fromhex(cid[2:])
+                slots += [eth_cluster_slot(raw), ssv_cluster_slot(raw)]
+            words = ctx.rpc.storage(self.proxy, slots)
+            for i, cid in enumerate(gone):
+                if words[2 * i + 1] and not words[2 * i]:
+                    unknown[f"cluster:{cid}"] = "legacy in storage but missing from the inventory"
+                else:  # migrated to ETH or gone: no longer an SSV claim
+                    ctx.db.conn.execute("DELETE FROM m7_legacy WHERE cluster_id=?", (cid,))
 
         requested, withdrawn, n_req, n_wd = self.unstakes(ctx, block)
         outstanding = requested - withdrawn

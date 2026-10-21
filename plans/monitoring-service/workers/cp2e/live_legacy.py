@@ -114,11 +114,11 @@ def main(argv=None) -> int:
         m6.prepare(ctx6)
         active = [c for c in inv.clusters.values() if c.version == "SSV" and c.valid and c.cluster.active]
         values, failed = legacy_balances(ctx6, VIEWS, active, with_risk=True)
-        with db.tx():
-            for s in (m6.schema,):
-                db.conn.execute(s)
-            findings6 = m6.run(ctx6, block)
         m7 = M7SsvSolvency({**M7SsvSolvency.defaults, "cssv": CSSV, "unstake_history_from": ACTIVATION}, settings)
+        with db.tx():
+            for stmt in (m6.schema, m7.schema):
+                db.conn.execute(stmt)
+            findings6 = m6.run(ctx6, block)
         ctx7 = ctx_for(m7)
         with db.tx():
             ledger, unknown = m7.ledger(ctx7, block)
