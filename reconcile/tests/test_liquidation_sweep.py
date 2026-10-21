@@ -16,6 +16,12 @@ action is scripted — never the check's output. Invariants after every step:
      M14's count is the oracle's count of hits within 24 h of the checkpoint block's own timestamp.
 At the end, with every input restored, the lived worker's open incidents equal those of a fresh worker run
 once on the final chain.
+
+Repair 2 (QA cp2a-2 H1): M14 also runs with `confirmations` > 0 (seeds 60-89), where a reorg from a block near
+the head onto a shorter chain lowers the checkpoint below failed liquidations whose blocks survive. 5. no event
+lost between sweeps: a liquidation the worker already saw (its block was once at or below a checkpoint) and that is
+above the current checkpoint may hold its cluster (UNKNOWN until confirmed) but never lets it resolve, and once its
+block is confirmed again its hit is counted (invariant 3), so a surviving hit is never dropped.
 """
 
 from __future__ import annotations
@@ -70,10 +76,10 @@ class Base:
     def state_at(self, block):
         return self.snaps[max(b for b in self.snaps if b <= block)]
 
-    def reorg(self, depth, extra):
-        """Replace the last `depth` checkpointed blocks; the new chain is `extra` blocks long."""
-        cp = self.w.checkpoint()["block"]
-        frm = cp - depth + 1
+    def reorg(self, depth, extra, top=None):
+        """Replace the last `depth` blocks below `top` (default: the checkpoint); the new chain is `extra` blocks
+        long."""
+        frm = (self.w.checkpoint()["block"] if top is None else top) - depth + 1
         if frm <= self.start + 2:
             return False
         self.chain.reorg(frm)
@@ -240,14 +246,16 @@ def test_m3_sweep(tmp_path, seed):
 
 
 class M14Sweep(Base):
-    def __init__(self, tmp_path, seed):
+    def __init__(self, tmp_path, seed, confirmations=0):
         self.rng = random.Random(f"m14-sweep:{seed}")
         self.tmp = tmp_path
+        self.conf = confirmations
         self.path = tmp_path / "failed-tx.jsonl"
         self.path.write_text("")
         chain = LiquidationChain()
         stub_liquidation_reverts(chain)
-        self.chain, self.w, self.cl = setup(tmp_path, checks=("m14",), chain=chain, inbox={"path": str(self.path)})
+        self.chain, self.w, self.cl = setup(tmp_path, checks=("m14",), chain=chain, inbox={"path": str(self.path)},
+                                            confirmations=confirmations)
         chain.clock = None  # chain time is slots plus the scripted missed-slot gaps only
         cl = self.cl
         # liquidatable far from zero; healthy; burning to zero; a legacy SSV cluster (SSV units)
@@ -259,6 +267,8 @@ class M14Sweep(Base):
         self.labels: list[dict] = []  # every failed liquidation scripted: block, cluster, qualifying, tx
         self.deposits: list[tuple[int, int, bytes, int]] = []  # (block, tx position, cluster, value)
         self.unreadable: dict[str, dict] = {}
+        self.orphans: list[dict] = []  # labels a reorg removed (their inbox lines stay in the file)
+        self.max_cp = 0  # the highest checkpoint so far: a label at or below it was seen by the worker
         self.start = chain.sealed  # reorgs never remove the clusters' creation
         self.snaps = {}
         self.snapshot()
@@ -315,7 +325,8 @@ class M14Sweep(Base):
             self.unreadable[tx] = chain.txs.pop(tx)
         chain.mine()
         self.labels.append({"block": B, "cid": "0x" + cid.hex(), "q": q and not unknown, "tx": tx,
-                            "unknown": unknown})
+                            "unknown": unknown, "dep": dust[-1][:2] if dust else None,
+                            "seq": len(self.labels) + len(self.orphans)})
 
     def act(self):
         r, chain, cl = self.rng, self.chain, self.cl
@@ -339,12 +350,18 @@ class M14Sweep(Base):
             tx = r.choice(sorted(self.unreadable))
             chain.txs[tx] = self.unreadable.pop(tx)
         elif kind == "reorg":
-            frm = self.reorg(r.choice([1, 2, 5]), r.choice([1, 3, 8]))
+            if self.conf:  # from near the head, often onto a chain whose new checkpoint is below surviving blocks
+                frm = self.reorg(r.choice([1, 2, 4, self.conf + 3, self.conf + 8]), r.choice([1, 2, 3, 8]),
+                                 top=chain.sealed)
+            else:
+                frm = self.reorg(r.choice([1, 2, 5]), r.choice([1, 3, 8]))
             if frm:
+                self.orphans += [lb for lb in self.labels if lb["block"] >= frm]
                 self.labels = [lb for lb in self.labels if lb["block"] < frm]
                 self.deposits = [d for d in self.deposits if d[0] < frm]
         elif kind == "restart":
-            self.w = restart(self.tmp, self.w, checks=("m14",), inbox={"path": str(self.path)})
+            self.w = restart(self.tmp, self.w, checks=("m14",), inbox={"path": str(self.path)},
+                             confirmations=self.conf)
         else:
             chain.mine()
         self.snapshot()
@@ -352,20 +369,31 @@ class M14Sweep(Base):
     def oracle(self, cp):
         now = self.chain.timestamp(cp)
         recent, unread, held = {}, [], set()
+        # the inbox delivers in file order and stops at the first line whose block is not confirmed (above cp)
+        gate = min([lb["seq"] for lb in self.labels + self.orphans if lb["block"] > cp], default=float("inf"))
         for lb in self.labels:
-            if lb["block"] <= cp and now - self.chain.timestamp(lb["block"]) < WINDOW:
+            if lb["seq"] > gate and lb["block"] <= cp:
+                held.add(lb["cid"])  # confirmed, but queued behind an unconfirmed line: delivered later
+            elif lb["block"] <= cp and now - self.chain.timestamp(lb["block"]) < WINDOW:
                 if lb["tx"] in self.unreadable:
                     unread.append(lb)
                 elif lb["unknown"]:
                     held.add(lb["cid"])
                 elif lb["q"]:
                     recent.setdefault(lb["cid"], []).append(lb)
+        for lb in self.labels + self.orphans:  # 5. seen, now above the checkpoint: UNKNOWN until confirmed again
+            if cp < lb["block"] <= self.max_cp:
+                if lb["tx"] in self.unreadable:
+                    unread.append(lb)  # its cluster is unknown: it may hold any key
+                else:
+                    held.add(lb["cid"])
         want = {}
         for cid, hits in recent.items():
             owner, ops, version = next(c for c in self.clusters if cid_hex(c[0], c[1]) == cid)
             st = self.state_at(cp)[cluster_id(owner, ops)]
             zero = st["active"] and st["count"] > 0 and self.chain.balance_at(cluster_id(owner, ops), cp) == 0
-            want[cid] = ("page" if zero else "warn" if len(hits) >= 3 else "info", len(hits))
+            times = len({lb["dep"] for lb in hits})  # a time is one front-running deposit (QA cp2a-2 M1 ruling)
+            want[cid] = ("page" if zero else "warn" if times >= 3 else "info", times)
         return want, unread, held
 
     def check(self, since, step):
@@ -389,27 +417,40 @@ class M14Sweep(Base):
                 assert ev["count"] == count and ev["chain_time"] == self.chain.timestamp(cp), where  # 4
 
 
-@pytest.mark.parametrize("seed", range(60))
+@pytest.mark.parametrize("seed", range(90))
 def test_m14_sweep(tmp_path, seed):
-    s = M14Sweep(tmp_path, seed)
+    s = M14Sweep(tmp_path, seed, confirmations=0 if seed < 60 else 4)
     advance(s.w)
     for step in range(30):
         s.act()
         since = last_rowid(s.w)
         s.w.clock.advance(600)
         advance(s.w)
+        s.max_cp = max(s.max_cp, s.w.checkpoint()["block"])
         s.check(since, step)
     for tx in list(s.unreadable):
         s.chain.txs[tx] = s.unreadable.pop(tx)
-    s.chain.mine()
+    top = max([lb["block"] for lb in s.labels + s.orphans], default=0)
+    s.chain.mine(max(1, top + s.conf + 1 - s.chain.sealed))  # every inbox line's block is confirmed
     s.w.clock.advance(600)
     advance(s.w)
+    s.max_cp = max(s.max_cp, s.w.checkpoint()["block"])
     s.check(last_rowid(s.w), "final")
     fresh_path = tmp_path / "fresh"
     fresh_path.mkdir()
     _, fresh = make_worker(fresh_path, only=["m14"], chain=s.chain, views=VIEWS, checks={},
                            inbox={"path": str(s.path)}, start_block=s.w.cfg.start_block,
-                           activation_block=s.w.cfg.activation_block, clock=FakeClock(s.w.clock.now))
+                           activation_block=s.w.cfg.activation_block, clock=FakeClock(s.w.clock.now),
+                           confirmations=s.conf)
     advance(fresh)
     lived, oracle = open_incidents(s.w, "m14"), open_incidents(fresh, "m14")
-    assert {k: v["severity"] for k, v in lived.items()} == {k: v["severity"] for k, v in oracle.items()}
+    # an entry still UNKNOWN (state at the failed transaction undeterminable) keeps an incident the lived worker had
+    # open at its severity, but opens nothing on a fresh worker: the only history-dependent difference allowed
+    _, _, held = s.oracle(s.w.checkpoint()["block"])
+    rank = {"info": 0, "warn": 1, "page": 2}
+    assert set(oracle) <= set(lived) and set(lived) - set(oracle) <= held
+    for k, v in lived.items():
+        if k in held:
+            assert k not in oracle or rank[v["severity"]] >= rank[oracle[k]["severity"]], k
+        else:
+            assert v["severity"] == oracle[k]["severity"], k

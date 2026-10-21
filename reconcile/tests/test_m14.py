@@ -850,3 +850,147 @@ def test_class1_calldata_that_is_not_the_liquidation_is_permanent_not_pending(tm
     advance(w)
     assert "calldata unusable" in unknown_health(w)[-1] and not incidents(w, "m14")
     assert not w.db.conn.execute("SELECT * FROM m14_pending").fetchall()
+
+
+# ---------------------------------------------------------------- QA cp2a attempt 2 regressions (repair 2)
+# Each was red on the frozen head 1154333 (workers/cp2a/repair2/red-on-frozen.txt), green after.
+
+
+def attacks_then_shorter_chain(chain, w, cl, path, attacks, orphan=False):
+    """QA2 H1 shape (confirmations = 12): a recorded checkpoint below the attack, then `attacks` front-runs (the 1-wei
+    deposit in its own block, the reverted liquidation in the next one; the failed transaction emits no log), confirmed
+    and alerted. Then a reorg onto a SHORTER chain: from X + 3 (blocks <= X + 2 keep their hashes, the evidence stays
+    canonical) or, with `orphan`, from X (the last failed transaction's block is replaced). Either way the new
+    checkpoint (the last recorded surviving block) is below X. Returns (X, failed tx hashes)."""
+    chain.mine(12)
+    advance(w)
+    txs = []
+    for _ in range(attacks):
+        old = cl.tuple()
+        cl.deposit(value=1)
+        tx, _ = failed_liquidation(chain, cl, path, tuple_=old)
+        txs.append(tx)
+        chain.mine()
+    X = chain.sealed
+    chain.mine(20)
+    advance(w)
+    assert sorted(h["tx_hash"] for h in hits(w)) == sorted(txs) and w.checkpoint()["block"] > X
+    chain.reorg(X if orphan else X + 3)
+    return X, txs
+
+
+@pytest.mark.parametrize("repeat,attacks,severity", [(1, 1, "warn"), (3, 3, "warn"), (3, 1, "info")])
+def test_qa2_h1_shorter_chain_keeps_the_key_and_re_derives_the_surviving_hit(tmp_path, repeat, attacks, severity):
+    """QA2 H1: the entries above the lowered checkpoint are neither re-derivable (their block is not confirmed yet) nor
+    absent: the key is kept at its severity (UNKNOWN, health) and the hits are re-derived once the checkpoint confirms
+    their blocks again, with no resolution and no re-send (no clock advance: the check runs at that block)."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": repeat}}, confirmations=12)
+    X, txs = attacks_then_shorter_chain(chain, w, cl, path, attacks)
+    opened = sent(w, "m14")
+    assert opened[-1][1] == severity
+    advance(w)
+    assert w.checkpoint()["block"] < X and "reorg" in w.db.meta("run:m14")["reasons"]
+    assert sent(w, "m14") == opened and open_incidents(w, "m14")[cid_hex()]["severity"] == severity
+    assert "above the checkpoint" in unknown_health(w)[-1]
+    chain.mine(30)  # the new chain grows past X; X and the attack are canonical
+    advance(w)
+    assert sorted(h["tx_hash"] for h in hits(w)) == sorted(txs)
+    assert sent(w, "m14") == opened and open_incidents(w, "m14")[cid_hex()]["severity"] == severity
+    assert not w.db.conn.execute("SELECT * FROM m14_pending").fetchall()
+    assert w.db.meta("cursor:inbox:m14") == w.db.conn.execute("SELECT MAX(id) FROM inbox").fetchone()[0]
+
+
+def test_qa2_h1_shorter_chain_that_replaces_the_failed_block_resolves_once_confirmed(tmp_path):
+    """The twin: the failed liquidation's block X is replaced. Until the checkpoint reaches X nothing proves it, so the
+    key is kept; once X is confirmed with another hash the entry is orphaned and the warn resolves, never re-paged."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}}, confirmations=12)
+    X, _ = attacks_then_shorter_chain(chain, w, cl, path, 1, orphan=True)
+    advance(w)
+    assert w.checkpoint()["block"] < X and sent(w, "m14") == [("open", "warn")] and open_incidents(w, "m14")
+    chain.mine(30)
+    advance(w)
+    assert not hits(w) and not open_incidents(w, "m14")
+    assert sent(w, "m14") == [("open", "warn"), ("resolved", "info")]
+    w.clock.advance(10 * 86_400)
+    chain.mine()
+    advance(w)
+    w.housekeeping()
+    assert not outbox(w, "kind='realert'") and len(sent(w, "m14")) == 2
+
+
+def test_qa2_h1_restart_while_an_entry_awaits_confirmation_re_derives_it(tmp_path):
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}}, confirmations=12)
+    X, txs = attacks_then_shorter_chain(chain, w, cl, path, 1)
+    advance(w)
+    assert w.checkpoint()["block"] < X
+    w = restart(tmp_path, w, checks=M14, cfg={"m14": {"repeat_count": 1}}, inbox={"path": str(path)},
+                confirmations=12)
+    chain.mine(30)
+    advance(w)
+    assert [h["tx_hash"] for h in hits(w)] == txs and sent(w, "m14") == [("open", "warn")]
+    assert open_incidents(w, "m14")
+
+
+def test_qa2_h1_second_reorg_below_an_awaiting_entry_keeps_it(tmp_path):
+    """Depth N then depth 1: a second shorter-chain reorg while the entry still awaits confirmation."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}}, confirmations=12)
+    X, txs = attacks_then_shorter_chain(chain, w, cl, path, 1)
+    advance(w)
+    chain.mine(4)
+    advance(w)
+    chain.reorg(X + 2)
+    advance(w)
+    assert w.checkpoint()["block"] < X and sent(w, "m14") == [("open", "warn")] and open_incidents(w, "m14")
+    chain.mine(30)
+    advance(w)
+    assert [h["tx_hash"] for h in hits(w)] == txs and sent(w, "m14") == [("open", "warn")]
+
+
+def test_qa2_m1_one_deposit_reverting_three_liquidations_is_one_time(tmp_path):
+    """Coordinator ruling on QA2 M1: a 'time' is one front-running deposit. Three keepers racing one 1-wei deposit in
+    one block are one time (info); the evidence lists the three liquidations that deposit blocked."""
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    dep = cl.deposit(value=1, mine=False)
+    txs = [failed_liquidation(chain, cl, path, tuple_=old)[0] for _ in range(3)]
+    chain.mine()
+    advance(w)
+    assert len(hits(w)) == 3 and sent(w, "m14") == [("open", "info")]
+    ev = json.loads(open_incidents(w, "m14")[cid_hex()]["evidence"])
+    assert ev["count"] == 1 and ev["liquidations"] == 3 and ev["deposits"] == {dep: txs}
+    assert "blocked 3 liquidation(s)" in outbox(w, "kind='open'")[0]["text"]
+
+
+def test_qa2_m1_one_deposit_blocking_its_block_and_the_next_is_one_time_and_not_re_sent(tmp_path):
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 2}})
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old)
+    chain.mine()
+    advance(w)
+    failed_liquidation(chain, cl, path, tuple_=old)  # the next block: the same deposit is in the previous block
+    chain.mine()
+    advance(w)
+    assert len(hits(w)) == 2 and sent(w, "m14") == [("open", "info")]
+    assert json.loads(open_incidents(w, "m14")[cid_hex()]["evidence"])["count"] == 1
+
+
+def test_qa2_m1_three_distinct_deposits_warn(tmp_path):
+    """The warn counts distinct deposits: two liquidations blocked by deposit 1, one each by deposits 2 and 3."""
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    for _ in range(2):
+        failed_liquidation(chain, cl, path, tuple_=old)
+    chain.mine(10)
+    advance(w)
+    assert sent(w, "m14") == [("open", "info")]
+    frontrun(chain, cl, path)
+    chain.mine(10)
+    advance(w)
+    assert sent(w, "m14") == [("open", "info"), ("update", "info")]
+    frontrun(chain, cl, path)
+    advance(w)
+    assert sent(w, "m14") == [("open", "info"), ("update", "info"), ("escalate", "warn")]
+    ev = json.loads(open_incidents(w, "m14")[cid_hex()]["evidence"])
+    assert ev["count"] == 3 and ev["liquidations"] == 4

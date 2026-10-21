@@ -6,13 +6,16 @@ the old tuple reverts (IncorrectClusterState). Sustained, this keeps a cluster a
   a reverted liquidate / liquidateSSV (failed-tx inbox) on a cluster that is liquidatable at the failed
   transaction's position, with a ClusterDeposited for that cluster in the previous block or earlier in the
   same block whose value is below the cluster's burn for one block                         info (a "hit")
-  ≥ `repeat_count` (3) hits on the same cluster within `window_s` (86,400) of chain time        warn
+  ≥ `repeat_count` (3) times on the same cluster within `window_s` (86,400) of chain time       warn
   a cluster with a hit in the window is at computed zero (active, validators, balance == 0)     page
   no hit in the window (and nothing UNKNOWN that could be one)                         resolves the incident
 
-One incident per cluster (key = cluster id). While it is info, each new hit re-sends it (revision = the
-hit's transaction); warn and page are sent on escalation only (later hits are recorded and listed in the
-evidence); a lower severity (hits aged out of the window) is recorded silently.
+A "time" is one front-running deposit (coordinator ruling on QA cp2a-2 M1; spec amendment at closure): the
+hits that share a `deposit_tx` (several keepers racing one dust deposit, in its block and the next) count once;
+the evidence lists, per deposit, the liquidations it blocked. The count is of distinct deposits whose hits are
+within the window. One incident per cluster (key = cluster id). While it is info, each new time re-sends it
+(revision = the deposit's transaction); warn and page are sent on escalation only (later times are recorded
+and listed in the evidence); a lower severity (times aged out of the window) is recorded silently.
 
 Legacy SSV clusters (`liquidateSSV`) use the `…SSV` views throughout: `isLiquidatableSSV`, `getBurnRateSSV`
 (SSV wei per block: the deposit value is compared in SSV units) and `getBalanceSSV` for the zero test; the
@@ -65,16 +68,26 @@ transaction, so no surviving hit depends on a deleted block); the inbox rows abo
 are re-derived (`canonical = 1`, re-confirmed in the same step) against the rescanned logs; if any entry of
 that run (re-derived, pending or new) has a transaction that cannot be read, the run **raises** (rolled back,
 the framework's reorg marker is kept, retried every step) because it could support any reorg key; one whose
-cluster is known but cannot be evaluated is pending and keeps that cluster's key at its severity. Then every cluster of `m14_open`, of the hits in the window and of
-`ctx.reorg_keys` is re-evaluated: a finding, or resolve=True only when no hit remains in the window and no
-pending entry could be one.
+cluster is known but cannot be evaluated is pending and keeps that cluster's key at its severity. Then every
+cluster of `m14_open`, of the hits in the window and of `ctx.reorg_keys` is re-evaluated: a finding, or
+resolve=True only when no hit remains in the window and no pending entry could be one.
+
+Entries above a lowered checkpoint (QA cp2a-2 H1; README §6.2 item 5 does not cover them): a reorg onto a
+shorter chain can leave the checkpoint below the block of an entry that was already delivered, while that
+block is still canonical. Its row is `canonical = NULL` (not re-confirmed, so not derivable: the logs above the
+checkpoint are not scanned yet) and the inbox cursor has passed it, so it is never delivered again. Such a
+liquidation entry is neither a hit nor absent: it is kept in `m14_pending` ("awaiting confirmation", cluster from
+its calldata when readable, no block time so it never ages out), holds its cluster's key (or, cluster unknown,
+every open key) at its severity, and is re-derived by the first run after the inbox confirms its block
+(`canonical = 1`; the check runs at every new checkpoint block while such an entry waits, `near_set`), or
+dropped once its block is found orphaned (`canonical = 0`), which is then positive proof.
 """
 
 from __future__ import annotations
 
 import json
 
-from checks.base import Check, Ctx, Every, Finding, OnInbox
+from checks.base import Check, Ctx, Every, Finding, NearSetEveryBlock, OnInbox
 from checks.m3_views import (
     GET_BALANCE,
     GET_BALANCE_SSV,
@@ -139,11 +152,13 @@ class M14DepositFrontrun(Check):
         if not (config["window_s"] > 0 and config["repeat_count"] >= 1 and config["sweep_interval_s"] > 0):
             raise SystemExit(f"checks.m14: need window_s > 0, repeat_count >= 1, sweep_interval_s > 0; got {config}")
         self.views, self.proxy = settings["views"].lower(), settings["proxy"].lower()
-        self.schedule = (OnInbox(), Every(config["sweep_interval_s"]))
+        self.schedule = (OnInbox(), Every(config["sweep_interval_s"]), NearSetEveryBlock())
+        self.near_set: frozenset = frozenset()  # inbox ids awaiting confirmation (run at every checkpoint block)
 
     def prepare(self, ctx: Ctx) -> None:
         ensure_columns(ctx.db.conn, "m14_hits", {"block_time": "INTEGER", "version": "TEXT"})
-        ensure_columns(ctx.db.conn, "m14_open", {"owner": "TEXT", "operator_ids": "TEXT", "last_hit": "TEXT"})
+        ensure_columns(ctx.db.conn, "m14_open", {"owner": "TEXT", "operator_ids": "TEXT", "last_hit": "TEXT",
+                                                 "last_deposit": "TEXT"})
 
     # ---- one inbox entry
 
@@ -275,6 +290,24 @@ class M14DepositFrontrun(Check):
                                 f"({', '.join('?' * len(HIT_COLUMNS))})", [hit[c] for c in HIT_COLUMNS])
         return None
 
+    def await_confirmation(self, ctx: Ctx, r) -> None:
+        """Keep a liquidation entry whose block is not confirmed (yet) as pending, with its cluster if readable."""
+        e = InboxEntry.from_row(r)
+        if self.liquidation(e) is None:
+            return
+        cluster = None
+        data = (ctx.rpc.transaction(e.tx_hash) or {}).get("input") or ""
+        if data.lower().startswith("0x" + LIQUIDATE[self.liquidation(e)].hex()):
+            try:
+                owner, ops, _ = decode_cluster_args(bytes.fromhex(data[10:]))
+                cluster = "0x" + cluster_id(owner, ops).hex()
+            except ValueError:
+                pass
+        ctx.db.conn.execute("INSERT OR REPLACE INTO m14_pending VALUES (?,?,?,?,?,?)",
+                            (e.id, e.tx_hash, e.block, None, cluster,
+                             f"block {e.block} is above the checkpoint after a reorg (not re-confirmed yet); "
+                             f"re-derived once the checkpoint confirms it"))
+
     # ---- run
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
@@ -296,11 +329,17 @@ class M14DepositFrontrun(Check):
         if A is not None:  # entries delivered before the reorg whose block is still canonical: re-derive
             rows += ctx.db.conn.execute("SELECT * FROM inbox WHERE canonical = 1 AND resolved = 1 AND block > ? "
                                         "ORDER BY id", (A,)).fetchall()
+            # above a lowered checkpoint (not re-confirmed yet): neither derivable nor absent, kept until confirmed
+            for r in ctx.db.conn.execute("SELECT * FROM inbox WHERE canonical IS NULL AND resolved = 1 AND block > ? "
+                                         "ORDER BY id", (A,)).fetchall():
+                self.await_confirmation(ctx, r)
         for p in ctx.db.conn.execute("SELECT inbox_id FROM m14_pending ORDER BY inbox_id").fetchall():
             r = ctx.db.conn.execute("SELECT * FROM inbox WHERE id=?", (p[0],)).fetchone()
             if r is None or r["canonical"] == 0:  # its block left the canonical chain
                 ctx.db.conn.execute("DELETE FROM m14_pending WHERE inbox_id=?", (p[0],))
-            else:
+            elif r["canonical"] is None:  # its block is not confirmed (yet): keep waiting
+                continue
+            elif r["id"] not in done:
                 rows.append(r)
         for r in rows:
             if r["id"] not in done:
@@ -314,6 +353,7 @@ class M14DepositFrontrun(Check):
 
         self.fill_times(ctx)
         pending = [dict(r) for r in ctx.db.conn.execute("SELECT * FROM m14_pending ORDER BY inbox_id")]
+        self.near_set = frozenset(p["inbox_id"] for p in pending if p["block_time"] is None)
         keys = {r[0] for r in ctx.db.conn.execute("SELECT cluster_id FROM m14_open")} | set(ctx.reorg_keys)
         keys |= {r[0] for r in ctx.db.conn.execute("SELECT DISTINCT cluster_id FROM m14_hits WHERE block_time > ?",
                                                    (now - window,))}
@@ -340,6 +380,9 @@ class M14DepositFrontrun(Check):
         hits = [dict(r) for r in ctx.db.conn.execute(
             "SELECT * FROM m14_hits WHERE cluster_id=? ORDER BY block, tx_index", (cid,))]
         recent = [h for h in hits if now - h["block_time"] < window]
+        times: dict[str, list] = {}  # deposit tx -> the hits it caused (one "time" each; QA cp2a-2 M1 ruling)
+        for h in recent:
+            times.setdefault(h["deposit_tx"], []).append(h)
         maybe = [p for p in pending if p["cluster_id"] in (None, cid)]
         row = ctx.db.conn.execute("SELECT * FROM m14_open WHERE cluster_id=?", (cid,)).fetchone()
         prev = row["severity"] if row else None
@@ -373,25 +416,32 @@ class M14DepositFrontrun(Check):
             sev = "page"
         elif zero is None and prev == "page":
             sev = "page"  # cannot re-evaluate: keep the page
-        elif len(recent) >= repeat:
+        elif len(times) >= repeat:
             sev = "warn"
         else:
             sev = "info"
         if maybe and prev and RANK[prev] > RANK[sev]:
             sev = prev  # a pending entry may restore the count or the zero: no lower severity without proof
-        new_hit = last["tx_hash"] != (row["last_hit"] if row else None)
+        # a new time (deposit) re-sends an info; before the last_deposit column, the last hit stood for it
+        new_time = (last["deposit_tx"] != row["last_deposit"] if row and row["last_deposit"] is not None else
+                    last["tx_hash"] != (row["last_hit"] if row else None))
         ctx.db.conn.execute("INSERT OR REPLACE INTO m14_open (cluster_id, severity, block, owner, operator_ids, "
-                            "last_hit) VALUES (?,?,?,?,?,?)", (cid, sev, block, owner, json.dumps(ops), last["tx_hash"]))
-        lines = [f"- failed {h['function']} {h['tx_hash']} (block {h['block']}, {now - h['block_time']} s ago) after "
-                 f"deposit {h['deposit_tx']} of {h['value']} {'SSV' if h['version'] == 'SSV' else 'wei'} "
-                 f"(block {h['deposit_block']}, burn {h['burn_rate']} per block, "
-                 f"{'same block' if h['deposit_block'] == h['block'] else 'previous block'}"
-                 f"{', order unknown' if h['ordering'] == 'unknown' else ''})" for h in recent[-10:]]
+                            "last_hit, last_deposit) VALUES (?,?,?,?,?,?,?)",
+                            (cid, sev, block, owner, json.dumps(ops), last["tx_hash"], last["deposit_tx"]))
+        lines = []
+        for dep, hs in list(times.items())[-10:]:
+            d = hs[0]
+            lines.append(f"- deposit {dep} of {d['value']} {'SSV' if d['version'] == 'SSV' else 'wei'} (block "
+                         f"{d['deposit_block']}, burn {d['burn_rate']} per block) blocked {len(hs)} liquidation(s):")
+            lines += [f"    failed {h['function']} {h['tx_hash']} (block {h['block']}, {now - h['block_time']} s ago, "
+                      f"{'same block' if h['deposit_block'] == h['block'] else 'previous block'}"
+                      f"{', order unknown' if h['ordering'] == 'unknown' else ''})" for h in hs[-10:]]
         titles = {"info": f"M14 liquidation front-run by a dust deposit: {short(cid)}",
-                  "warn": f"M14 repeated deposit front-running ({len(recent)} in 24 h): {short(cid)}",
+                  "warn": f"M14 repeated deposit front-running ({len(times)} in 24 h): {short(cid)}",
                   "page": f"M14 front-run cluster at computed zero: {short(cid)}"}
-        body = (f"Cluster {cid} (owner {owner}, operators {ops}): {len(recent)} liquidation(s) reverted after a "
-                f"deposit below one block of burn within the last {window} s of chain time (block {block}).\n"
+        body = (f"Cluster {cid} (owner {owner}, operators {ops}): {len(times)} front-running deposit(s) below one "
+                f"block of burn made {len(recent)} liquidation(s) revert within the last {window} s of chain time "
+                f"(block {block}).\n"
                 + "\n".join(lines)
                 + (f"\n{len(maybe)} more failed liquidation(s) in the window cannot be evaluated yet." if maybe else "")
                 + (f"\n{zero_note}" if zero_note else "")
@@ -400,9 +450,10 @@ class M14DepositFrontrun(Check):
         return Finding(check=self.id, key=cid, severity=sev, title=titles[sev], body=body,
                        subject={"cluster_id": cid, "owner": owner, "operator_ids": ops},
                        evidence={"block": block, "chain_time": now, "hits": [h["tx_hash"] for h in recent],
-                                 "count": len(recent), "window_s": window, "zero": zero,
-                                 "pending": [p["tx_hash"] for p in maybe]},
-                       revision=last["tx_hash"] if sev == "info" and new_hit else None)
+                                 "count": len(times), "liquidations": len(recent),
+                                 "deposits": {dep: [h["tx_hash"] for h in hs] for dep, hs in times.items()},
+                                 "window_s": window, "zero": zero, "pending": [p["tx_hash"] for p in maybe]},
+                       revision=last["deposit_tx"] if sev == "info" and new_time else None)
 
     def at_zero(self, ctx: Ctx, block: int, cid: str, owner: str, ops) -> tuple[bool | None, str]:
         info = ctx.inventory(block).clusters.get(cid)
