@@ -1,0 +1,31 @@
+---
+# EB reconciliation worker for Immunefi #94775 (plans/94775-eb-collapse-monitoring.md).
+# Runs beside the monitor; combine with either compose file:
+#
+#   docker compose -f docker-compose.local.yaml -f docker-compose.reconcile.yaml up -d --build
+#   docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml up -d --build
+#
+# Needs reconcile/config.json (copy reconcile/config.example.json) and, in ./.env:
+#   EB_RECONCILE_RPC_URL   archive-capable Ethereum RPC with eth_getLogs
+#   EB_TELEGRAM_TOKEN      only when alerts.mode is "telegram"
+#   EB_TELEGRAM_CHAT_ID    only when alerts.mode is "telegram"
+
+services:
+  eb-reconcile:
+    image: ssv-eb-reconcile:local
+    pull_policy: build
+    build:
+      context: ./reconcile
+    environment:
+      EB_RECONCILE_RPC_URL: ${EB_RECONCILE_RPC_URL:?set EB_RECONCILE_RPC_URL in .env}
+      EB_TELEGRAM_TOKEN: ${EB_TELEGRAM_TOKEN:-}
+      EB_TELEGRAM_CHAT_ID: ${EB_TELEGRAM_CHAT_ID:-}
+      LOG_LEVEL: ${EB_RECONCILE_LOG_LEVEL:-info}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges
+    read_only: true
+    volumes:
+      - ./reconcile/config.json:/app/config.json:ro
+      # Durable state (SQLite + WAL, checkpoint, incidents, outbox). Never /dev/null.
+      - ${EB_RECONCILE_DATA_DIR:-./reconcile/data}:/data
