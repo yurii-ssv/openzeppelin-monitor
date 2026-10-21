@@ -107,3 +107,52 @@ Repairs (no reproducer expectation changed):
 - Deployment dependency (new, for CP1A/CP3): the inbox file must exist (empty) before the worker starts, otherwise `inbox-unavailable` health fires until the Monitor's first append. Not editable from this lane (`deploy/`, `docker-compose.yaml`).
 - Findings are not cleared here; a fresh Codex QA decides.
 - Resulting head: code `4819c9e`; records commit on top (lane head, reported in worker_done).
+
+## Repair 2 — QA attempt 2 finding (fresh implementer)
+
+- Observed UTC: 2026-10-21 ≈12:10Z – 12:35Z (`date -u`; the frozen head was committed 12:08Z).
+- Task / Dispatch: `task_f48565e119a7` / `ctx_8f265023f59d` (run `run_96be3e0c7302`); worker terminal `term_f9349af1-a3fc-49e0-951d-e14119e8c974`; Claude Opus high (self-identifies as claude-opus-5-5).
+- Frozen start head: `bea73fd20ce238baf235d2d9ab0bc47c198e6412` (`git rev-parse HEAD` confirmed; porcelain 0). Input: [QA attempt 2](../../qa/cp1b-attempt-2.md) §1, §2, Appendix A/B.
+- Code commit: `7bf01b4de68f62dfda18c77a2747c801cd73ef8b`.
+- Environment: `reconcile/.venv` present (Python 3.12.15); Foundry anvil at `~/.foundry/bin`. Every pytest run used `-p no:cacheprovider`; falsifier and red/green runs a fresh `PYTHONPYCACHEPREFIX`.
+- Coordinator decision (Orca `ask`, answered GATE): the inbox is delivered only from canonical blocks at or below the checkpoint (contract refinement of plan §6's inbox consumer, recorded by the coordinator). Conditions honoured: fixtures carry the fake chain's real hash; QA assertions unchanged; README documents the 12-conf latency; one regression test per case.
+
+Audit first (brief: "avoid whack-a-mole"): every piece of state the worker keeps across blocks, depth 1 and depth N, is tabulated in [`reconcile/checks/README.md` §6.1](../../../../reconcile/checks/README.md) with its handling and test. Rows found **wrong** and repaired (all same class: state derived from a deleted block):
+
+1. **HIGH (QA attempt 2) live parameters / `prepare` copies** — `Worker._after_reorg` invalidates `Params` (access raises `ParamsUnavailable`) and clears `prepared`; `reload_params` re-reads at the new checkpoint before any check runs (reason `params` + `reorg`, `prepare` re-run); a failed re-read is the §5.1 path (consumers blocked, `healthy: false`, `params` health, retried each step).
+2. **scan race** — logs from `eth_getLogs` and the block hash read afterwards could come from different forks (reorg in between, or a load-balanced RPC), storing orphan logs under a canonical checkpoint hash that no later comparison detects. `_verify_log_blocks` compares every event block within `reorg_search_depth` of the target with its canonical hash (one batch, `Rpc.block_hashes`); mismatch = `RpcError`, window re-read next step.
+3. **shorter new chain** — a checkpoint block the node does not have raised `RpcError` every step until the chain regrew; `block_hash(missing_ok=True)` treats it as non-canonical and rewinds.
+4. **reorg notice not durable** — the `reorg` reason and `on_reorg` lived in memory only (lost by a crash between the rewind commit and the run). Durable `meta reorg:<id>` (lowest ancestor) written in the rewind transaction, cleared in the check's committing run, replayed at start; exposed as `ctx.reorg_ancestor` (additive Ctx field) so checks can correct persisted state.
+5. **NearSetEveryBlock** — `last_block` reset on a reorg.
+6. **default incident id `<check>-<key>-<block>`** — reopening a key at a block number reused by the new chain raised `ValueError` (check-error, run lost); now suffixed `-2`, `-3` (check-proposed ids must still be unique).
+7. **block/revision-keyed outbox sends** — a send the incident state machine decided was silently dropped by `INSERT OR IGNORE` when a reorganised block reused the key (`incidents.alerts` still counted it); `enqueue(unique=True)` suffixes `#n`. Health keys still de-duplicate.
+8. **inbox (GATE)** — entries were delivered before the worker scanned their block and from orphaned blocks. New `inbox.canonical` column (additive migration by column presence; `schema_version` stays 1), `Inbox.confirm` (batched hash lookup for entries at/below the checkpoint), `pending` skips orphaned and stops at unconfirmed entries, resolution skips orphaned, the rewind resets `canonical` above the ancestor; a failed lookup holds entries and degrades health (`inbox:unverified`, `healthy: false`, `input_unavailable{inbox}` 1); status `inbox.held` / `inbox.orphaned`; metric `ssv_watch_inbox_entries{state="held"|"orphaned"}`.
+
+Rows found correct but untested now have tests (inventory cache depth 1/N, event cursor depth N, M5 depth N, metrics checkpoint after a reorg, reorg deeper than the search). Fixture changes (no expected behaviour changed): `test_framework::test_inbox_check_receives_resolved_entries_once` writes the transaction's sealed block and its canonical hash (it wrote the pending block number with the synthetic `0xcdcd…` hash); the permanent copy of QA Appendix B's `test_partial_reload_atomic_cursors_recovery` writes `block_hash=chain.hash(chain.sealed)` (diff is that one line).
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| QA Appendix A red on frozen head | Appendix A saved unchanged except ROOT → this worktree; `PYTHONPYCACHEPREFIX=<s>/c1 reconcile/.venv/bin/python <s>/reorg_repro.py` (before any edit) | exit 1; `direct`/`cached` `[42960, 50000, 50000, 50000, 50000]`, params_ok true, healthy true | local | — |
+| QA Appendix B red on frozen head | `… pytest -q -p no:cacheprovider <s>/test_repair_edges.py` | 1 failed (`test_reorged_parameter_event_never_leaves_orphan_threshold`), 14 passed | local | — |
+| QA Appendix A green | same command on `7bf01b4` | exit 0; `[42960, 50000, 42960, 42960, 42960]` both consumers | local | scratch `repro_final.out` sha256 `cbf2846ab0b0e36c…` |
+| QA Appendix B `-k reorged_parameter_event` | `… pytest -q -p no:cacheprovider <s>/test_repair_edges.py -k reorged_parameter_event` | exit 0; 1 passed, 14 deselected (unmodified) | local | — |
+| QA Appendix B whole file, unmodified | `… <s>/test_repair_edges.py` | 13 passed, **2 failed**: both `test_partial_reload_atomic_cursors_recovery[revert|empty]` at `seen[-1][3]==1` — the synthetic `0xcdcd…` inbox hash is now orphaned (GATE); with only that fixture line changed to the canonical hash: **15 passed** | local | — |
+| QA attempt-1 Appendix A, unmodified (ROOT only) | `… <s>/test_cp1b_independent.py` | exit 0; 12 passed | local | — |
+| New regressions red on frozen head | `git archive bea73fd reconcile` → scratch, + `test_reorg_state.py`, `test_qa2_regressions.py`; `pytest -q` both | **14 failed, 18 passed**: red = both QA2 reorg tests + 12 repaired rows (behavioural asserts: orphan `50000`/`30` values, `RpcError: block 1002 not found`, orphan log stored, `ValueError incident id … already exists`, escalation dropped, inbox delivered before confirmation / from the orphan block; two inbox tests fail on the new `held`/`canonical` fields). Green on old = the 4 correct-but-untested rows + 14 Appendix B tests | local | — |
+| V1B.1 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests -rs` | exit 0; **102 passed**, 0 skipped (69 + 16 `test_qa2_regressions` + 17 `test_reorg_state`) | local | — |
+| V1B.2 | `reconcile/.venv/bin/ruff check reconcile` | exit 0; All checks passed (`ruff.toml` exempts E701/E702 in `test_qa2_regressions.py` only, to keep the QA one-liners verbatim) | local | — |
+| V1B.3 | `… test_framework.py -k scheduler_dispatches_registered_check` | exit 0; 1 passed, 31 deselected | local | — |
+| V1B.4 | `… test_framework.py -k restart_idempotent` | exit 0; 2 passed, 30 deselected | local | — |
+| V1B.4f | `alerts.py` `return ":".join((check, key))` → `return ":".join((key,))`; same selection; restore from copy | red 1 failed / 1 passed; restored (`cmp` identical) 2 passed. A first restore run reused the mutated bytecode (same size, same second) and stayed red; rerun with fresh `PYTHONPYCACHEPREFIX` per run as recorded here | local | — |
+| V1B.5 | `… test_framework.py -k routing` | exit 0; 4 passed, 28 deselected | local | — |
+| V1B.6 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests -k m5` | exit 0; **33** passed, 69 deselected (32 + new `test_m5_reorg_depth_n_reevaluates_on_the_new_chain`; `test_worker.py` untouched) | local | — |
+| V1B.7 | `… test_framework.py -k inbox` | exit 0; 6 passed, 26 deselected | local | — |
+| V1B.7f | `inbox.py` `"0x12e04c87"` → `"0x12e04c88"`; same selection; restore | red 2 failed / 4 passed; restored (`cmp` identical) 6 passed; full suite after both restores 102 passed | local | — |
+| V1B.8 | `reconcile/.venv/bin/python reconcile/tests/fake_once.py --port 29465 --hold 8`; separately `curl -s http://127.0.0.1:29465/metrics` | server exit 0, curl exit 0; `checkpoint_block 1011`, `lag_blocks 0`, `open_incidents{check="m5",severity="page"} 1`, `outbox_undelivered 0`, `check_last_run_seconds{check="m5"}`, `input_unavailable` 0/0, `inbox_entries` total/pending/held/orphaned 0 | local, fake chain | scratch `metrics.txt` sha256 `1eb4112b60ff6519…` |
+| V1B.10 (re-run: reorg/scan/step path changed) | `PATH=$HOME/.foundry/bin:$PATH FORK_RPC_URL=https://ethereum-rpc.publicnode.com PYTHONUNBUFFERED=1 reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py` | exit 0; fork block **26,240,956**; **PASS ×5** (clean 640000/640000; clean 1270000; latent 1270000/640000/630000; confirmed 640000/10000/630000, 63 matched, page → telegram `recorded`; clean next root, resolution info → telegram `recorded`); live params read; layout guard ok; `curl --max-time 2 -s http://127.0.0.1:8547` exit 7 (anvil stopped) | LIVE anvil fork, record mode | scratch `fork_e2e.out` sha256 `2341e5c72a29791e…` |
+
+- NOT RUN: V1B.9 (LIVE inventory probe; `inventory.py` unchanged — the worker only calls its existing `invalidate`). V1B.11 is QA's inspection (README §5, §5.1, §5.2, §6.1 changed).
+- `<s>` = this session's scratchpad (`/private/tmp/claude-501/…/scratchpad`).
+- Interface additions for wave 2 (additive): `ctx.reorg_ancestor`; `prepare` also runs after a reorg; inbox entries arrive only at/below `ctx.block`.
+- Findings are not cleared here; a fresh Codex QA decides.
+- Resulting head: code `7bf01b4`; records commit on top (lane head, reported in worker_done).

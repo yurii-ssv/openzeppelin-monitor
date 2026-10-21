@@ -20,6 +20,7 @@ Task contract: [plan.md §8 CP1B](../../plan.md) · Attempt log: [attempts.md](a
 | S6 V1B.10 fork e2e (LIVE) | DONE (PASS on anvil fork of block 26,240,643) | [attempt-3](attempts.md#attempt-3) | — |
 | S7 docs, status line, handoff | DONE | this file | Codex QA |
 | R1 repair of QA attempt 1 (legacy outbox routing, stale params, missing inbox) | DONE (code `4819c9e`) | [repair-1](attempts.md#repair-1) | fresh Codex QA |
+| R2 repair of QA attempt 2 (reorg leaves orphan params) + reorg-state audit (README §6.1) + inbox GATE | DONE (code `7bf01b4`) | [repair-2](attempts.md#repair-2--qa-attempt-2-finding-fresh-implementer) | fresh Codex QA |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -54,4 +55,18 @@ Log anchor: workers/cp1b/attempts.md#repair-1.
 New finding: deployment must create the empty inbox file before start (CP1A/CP3).
 Next owner: fresh Codex QA.
 Preservation: everything committed; reconcile/.venv ignored.
+```
+
+## Repair 2 handoff (≤ 250 words, also sent as the `worker_done` summary)
+
+```text
+Task / live dispatch: task_f48565e119a7 / ctx_8f265023f59d (run_96be3e0c7302)
+Assignment outcome: completed; QA attempt-2 HIGH repaired, reorg-state audit done, no QA assertion weakened.
+Base -> resulting commit: bea73fd -> code 7bf01b4 (records commit on top = lane head) on mtabasco/ms-cp1b.
+Changed paths: reconcile/{eb_reconcile,alerts,db,inbox,metrics,rpc}.py, checks/{base.py,README.md}, README.md, ruff.toml, tests/{test_framework.py (1 fixture), test_qa2_regressions.py, test_reorg_state.py}; workers/cp1b/**; CP1B status line.
+Mechanism: a reorg invalidates live params and every prepare copy (re-read at the new checkpoint before any check; failed re-read = §5.1). Audit table README §6.1; same-class fixes: scan rejects non-canonical log blocks, shorter new chain rewinds, durable reorg marker + ctx.reorg_ancestor, near-set reset, incident-id/outbox-key suffix instead of error/silent drop, inbox GATE (coordinator-approved: canonical, at/below checkpoint; orphaned never delivered; lookup failure holds + degrades).
+Verification: QA Appendix A + B -k reorged_parameter_event red on bea73fd, green now (unmodified); new tests 14 red on bea73fd; V1B.1 102/0 skipped; .2 clean; .3 1; .4 2; .4f red/green; .5 4; .6 33; .7 6; .7f red/green; .8 curl OK; .10 LIVE PASS x5 (fork 26,240,956). NOT RUN: V1B.9 (inventory.py unchanged).
+Note: QA Appendix B partial-reload probe needs its inbox fixture to carry the canonical block hash (GATE).
+Log anchor: workers/cp1b/attempts.md#repair-2.
+Next owner: fresh Codex QA.
 ```
