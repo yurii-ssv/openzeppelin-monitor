@@ -301,7 +301,7 @@ Rules: a round is keyed by `blockNum`; `WeightedRootProposed` without `RootCommi
 
 ### CP2c — Wallets and supply (M12, M8 floor)
 
-**Status:** IMPLEMENTED — AWAITING QA (code head `b24e53e`, lane `mtabasco/ms-cp2c`; [worker record](workers/cp2c/plan.md)). **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M12, M8, D3, D4.
+**Status:** QA FAILED — frozen head `a7be02266b5ed86b69095bbaf67e534d0f7d8bc1`; [QA attempt 1](qa/cp2c-attempt-1.md): M12 incomplete UNKNOWN reorg evaluation clears its durable retry marker (F1). **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M12, M8, D3, D4.
 Rules: balances of `0x16A5…` and `0x0431…` every 5 min; spend from receipts of their transactions (`gasUsed × effectiveGasPrice`), trailing 7-day average and a base-fee-based projection; runway < 14 d warn, < 7 d page, balance < 0.15 ETH page, daily spend > 0.04 ETH warn for the oracle wallet; < 0.2 ETH warn and < 0.05 ETH page for the liquidator. M8 floor: `cSSV.totalSupply()` < 2 × the DAO Safe's cSSV balance measured at start → warn.
 M13 retired-key balance watch (D10): every block (or every N blocks, config) read `eth_getBalance` of `0x3A98…` and `0x4BC6…` at the checkpoint block; any increase vs the previously stored balance → page with the delta and the transactions in the block that touch the address (direct or via receipt logs, best effort); first observation stores a baseline silently; reorg-safe per README §6; a missing/empty RPC result is an error, never "no change".
 **Stop:** V2c rows (plus V2c.8 below); timebox 1 day.
