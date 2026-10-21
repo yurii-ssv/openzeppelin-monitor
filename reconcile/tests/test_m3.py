@@ -129,6 +129,15 @@ def test_computed_zero_pages(tmp_path):
     assert "computed zero" in outbox(w, "kind='escalate'")[0]["text"]
 
 
+def test_computed_zero_pages_even_when_the_view_says_not_liquidatable(tmp_path):
+    # spec: "active and getBalance == 0 -> page", independent of isLiquidatable (here: no collateral floor, no burn)
+    chain, w, cl = setup(tmp_path)
+    stub_params(chain, minimum_liquidation_collateral=0)  # before the first parameter read
+    cl.create(balance=0, burn=0)
+    advance(w)
+    assert sent(w, "m3") == [("open", "page")] and evidence(w)["balance_wei"] == "0"
+
+
 def test_computed_zero_benign_low_balance_and_liquidated_clusters_do_not_page(tmp_path):
     chain, w, cl = setup(tmp_path)
     cl.create(balance=100 * BURN)
