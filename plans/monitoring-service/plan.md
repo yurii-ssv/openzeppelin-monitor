@@ -295,7 +295,7 @@ Rules: M3 onset info with block; still liquidatable after N (config, default 50)
 
 ### CP2b — Oracle family (M9, M10, M11)
 
-**Status:** NOT STARTED. **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M9–M11, `evidences/eb-oracle-cadence/scan*.mjs`, the existing `config/filters/oracle_dissent_check.py` logic.
+**Status:** IMPLEMENTED — AWAITING QA (dispatch `ctx_e0d798da26ac`; code head `8354917`, lane head = the records commit on top, named in worker_done; [worker record](workers/cp2b/plan.md)). **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M9–M11, `evidences/eb-oracle-cadence/scan*.mjs`, the existing `config/filters/oracle_dissent_check.py` logic.
 Rules: a round is keyed by `blockNum`; `WeightedRootProposed` without `RootCommitted` within 30 min → page; no `RootCommitted` for > 9 h (config; 25 h if daily) → page, driven by the clock; two roots for one `blockNum` → warn; three consecutive dissenting rounds from one slot → page; committed with < 3 distinct slots voting for the committed root → page; a slot absent from the committed root in the last 6 rounds → warn; `commitRoot` reverts from slot addresses via inbox → warn. M10: `OracleReplaced` during an open round → page; `newOracle` already holds a slot → page. M11: per round, `updateClusterBalance` count from `0x16A5…` within 60 min; 0 → warn and query the proof API for mismatching clusters → page if any; two consecutive zero rounds → page; revert rate > 10 % → warn, `IncorrectClusterState` reverts handed to M1 by incident link; weekly full-state leaf comparison (LIVE, `DEFERRED` if the API is unreachable, owner Marco).
 **Stop:** V2b rows; timebox 2 days.
 

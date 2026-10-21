@@ -45,7 +45,7 @@ def main():
         clusters[cid] = ClusterInfo(cid, c["ownerAddress"].lower(), tuple(c["operators"]), "ETH", cl, "api",
                                     frozenset({"api"}), True, c)
     settings = {"views": VIEWS, "proxy": PROXY}
-    check = M11UpdaterLiveness(dict(M11UpdaterLiveness.defaults), settings)
+    check = M11UpdaterLiveness({**M11UpdaterLiveness.defaults, "require_inbox": False}, settings)  # leaves only
     ctx = SimpleNamespace(inventory=lambda b: SimpleNamespace(clusters=clusters), rpc=chain)
     t0 = time.time()
     result = check.compare_leaves(ctx, latest, block)

@@ -43,9 +43,9 @@ Task contract: [plan.md §8 CP2b](../../plan.md) · Attempt log: [attempts.md](a
 ```text
 Task / live dispatch: task_13f583847d79 / ctx_e0d798da26ac (run_96be3e0c7302)
 Assignment outcome: completed; every owned row has an outcome, none red.
-Base -> resulting commit: 96d1c32 (+ ruled merges 438904e, f92e2b7) -> lane head in worker_done, branch mtabasco/ms-cp2b.
+Base -> resulting commit: 96d1c32 (+ ruled merges 438904e, f92e2b7) -> code 8354917; records commit on top = lane head (in worker_done), branch mtabasco/ms-cp2b.
 Changed paths: reconcile/checks/{m9_oracle_common,m9_oracle_quorum,m10_oracle_rotation,m11_updater_liveness}.py, checks/__init__.py (1 line), tests/{test_m9,test_m10,test_m11,fixtures_oracle}.py, config.example.json (checks.m9/m10/m11), workers/cp2b/**. No deletions, no frozen file.
-Verification: V2x.1 m9 36 / m10 15 / m11 33 passed; V2x.2 2/1/1; V2x.3 2/1/2; V2x.4 1/1/1 (M9/M10 0 RPC per sweep, M11 eth_call <= inventory, 350); V2b.7 1; V2x.6 324 passed, ruff clean. LIVE: 2026-08 outage replay (nodies archive), 3 recent rounds silent (publicnode), M11 530/530 leaves match at blockNum 26,239,590. NOT RUN: none.
+Verification: V2x.1 m9 37 / m10 15 / m11 34 passed; V2x.2 2/1/1; V2x.3 2/1/2; V2x.4 1/1/1 (M9/M10 0 RPC per sweep; M11 eth_call <= inventory size, 350); V2b.7 1; V2x.6 326 passed (240 CP1B + 86), ruff clean. LIVE: 2026-08 outage replay (nodies archive), 3 current rounds silent (publicnode), M11 530/530 leaves match at blockNum 26,239,590. NOT RUN: none.
 Falsifiers: F9-streak, F9-clock, F10-open, F11-window, F-book-reorg red; restored; porcelain clean.
 Log anchor: workers/cp2b/attempts.md#attempt-3.
 Findings: (1) M11 proof comparison takes ~285 s for 530 clusters (sequential GETs inside one run) -> CP3; (2) spec M9 absence also fires for a persistently dissenting slot (absent:3 in the replay) -> Marco; (3) public archive RPC limits recorded.
