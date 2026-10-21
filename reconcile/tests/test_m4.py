@@ -272,9 +272,11 @@ def test_reorg_removing_the_deficit_resolves_and_never_repages(tmp_path, confirm
     advance(w)
     assert sent(w, "m4") == [("open", "page")]
     assert w.db.conn.execute("SELECT COUNT(*) FROM m4_scans WHERE block >= ?", (fork,)).fetchone()[0] == 1
+    old_scan = w.checkpoint()["block"]
     chain.reorg(fork)
-    chain.mine(confirmations + depth + 2)
+    chain.mine(confirmations + depth + 5)  # the new checkpoint differs from the deleted scan's block
     advance(w)
+    assert w.checkpoint()["block"] != old_scan
     assert [r["state"] for r in incidents(w, "m4")] == ["resolved"]
     assert sent(w, "m4") == [("open", "page"), ("resolved", "info")]
     assert [r[0] for r in w.db.conn.execute("SELECT block FROM m4_scans WHERE block >= ?", (fork,))] == \
