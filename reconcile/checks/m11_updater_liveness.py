@@ -18,8 +18,8 @@ expectation without a code change and without re-judging older rounds.
 `updateClusterBalance` from other senders -> info is the Monitor's (CP1A template). The senders of
 `ClusterBalanceUpdated` transactions are cached in `m11_senders` (tx hash -> sender, block); reorg rule: rows above
 the ancestor are deleted in the reorg run and re-read from the new chain. The persisted proof results
-(`ctx.set_state`) carry the commit block they were taken at and are discarded when that commit is no longer the
-stored one. Episodes: m9_oracle_common (`m11_episodes`).
+(`ctx.set_state`) carry the commit block and the evaluated block; they are discarded when that commit is no longer
+the stored one or a reorg run's ancestor is below the evaluated block (recomputed on the new chain). Episodes: m9_oracle_common (`m11_episodes`).
 """
 
 from __future__ import annotations
@@ -303,12 +303,13 @@ class M11UpdaterLiveness(Check):
     # ---- proof API
 
     def zero_round_proof(self, ctx: Ctx, commit, block: int) -> dict:
-        saved = ctx.state("zero_proof")
+        saved = fresh(ctx, ctx.state("zero_proof"))
         if saved and saved["ref"] == commit.ref_block and saved["commit_block"] == commit.block:
             return saved["result"]
         result = self.compare_leaves(ctx, commit.ref_block, block)
         if not result.get("error"):
-            ctx.set_state("zero_proof", {"ref": commit.ref_block, "commit_block": commit.block, "result": result})
+            ctx.set_state("zero_proof", {"ref": commit.ref_block, "commit_block": commit.block, "block": block,
+                                         "result": result})
         else:
             ctx.health("proof-api", f"M11: oracle proof API unavailable ({result['error']}); the zero-update round "
                        f"{commit.ref_block} cannot be checked for EB mismatches (retried every run).",
@@ -316,7 +317,7 @@ class M11UpdaterLiveness(Check):
         return result
 
     def full_state(self, ctx: Ctx, commits, block: int) -> tuple[list[Episode], bool]:
-        saved = ctx.state("full_state")
+        saved = fresh(ctx, ctx.state("full_state"))
         stored = {c.block: c for c in commits}
         if saved and (saved["commit_block"] not in stored or stored[saved["commit_block"]].ref_block != saved["ref"]):
             saved = None  # its commit left the canonical chain
@@ -327,7 +328,8 @@ class M11UpdaterLiveness(Check):
                 ctx.health("proof-api-weekly", f"M11 weekly full-state leaf comparison DEFERRED: oracle proof API "
                            f"unreachable ({result['error']}); retried every run.", dedup="proof-api-weekly")
                 return [], True
-            saved = {"ref": latest.ref_block, "commit_block": latest.block, "at": ctx.clock(), "result": result}
+            saved = {"ref": latest.ref_block, "commit_block": latest.block, "block": block, "at": ctx.clock(),
+                     "result": result}
             ctx.set_state("full_state", saved)
         if saved is None:
             return [], False
@@ -386,6 +388,14 @@ class M11UpdaterLiveness(Check):
             if onchain != leaf:
                 mismatches.append({"cluster": ci.cluster_id, "owner": ci.owner, "onchain_eb": onchain, "leaf_eb": leaf})
         return {"checked": len(items), "mismatches": mismatches, "unknown": unknown, "error": None}
+
+
+def fresh(ctx: Ctx, saved: dict | None) -> dict | None:
+    """A persisted proof result, or None when a reorg run's ancestor is below the block it was evaluated at (its
+    chain reads may come from deleted blocks)."""
+    if saved and ctx.reorg_ancestor is not None and saved.get("block", 1 << 62) > ctx.reorg_ancestor:
+        return None
+    return saved
 
 
 def get_eb_calldata(ci) -> bytes:

@@ -357,6 +357,28 @@ def test_reorg_depth_n_moving_the_commit_invalidates_cached_senders_and_proof(tm
     assert u.w.db.meta("check:m11:full_state")["commit_block"] != saved["commit_block"]
 
 
+def test_reorg_below_the_evaluated_block_recomputes_persisted_proof_results(tmp_path):
+    u = world(tmp_path)
+    u.round(updates=())
+    u.set_eb(32, leaves={u.cids[0]: 50})
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "page", "state-mismatch": "warn"}
+    saved = u.w.db.meta("check:m11:zero_proof")
+    calls = u.api.calls
+    fork = u.c.number - 2  # above the commit and the window end, below the evaluated block
+    assert fork > saved["commit_block"] + 300 and fork <= saved["block"]
+    u.c.reorg(fork)
+    u.set_eb(32)  # on the new chain every leaf matches
+    u.c.mine(3)
+    tick(u.w)
+    again = u.w.db.meta("check:m11:zero_proof")
+    assert again["block"] != saved["block"] and u.api.calls > calls  # recomputed, not reused from deleted blocks
+    # README §6.2: re-reported at the lower severity the new chain supports (recorded silently); the weekly
+    # comparison's mismatch was also recomputed on the new chain and resolved
+    assert again["result"]["mismatches"] == [] and open_keys(u.w, "m11") == {"liveness": "warn"}
+    assert sent(u.w, "m11", "kind='resolved'")[0]["ikey"] == "state-mismatch"
+
+
 def test_reorg_crash_between_detection_and_handling(tmp_path):
     u = world(tmp_path)
     u.round(updates=())
