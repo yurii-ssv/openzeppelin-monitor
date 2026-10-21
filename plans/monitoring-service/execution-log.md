@@ -92,3 +92,21 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - Dispatch 2 `ctx_80ac41873894` (`--retry-of ctx_44ccd3cf0895 --worktree id:316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a::/Users/marco/ssv/repos/ssv-network-monitor`): exit 0, `input_accepted`, worktree reused = monitor repo root, terminal `term_be9c7771-fd3b-409e-a769-25bf4473599f`, launch.requested = launch.effective = claude / sonnet / high.
 - Finding F14: `worker-start --worktree current` resolves to the coordinator's Orca terminal worktree, not the shell cwd. Use the exact selector `id:316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a::<path>` (or the lane child selectors) for every start.
 - Next: wait for CP0 `worker_done`; then coordinator inspection, Codex QA (gpt-6.1-sol high) in a fresh child of the `plan/monitoring-service` head.
+
+<a id="event-0006"></a>
+## Event 0006 — V0.3 self-match in plan.md resolved (coordinator answer to CP0 question)
+
+- Observed UTC: 2026-10-21T09:31Z
+- Actor: coordinator; question `msg_3d3b777f4486` from dispatch `ctx_80ac41873894` (delivery `delivery_582da9dbb003`, acknowledged).
+- Finding (worker): V0.3 returned 1 row on `plan/monitoring-service` — the literal dummy token in the V0.3f falsifier row of plan.md matched the V0.3 regex. Real secret values: 0 tracked (worker's fixed-string scan).
+- Decision: option A. plan.md V0.3f now builds the dummy token at run time (`printf`), so the plan text no longer matches; V0.3 expectation (0 rows, no pathspec exclusion) and V0.3f semantics are unchanged. Worker commits the plan.md line and must never paste the literal token into a tracked file.
+- Next: CP0 continues steps 6–9.
+
+<a id="event-0007"></a>
+## Event 0007 — V0.8 pre-existing mockall flake: commit the Rust diff, record as KNOWN FLAKE (coordinator answer)
+
+- Observed UTC: 2026-10-21T09:42Z
+- Actor: coordinator; question `msg_cc20cb53c928` from `ctx_80ac41873894` (delivery `delivery_05c51b791338`, acknowledged).
+- Finding (worker, to be re-measured by QA): `cargo test --locked --test integration -- filters::evm::filter` is flaky: intermittent red in `test_handle_match_with_duplicate_event_signatures` / `test_handle_match_with_key_collision` (`MockTriggerExecutionService::new(?, ?): No matching expectation found`, mockall static-context race). Pristine `main@86a17db` (git archive) flakes the same way (1/60). `--test-threads=1` green; the target test `test_failure_monitor_only_fetches_receipts_for_monitored_transactions` passed in every run.
+- Decision: commit the Rust diff as its own commit; V0.8 recorded as GREEN WITH KNOWN FLAKE (pre-existing), all run counts kept, the serial variant as a separately named row, flake signature and baseline control recorded. New finding for CP3 (integrator): de-flake the mockall static expectations. Reported to Marco.
+- Next: CP0 continues.

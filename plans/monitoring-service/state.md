@@ -3,7 +3,7 @@
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
 - Updated at: 2026-10-21T09:29Z
-- Last recorded event / last processed Orca delivery: event-0005 / none
+- Last recorded event / last processed Orca delivery: event-0007 / delivery_05c51b791338
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `main` (integration branch `plan/monitoring-service` not yet created)
 - Observed HEAD: `86a17dbe1a004713798e08378bc9d59c35e86a45`; working tree dirty (F1, F2), user-owned, untouched
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`; active Run `run_6a94d8a4633c` (coordinator `term_b15807c1-69e8-45fd-ac56-58191d2cbff8`). Workers use the full orca path (F13); starts use exact worktree selectors, never `current` (F14)
