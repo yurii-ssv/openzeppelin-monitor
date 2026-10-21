@@ -237,15 +237,15 @@ class M14DepositFrontrun(Check):
             except Unknown:
                 if i == len(tuples) - 1:
                     raise
+        dust = [ev for ev in deposits if int(ev.extra.get("value", 0)) < burn]
+        if not dust:
+            return None  # no deposit below one block of burn: not this attack, whatever the cluster's state
         if after:
             total = sum(int(ev.extra.get("value", 0)) for ev in before)
             if not (liq and total < burn) and not (not liq and total >= burn):
                 raise Unknown(f"liquidatable at block {B - 1}: {liq}, deposits before the failed transaction "
                               f"{total} vs burn {burn}: the state at the failed transaction is undetermined", key)
         if not liq:
-            return None
-        dust = [ev for ev in deposits if int(ev.extra.get("value", 0)) < burn]
-        if not dust:
             return None
         dep = dust[-1]  # the latest qualifying deposit before the failed transaction
         return {"tx_hash": e.tx_hash, "block_hash": e.block_hash, "block": B, "tx_index": pos, "cluster_id": key,

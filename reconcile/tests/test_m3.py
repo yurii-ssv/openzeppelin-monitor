@@ -525,6 +525,8 @@ def test_qa1_h1_empty_api_does_not_resolve_a_live_computed_zero_page(tmp_path, r
     advance(w)
     assert original in {x["id"] for x in open_incidents(w, "m3").values()}
     assert not outbox(w, "kind='resolved'") and sent(w, "m3") == [("open", "page")]
+    ev = evidence(w)  # evaluated afresh from storage with the persisted tuple, not merely kept as UNKNOWN
+    assert ev["block"] == w.checkpoint()["block"] and ev["balance_wei"] == "0" and "status" not in ev
     assert "inventory incomplete" in [r for r in outbox(w) if r["key"].startswith("health:m3-unknown")][-1]["text"]
 
 
@@ -663,3 +665,19 @@ def test_sweep_m3_reorg_removing_the_latest_change_uses_an_earlier_validated_tup
     advance(w)
     assert [r["state"] for r in incidents(w, "m3")] == ["open"] and sent(w, "m3") == [("open", "page")]
     assert evidence(w)["balance_wei"] == "0" and "unknown" not in json.dumps(evidence(w))
+
+
+def test_qa1_h1_reorg_key_listed_nowhere_without_identity_raises(tmp_path):
+    """Defence in depth: a reorg key with no row, no tuple history and no subject is UNKNOWN (raise), never
+    'absent' — only empty storage slots prove absence."""
+    chain, w, cl, response = api_baseline(tmp_path)
+    response["clusters"] = []
+    chain.mine(2)
+    advance(w)
+    w.db.conn.execute("DELETE FROM m3_zone")
+    w.db.conn.execute("DELETE FROM m3_tuples")
+    w.db.conn.execute("UPDATE incidents SET subject = '{}'")
+    chain.reorg(chain.number - 1)
+    chain.mine(2)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["open"] and w.db.meta("reorg:m3") is not None

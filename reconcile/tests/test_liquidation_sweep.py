@@ -299,24 +299,33 @@ class M14Sweep(Base):
         dust = [d for d in self.deposits if d[2] == cid and (d[0] == B - 1 or (d[0] == B and d[1] < pos))
                 and d[3] < burn]
         q = liq and bool(dust) and fn == {"ETH": "liquidate", "SSV": "liquidateSSV"}[version]
+        # README-documented limit of the check: with a later same-block change the state at the failed
+        # transaction is derived from the end of B-1 and is knowable only when the deposits before it settle it
+        unknown = False
+        if mode in ("same_topup", "after") and dust and fn == {"ETH": "liquidate", "SSV": "liquidateSSV"}[version]:
+            b0 = chain.balance_at(cid, B - 1)
+            liq0 = st["active"] and st["count"] > 0 and b0 < self.threshold(version, chain.burn_at(cid, B - 1))
+            total = sum(d[3] for d in self.deposits if d[2] == cid and d[0] == B and d[1] < pos)
+            unknown = not ((liq0 and total < burn) or (not liq0 and total >= burn))
         if mode == "same_topup":
             self.deposit(owner, ops, 10**18, mine=False)
         elif mode == "after":
             self.deposit(owner, ops, 1, mine=False)
-        if r.random() < 0.12:
+        if r.random() < 0.2:
             self.unreadable[tx] = chain.txs.pop(tx)
         chain.mine()
-        self.labels.append({"block": B, "cid": "0x" + cid.hex(), "q": q, "tx": tx})
+        self.labels.append({"block": B, "cid": "0x" + cid.hex(), "q": q and not unknown, "tx": tx,
+                            "unknown": unknown})
 
     def act(self):
         r, chain, cl = self.rng, self.chain, self.cl
-        kind = r.choice(["attack", "attack", "attack", "mine", "mine", "topup", "withdraw", "restore", "reorg",
+        kind = r.choice(["attack", "attack", "attack", "mine", "mine", "mine", "topup", "withdraw", "restore", "reorg",
                          "restart"])
         if kind == "attack":
             self.attack()
         elif kind == "mine":
             chain.elapse(r.choice([0, 0, 3_600, 30_000]))
-            chain.mine(r.choice([1, 10, 600, 3_000]))
+            chain.mine(r.choice([1, 10, 600, 1_500, 3_000, 7_000]))
         elif kind == "topup":
             owner, ops, _ = r.choice(self.clusters)
             if cl.state[cluster_id(owner, ops)]["active"]:
@@ -342,11 +351,13 @@ class M14Sweep(Base):
 
     def oracle(self, cp):
         now = self.chain.timestamp(cp)
-        recent, unread = {}, []
+        recent, unread, held = {}, [], set()
         for lb in self.labels:
             if lb["block"] <= cp and now - self.chain.timestamp(lb["block"]) < WINDOW:
                 if lb["tx"] in self.unreadable:
                     unread.append(lb)
+                elif lb["unknown"]:
+                    held.add(lb["cid"])
                 elif lb["q"]:
                     recent.setdefault(lb["cid"], []).append(lb)
         want = {}
@@ -355,21 +366,22 @@ class M14Sweep(Base):
             st = self.state_at(cp)[cluster_id(owner, ops)]
             zero = st["active"] and st["count"] > 0 and self.chain.balance_at(cluster_id(owner, ops), cp) == 0
             want[cid] = ("page" if zero else "warn" if len(hits) >= 3 else "info", len(hits))
-        return want, unread
+        return want, unread, held
 
     def check(self, since, step):
         w = self.w
         cp = w.checkpoint()["block"]
         marker = w.db.meta("reorg:m14") is not None
-        want, unread = self.oracle(cp)
+        want, unread, held = self.oracle(cp)
         opened = open_incidents(w, "m14")
         where = f"step {step} at block {cp}"
         for row in new_outbox(w, "m14", since):
             if row["kind"] == "resolved":  # 1
-                assert row["key"] not in want and not unread, f"{where}: resolved {row['key']} without proof"
+                assert row["key"] not in want and row["key"] not in held and not unread, \
+                    f"{where}: resolved {row['key']} without proof"
         for key in opened:  # 2
-            assert key in want or unread or marker, f"{where}: {key} open without a hit in the window"
-        if not unread and not marker:
+            assert key in want or key in held or unread or marker, f"{where}: {key} open without a hit in the window"
+        if not unread and not marker and not held:
             assert set(opened) == set(want), f"{where}: open {sorted(opened)} != oracle {sorted(want)}"  # 3
             for key, (sev, count) in want.items():
                 ev = json.loads(opened[key]["evidence"])
@@ -377,7 +389,7 @@ class M14Sweep(Base):
                 assert ev["count"] == count and ev["chain_time"] == self.chain.timestamp(cp), where  # 4
 
 
-@pytest.mark.parametrize("seed", range(40))
+@pytest.mark.parametrize("seed", range(60))
 def test_m14_sweep(tmp_path, seed):
     s = M14Sweep(tmp_path, seed)
     advance(s.w)

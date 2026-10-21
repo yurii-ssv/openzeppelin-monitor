@@ -14,6 +14,7 @@ from fixtures_liquidation import (
     OWNER,
     OWNER2,
     THRESHOLD,
+    Clusters,
     LiquidationChain,
     cid_hex,
     failed_liquidation,
@@ -24,7 +25,7 @@ from fixtures_liquidation import (
     setup,
     stub_liquidation_reverts,
 )
-from harness import advance, outbox
+from harness import advance, outbox, stub_params
 
 from eb_storage import cluster_id
 
@@ -729,3 +730,40 @@ def test_qa1_old_database_hits_without_block_time_are_filled_from_headers(tmp_pa
     w.clock.advance(600)
     advance(w)
     assert w.db.conn.execute("SELECT block_time FROM m14_hits").fetchone()[0] == chain.timestamp(hits(w)[0]["block"])
+
+
+def test_sweep_m14_cluster_without_earlier_logs_later_top_up_uses_the_deposit_tuple_minus_value(tmp_path):
+    """Sweep seeds 3, 5, …: a cluster registered before the scan (no log before B) gets a dust deposit, the failed
+    liquidation and a later top-up in one block. `deposit` only adds msg.value to the validated tuple, so the
+    tuple at the end of B-1 is the deposit log's minus its value (validated by the views at B-1)."""
+    chain = LiquidationChain()
+    stub_liquidation_reverts(chain)
+    stub_params(chain)
+    chain.mine()
+    cl = Clusters(chain)
+    cl.create(OWNER, OPS, balance=THRESHOLD - 1_000 * BURN)  # before the worker's start block: no stored log
+    chain.mine()
+    path = tmp_path / "failed-tx.jsonl"
+    path.write_text("")
+    chain, w, _ = setup(tmp_path, checks=M14, chain=chain, inbox={"path": str(path)})
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old)
+    cl.deposit(value=10**18, mine=False)
+    chain.mine()
+    advance(w)
+    assert sent(w, "m14") == [("open", "info")] and not unknown_health(w)
+
+
+def test_sweep_m14_no_deposit_below_one_block_of_burn_is_decided_before_the_position_state(tmp_path):
+    """Sweep seed 21: a deposit of one block of burn, the failed liquidation, then a top-up: no deposit qualifies,
+    so the entry is no hit whatever the state at the failed transaction (not UNKNOWN, holds nothing open)."""
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=BURN, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old)
+    cl.deposit(value=10**18, mine=False)
+    chain.mine()
+    advance(w)
+    assert not hits(w) and not incidents(w, "m14") and not unknown_health(w)
+    assert not w.db.conn.execute("SELECT * FROM m14_pending").fetchall()
