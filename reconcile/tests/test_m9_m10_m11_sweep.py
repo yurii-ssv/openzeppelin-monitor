@@ -260,6 +260,10 @@ class Sweep:
             oc.c.mine()
             ref = oc.c.number - 1
         bad = {3: 1} if self.bad_build else {}  # slot 3 on another tree build: dissents whenever it votes
+
+        def vote(slot, variant=0):
+            oc.vote(ref, slot, variant=variant or bad.get(slot, 0))
+
         if kind == "build":
             self.bad_build = not self.bad_build
         elif kind == "ok":
@@ -269,27 +273,27 @@ class Sweep:
         elif kind == "skip":
             oc.round(ref=ref, voters=tuple(s for s in slots if s != 3), variants=bad)
         elif kind in ("fail", "late", "tie"):
-            oc.vote(ref, slots[0])
+            vote(slots[0])
             self.maybe_step()
-            oc.vote(ref, slots[1], variant=1 if kind == "tie" else 0)
+            vote(slots[1], variant=1 if kind == "tie" else 0)
             self.maybe_step()
             self.step(rng.choice([150, 160, 0]), seconds=rng.choice([0, 31 * 60]))
             if kind == "late" and not oc.committed(ref) and ref > oc.latest:
-                oc.vote(ref, slots[2])
+                vote(slots[2])
         elif kind == "split":
-            oc.vote(ref, slots[0], variant=1)
-            oc.vote(ref, slots[1])
+            vote(slots[0], variant=1)
+            vote(slots[1])
             self.maybe_step()
-            oc.vote(ref, slots[2])
+            vote(slots[2])
             if not oc.committed(ref):
-                oc.vote(ref, slots[3])
+                vote(slots[3])
         elif kind == "rotate_open":
-            oc.vote(ref, slots[0])
-            oc.vote(ref, slots[1])
+            vote(slots[0])
+            vote(slots[1])
             self.maybe_step()
             oc.replace(slots[3], self.new_key())
             self.maybe_step()
-            oc.vote(ref, slots[2])
+            vote(slots[2])
         elif kind == "rotate_between":
             oc.replace(rng.choice(slots), self.new_key())
         elif kind == "dup_transient":
