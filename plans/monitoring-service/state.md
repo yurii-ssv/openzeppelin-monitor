@@ -2,12 +2,12 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-21T18:10Z
-- Last recorded event / last processed Orca delivery: event-0039 / delivery_5db92534fc97 (acked)
+- Updated at: 2026-10-21T18:50Z
+- Last recorded event / last processed Orca delivery: event-0041 / delivery_5d0119e5fdbf (acked)
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); QA worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` @ `9772b2d` (event-0010)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
-- Mode: **Wave 2: CP2a, CP2b, CP2c, CP2e implementing; CP2d QA running; CP1A QA 4 running — attended**
+- Mode: **Wave 2: CP2b, CP2c, CP2e implementing; CP2a, CP2d, CP1A QA running — attended**
 - Overall acceptance: pending
 - Current checkpoint: CP1A repair; CP2a–e (wave 2)
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
@@ -17,7 +17,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP0.0 Orca loop proof | partial, stopped by owner | `ctx_8a4b4362736e` unsettled, terminal retained, idle | `86a17db` | coordinator | leave it; Codex completion proven at first QA |
 | CP0 Baseline and hygiene | VERIFIED — PASS WITH NOTES, integrated (`4fbb9f1`) | QA `ctx_4bd11bbdbf4e` settled | `9772b2d` | Codex gpt-6.1-sol high | done; notes owned by CP1A (schema checks), CP3 (flake), coordinator (V0.4 slash) |
 | CP1A Config lane | IMPLEMENTED (repair 3) — QA ATTEMPT 4 RUNNING (lane head `45fe940`) | repair `ctx_b8fbc82c69b7` settled+released; QA dispatch in event-0036, codex gpt-6.1-sol high, Approve for me verified | `45fe940` | Codex gpt-6.1-sol high (QA) | wait worker_done; F6/F7 to CP3 |
-| CP2a Liquidation (M3, M4, M14) | DISPATCHED (M4 interpretation A approved, event-0031; merging central test patch) | task `task_2d232c728871`/`ctx_c6e862b982c3`, opus/high | `96d1c32` | Claude Opus high | wait worker_done |
+| CP2a Liquidation (M3, M4, M14) | IMPLEMENTED — QA RUNNING (lane head `7211819`) | impl `ctx_c6e862b982c3` settled+released; QA dispatch in event-0041, approve-for-me verified | `7211819` | Codex gpt-6.1-sol high (QA) | wait worker_done; spec M4 amendment at closure |
 | CP2b Oracle (M9, M10, M11) | DISPATCHED | task `task_13f583847d79`/`ctx_e0d798da26ac`, opus/high effective | `96d1c32` | Claude Opus high | wait worker_done |
 | CP2c Wallets (M12, M8 floor, M13 balance watch) | DISPATCHED | task `task_8384f0c7778e`/`ctx_113e2440cd8e`, opus/high effective | `96d1c32` | Claude Opus high | wait worker_done; V2c.8 added (D10) |
 | CP2d Cluster integrity (M1, M2) | IMPLEMENTED — QA RUNNING (lane head `588888b`) | impl `ctx_f28f28892d56` settled+released; QA dispatch in event-0039, codex approve-for-me verified | `588888b` | Codex gpt-6.1-sol high (QA) | wait worker_done; DEF-3 fork PoC deferred |
