@@ -31,7 +31,7 @@ On unexpected semantic failure (a spec rule that cannot be satisfied, a chain fa
 ```text
 Task / live dispatch: task_afe9e8ca054e / ctx_80ac41873894
 Assignment outcome (completed work != passing acceptance): steps 1-9 done; V0.1-V0.12 incl. V0.3f measured; QA owns the verdict.
-Base -> resulting commit (lane branch head) or hashed manifest: 86a17db -> plan/monitoring-service work head @@X@@ (final commit adds only the status hash).
+Base -> resulting commit (lane branch head) or hashed manifest: 86a17db -> plan/monitoring-service work head 9517cd5 (one status-only commit follows: the plan.md CP0 Status line).
 Actual changed paths / deletions / untracked exclusions: .gitignore; new reconcile/, plans/, docs/ssv-specs/, scripts/local-dry-run.sh, 2 compose files, deploy/config/** (55), .claude/settings.json; spec §6; src+tests filter diff; 43 mode normalisations. Uncommitted by design: .dockerignore, Dockerfile.production, ".env copy.example". Ignored: config.zip, .local-dry/, config/.
 Verification IDs -> explicit results; counts/skips/known reds; NOT RUN rows named: V0.2 0 modes, 5 content files; V0.3 0 rows; V0.5 82 files; V0.6 empty; V0.7 exit 0; V0.8 GREEN WITH KNOWN FLAKE: 16/18 green, 2 red (pre-existing mockall race, main 1/60), serial 6/6 green, target test passes; V0.9 30 passed; V0.10 10 commits; V0.11 5 lines; V0.12 ok. None NOT RUN.
 Falsifiers -> red/green as expected; restoration proof (git status --porcelain): V0.3f red, then porcelain identical to baseline.
