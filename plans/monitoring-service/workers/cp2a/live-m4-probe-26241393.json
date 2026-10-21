@@ -1,0 +1,43 @@
+{
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "block": 26241393,
+ "block_hash": "0x01303113c500cb1a6faf3927ab46c491943e92d1648ab70c6b6a92b98d7e60bd",
+ "api_rows": 1908,
+ "inventory": {
+  "block": 26241393,
+  "clusters": 1908,
+  "eth": 882,
+  "ssv_legacy": 1026,
+  "absent": 0,
+  "valid": 1908,
+  "invalid": 0,
+  "from_api": 1908,
+  "from_logs": 0,
+  "tuple_from_logs": 0,
+  "tuple_from_api": 1908,
+  "operators": 1936
+ },
+ "proxy_balance": 425460945991392730800,
+ "clusters": 209330794185673930800,
+ "operators": 7502480915190600000,
+ "network": 208627670890070600000,
+ "staking_pool": 208603988997805600000,
+ "liabilities": 425460945990935130800,
+ "surplus": 457600000,
+ "complete": true,
+ "eth_clusters": 882,
+ "active_eth_clusters": 548,
+ "operator_count": 2352,
+ "gap_count": 0,
+ "gaps": [],
+ "A_liabilities": 425460945990935130800,
+ "A_surplus": 457600000,
+ "B_liabilities": 634064934988740730800,
+ "B_surplus": -208603988997348000000,
+ "rpc_calls": {
+  "eth_getStorageAt": 3817,
+  "eth_call": 2902,
+  "eth_getBalance": 1
+ }
+}
+.venv/bin/python -m checks.m4_probe --probe --rpc   1.25s user 0.48s system 0% cpu 4:39.54 total
