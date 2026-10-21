@@ -1,0 +1,187 @@
+== baseline
+ok    checker on the tracked templates (exit 0)
+ok    abi check on the tracked templates (exit 0)
+ok    M15 coverage + D2 routing on the tracked templates (exit 0)
+== F10: the checkers fail closed (a jq error, a malformed or unreadable file, a missing jq are red, never OK)
+-- a trigger whose config (or the trigger, or the file) has the wrong type: the QA reproducer and its relatives
+FAIL  trigger config = "qa_invalid_config" is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+ok    render.sh also rejects trigger config = "qa_invalid_config" (exit 1)
+FAIL  trigger config = [] is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+ok    render.sh also rejects trigger config = [] (exit 1)
+FAIL  trigger config = 5 is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+ok    render.sh also rejects trigger config = 5 (exit 1)
+FAIL  trigger config = null is red (output lacks /config must be an object/): FAIL: S4 deploy/config/triggers/discord_dao_success.json discord_dao_success: config.message.title/body missing checker: 3 failure(s)
+ok    render.sh also rejects trigger config = null (exit 1)
+FAIL  trigger config = true is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+ok    render.sh also rejects trigger config = true (exit 1)
+FAIL  trigger entry = "s" is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  trigger entry = [] is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  trigger entry = 5 is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  trigger entry = null is red (output lacks /trigger must be an object/): FAIL: S4 deploy/config/triggers/discord_dao_success.json discord_dao_success: trigger_type null not one of telegram|discord|script checker: 2 failure(s)
+FAIL  trigger entry = [1] is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  trigger entry = {} is red (output lacks /name must be a string/): FAIL: S4 deploy/config/triggers/discord_dao_success.json discord_dao_success: trigger_type null not one of telegram|discord|script checker: 2 failure(s)
+FAIL  trigger file that is just "s" is red (output lacks /S1|trigger file must be a JSON object/): FAIL: S6 deploy/config/monitors/ssv_dao_discord_success_monitor.json references undefined trigger 'discord_dao_success' checker: 1 failure(s)
+FAIL  trigger file that is just [] is red (output lacks /S1|trigger file must be a JSON object/): FAIL: S6 deploy/config/monitors/ssv_dao_discord_success_monitor.json references undefined trigger 'discord_dao_success' checker: 1 failure(s)
+FAIL  trigger file that is just 5 is red (output lacks /S1|trigger file must be a JSON object/): FAIL: S6 deploy/config/monitors/ssv_dao_discord_success_monitor.json references undefined trigger 'discord_dao_success' checker: 1 failure(s)
+ok    trigger file that is just null is red (exit 1)
+FAIL  trigger file that is just true is red (output lacks /S1|trigger file must be a JSON object/): FAIL: S6 deploy/config/monitors/ssv_dao_discord_success_monitor.json references undefined trigger 'discord_dao_success' checker: 1 failure(s)
+FAIL  trigger message = string is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  trigger discord_url = string is red (output lacks /config.discord_url must be an object/): FAIL: S4 deploy/config/triggers/discord_dao_success.json discord_dao_success: config.discord_url must be {type:environment,value:NAME} checker: 1 failure(s)
+FAIL  an EMPTY plain value is still a plain value (S2 counts objects, not non-empty strings) (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+-- a monitor with wrong-typed fields (the checker, the ABI gate and the M15 routing gate each)
+FAIL  monitor with events as an object: check-templates red (output lacks /S1b .*match_conditions.events must be an array/): FAIL: S7 deploy/check-abi.sh failed checker: 2 failure(s)
+FAIL  monitor with events as an object: check-abi red (output lacks /A0 .*match_conditions.events must be an array/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error (at /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10mon/deploy/config/monitors/ssv_seed_stake_monitor.json:3299): object ({"a":{"sign...) and array ([]) cannot be added abi-check: 1 failure(s)
+FAIL  monitor with events as a string: check-templates red (output lacks /S1b .*match_conditions.events must be an array/): FAIL: S7 deploy/check-abi.sh failed checker: 2 failure(s)
+FAIL  monitor with events as a string: check-abi red (output lacks /A0 .*match_conditions.events must be an array/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error (at /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10mon/deploy/config/monitors/ssv_seed_stake_monitor.json:3295): string ("x") and array ([]) cannot be added abi-check: 1 failure(s)
+FAIL  monitor with addresses as a string: check-templates red (output lacks /S1b .*addresses must be an array/): FAIL: S7 deploy/check-abi.sh failed checker: 1 failure(s)
+FAIL  monitor with addresses as a string: check-abi red (output lacks /A0 .*addresses must be an array/): FAIL: monitors/ssv_seed_stake_monitor.json A3 event UnstakeRequested(address,uint256,uint256) is not an event in the ABI abi-check: 3 failure(s)
+FAIL  monitor with addresses holding a number: check-templates red (output lacks /S1b .*addresses\[0\] must be an object/): FAIL: S7 deploy/check-abi.sh failed checker: 1 failure(s)
+FAIL  monitor with addresses holding a number: check-abi red (output lacks /A0 .*addresses\[0\] must be an object/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error (at /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10mon/deploy/config/monitors/ssv_seed_stake_monitor.json:28): Cannot index number with string "contract_spec" abi-check: 1 failure(s)
+FAIL  monitor with contract_spec as a string: check-templates red (output lacks /S1b .*contract_spec must be an array/): FAIL: S7 deploy/check-abi.sh failed checker: 1 failure(s)
+FAIL  monitor with contract_spec as a string: check-abi red (output lacks /A0 .*contract_spec must be an array/): FAIL: monitors/ssv_seed_stake_monitor.json A3 event UnstakeRequested(address,uint256,uint256) is not an event in the ABI abi-check: 3 failure(s)
+FAIL  monitor with triggers as a string: check-templates red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  monitor with triggers as a string: check-abi red (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3356 contract_spec events/functions equal the reference layout)
+FAIL  monitor with triggers holding a number: check-templates red (output lacks /S1b .*triggers\[0\] must be a string/): FAIL: S6 deploy/config/monitors/ssv_seed_stake_monitor.json references undefined trigger '5' checker: 1 failure(s)
+FAIL  monitor with triggers holding a number: check-abi red (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3356 contract_spec events/functions equal the reference layout)
+FAIL  monitor with networks as a string: check-templates red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  monitor with networks as a string: check-abi red (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3356 contract_spec events/functions equal the reference layout)
+FAIL  monitor with name as a number: check-templates red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  monitor with name as a number: check-abi red (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3356 contract_spec events/functions equal the reference layout)
+FAIL  monitor with trigger_conditions as a string: check-templates red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  monitor with trigger_conditions as a string: check-abi red (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3356 contract_spec events/functions equal the reference layout)
+FAIL  monitor with match_conditions as an array: check-templates red (output lacks /S1b .*match_conditions must be an object/): FAIL: S7 deploy/check-abi.sh failed checker: 2 failure(s)
+FAIL  monitor with match_conditions as an array: check-abi red (output lacks /A0 .*match_conditions must be an object/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error (at /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10mon/deploy/config/monitors/ssv_seed_stake_monitor.json:3291): Cannot index array with string "transactions" abi-check: 1 failure(s)
+FAIL  monitor with functions as an object: check-templates red (output lacks /S1b .*match_conditions.functions must be an array/): FAIL: S7 deploy/check-abi.sh failed checker: 1 failure(s)
+FAIL  monitor with functions as an object: check-abi red (output lacks /A0 .*match_conditions.functions must be an array/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error (at /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10mon/deploy/config/monitors/ssv_seed_stake_monitor.json:3306): array ([{"signatur...) and object ({"a":1}) cannot be added abi-check: 1 failure(s)
+FAIL  monitor with an event that is a string: check-templates red (output lacks /S1b .*match_conditions.events\[0\] must be an object/): FAIL: S7 deploy/check-abi.sh failed checker: 1 failure(s)
+FAIL  monitor with an event that is a string: check-abi red (output lacks /A0 .*match_conditions.events\[0\] must be an object/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error (at /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10mon/deploy/config/monitors/ssv_seed_stake_monitor.json:3301): Cannot index string with string "signature" abi-check: 1 failure(s)
+FAIL  monitor with a transaction status that is not Any/Success/Failure: check-templates red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  monitor with a transaction status that is not Any/Success/Failure: check-abi red (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3356 contract_spec events/functions equal the reference layout)
+FAIL  monitor file that is just []: check-templates red (output lacks /S1/): FAIL: S7 deploy/check-abi.sh failed checker: 5 failure(s)
+ok    monitor file that is just []: check-abi red (exit 1)
+FAIL  monitor file that is just "x": check-templates red (output lacks /S1/): FAIL: S7 deploy/check-abi.sh failed checker: 5 failure(s)
+ok    monitor file that is just "x": check-abi red (exit 1)
+FAIL  monitor file that is just 5: check-templates red (output lacks /S1/): FAIL: S7 deploy/check-abi.sh failed checker: 5 failure(s)
+ok    monitor file that is just 5: check-abi red (exit 1)
+ok    monitor file that is just null: check-templates red (exit 1)
+ok    monitor file that is just null: check-abi red (exit 1)
+FAIL  check-m15-coverage: the covering monitor's events as an object is red (exit 0, wanted non-zero): no M15/M10 info event or governance-update function is routed to Telegram
+FAIL  check-m15-coverage: a Telegram-routed monitor whose triggers is a string cannot be skipped (exit 0, wanted non-zero): no M15/M10 info event or governance-update function is routed to Telegram
+FAIL  check-m15-coverage: a malformed trigger file is red, not an empty Telegram list (exit 0, wanted non-zero): no M15/M10 info event or governance-update function is routed to Telegram
+FAIL  network rpc_urls = string is red (output lacks /rpc_urls must be an array/): FAIL: S5 deploy/config/networks/evm_ethereum_mainnet.json primary RPC (weight 100) must be MAINNET_RPC_URL checker: 1 failure(s)
+FAIL  network mutated by '. = []' is red (output lacks /S1b|S5/): FAIL: S6 deploy/config/monitors/ssv_validator_discord_success_monitor.json references undefined network 'evm_ethereum_mainnet' checker: 32 failure(s)
+FAIL  network mutated by '. = "x"' is red (output lacks /S1b|S5/): FAIL: S6 deploy/config/monitors/ssv_validator_discord_success_monitor.json references undefined network 'evm_ethereum_mainnet' checker: 32 failure(s)
+FAIL  network mutated by '.slug = 5' is red (output lacks /S1b|S5/): FAIL: S6 deploy/config/monitors/ssv_validator_discord_success_monitor.json references undefined network 'evm_ethereum_mainnet' checker: 32 failure(s)
+FAIL  network mutated by '.max_past_blocks = "3600"' is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  network mutated by '.rpc_urls[0] = 5' is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  network mutated by '.rpc_urls[0].url = "x"' is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+ok    network mutated by '.recovery_config = "x"' is red (exit 1)
+FAIL  render.sh does not coerce a network whose rpc_urls is an object into an empty array (exit 0, wanted non-zero): Rendered /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10netr-out/config; --check passed (placeholders used for: DISCORD_WEBHOOK_CLUSTER_FAILED DISCORD_WEBHOOK_DAO_FAILED DISCORD_WEBHOOK_DAO_SAFE_FAILED DISCORD_WEBHOOK_INFO DISCORD_WEBHOOK_LARGE_ETH_TRANSFER DISCORD_WEBHOOK_LIQUIDATION_FAILED DISCORD_WEBHOOK_OPERATOR_FAILED DISCORD_WEBHOOK_ORACLE_DISSENT DISCORD_WEBHOOK_ORACLE_FAILED DISCORD_WEBHOOK_VALIDATOR_FAILED TELEGRAM_TOKEN)
+ok    render.sh with a trigger file that is an array is red (exit 5)
+-- unreadable, empty, binary, looping and stray files in the config dir
+FAIL  empty monitors file is red and says so (output lacks /S1 .*ssv_seed_stake_monitor.json is empty/): FAIL: S1 not valid JSON: deploy/config/monitors/ssv_seed_stake_monitor.json checker: 1 failure(s)
+ok    binary monitors file named .json is red (exit 1)
+FAIL  monitors file that is a symlink loop is red (output lacks /S0 .*ssv_seed_stake_monitor.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/monitors/ssv_seed_stake_monitor.json checker: 1 failure(s)
+FAIL  monitors file that is a dangling symlink is red (output lacks /S0 .*ssv_seed_stake_monitor.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/monitors/ssv_seed_stake_monitor.json checker: 1 failure(s)
+FAIL  unreadable monitors file is red and says so (output lacks /S0 .*ssv_seed_stake_monitor.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/monitors/ssv_seed_stake_monitor.json checker: 1 failure(s)
+FAIL  binary non-JSON file in monitors/ is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  empty triggers file is red and says so (output lacks /S1 .*discord_dao_success.json is empty/): FAIL: S1 not valid JSON: deploy/config/triggers/discord_dao_success.json checker: 1 failure(s)
+ok    binary triggers file named .json is red (exit 1)
+FAIL  triggers file that is a symlink loop is red (output lacks /S0 .*discord_dao_success.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/triggers/discord_dao_success.json checker: 1 failure(s)
+FAIL  triggers file that is a dangling symlink is red (output lacks /S0 .*discord_dao_success.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/triggers/discord_dao_success.json checker: 1 failure(s)
+FAIL  unreadable triggers file is red and says so (output lacks /S0 .*discord_dao_success.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/triggers/discord_dao_success.json checker: 1 failure(s)
+FAIL  binary non-JSON file in triggers/ is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  empty networks file is red and says so (output lacks /S1 .*evm_ethereum_mainnet.json is empty/): FAIL: S1 not valid JSON: deploy/config/networks/evm_ethereum_mainnet.json checker: 1 failure(s)
+ok    binary networks file named .json is red (exit 1)
+FAIL  networks file that is a symlink loop is red (output lacks /S0 .*evm_ethereum_mainnet.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/networks/evm_ethereum_mainnet.json checker: 1 failure(s)
+FAIL  networks file that is a dangling symlink is red (output lacks /S0 .*evm_ethereum_mainnet.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/networks/evm_ethereum_mainnet.json checker: 1 failure(s)
+FAIL  unreadable networks file is red and says so (output lacks /S0 .*evm_ethereum_mainnet.json is not a readable regular file/): FAIL: S1 not valid JSON: deploy/config/networks/evm_ethereum_mainnet.json checker: 1 failure(s)
+FAIL  binary non-JSON file in networks/ is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  check-abi: an empty monitor file is red (jq prints nothing for empty input) (exit 0, wanted non-zero): abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI; 3234 contract_spec events/functions equal the reference layout)
+FAIL  check-abi: a monitor that is a symlink loop is red, not skipped (exit 0, wanted non-zero): abi-check: OK (31 monitors: every event/function signature and expression parameter exists in the ABI; 3234 contract_spec events/functions equal the reference layout)
+FAIL  check-abi: a dangling-symlink monitor is red, not skipped (exit 0, wanted non-zero): abi-check: OK (31 monitors: every event/function signature and expression parameter exists in the ABI; 3234 contract_spec events/functions equal the reference layout)
+FAIL  check-abi: an unreadable monitor is red (output lacks /not a readable regular file/): FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: error: Could not open file /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10abiunr/deploy/config/monitors/ssv_seed_stake_monitor.json: Permission denied abi-check: 1 failure(s)
+FAIL  check-m15-coverage: an empty covering monitor is red (output lacks /missing, unreadable or empty/): missing: Upgraded(address) no M15/M10 info event or governance-update function is routed to Telegram
+FAIL  check-m15-coverage: a binary monitor in the routing scan is red, not skipped (exit 0, wanted non-zero): no M15/M10 info event or governance-update function is routed to Telegram
+-- secret scan: binary and symlinked files are scanned or refused, not skipped
+FAIL  a webhook inside a binary file is found (grep -a) (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  a symlink under deploy/ that grep -r would not follow is red (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+-- jq absent or not working: a clear 'jq is required', never a pass
+ok    no jq on PATH: deploy/check-templates.sh (exit 2)
+FAIL  a jq that exits 0 without output: deploy/check-templates.sh (output lacks /jq is required/): FAIL: S6 deploy/config/monitors/ssv_validator_discord_success_monitor.json has no triggers checker: 96 failure(s)
+FAIL  no jq on PATH: deploy/check-abi.sh (output lacks /jq is required/): bash: /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/check-abi.sh --config-dir /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/config: No such file or directory
+FAIL  a jq that exits 0 without output: deploy/check-abi.sh (output lacks /jq is required/): bash: /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/check-abi.sh --config-dir /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/config: No such file or directory
+FAIL  no jq on PATH: deploy/check-m15-coverage.sh (output lacks /jq is required/): /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/check-m15-coverage.sh: line 31: jq: command not found cannot read the proxy ABI from /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/abi/reference.json
+FAIL  a jq that exits 0 without output: deploy/check-m15-coverage.sh (output lacks /jq is required/): cannot read the proxy ABI from /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/abi/reference.json
+FAIL  no jq on PATH: deploy/abi/derive.sh (output lacks /jq is required/): bash: /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/abi/derive.sh --ssv-out /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq --safe-abi /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/x: No such file or directory
+FAIL  a jq that exits 0 without output: deploy/abi/derive.sh (output lacks /jq is required/): bash: /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/abi/derive.sh --ssv-out /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq --safe-abi /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/x: No such file or directory
+FAIL  no jq on PATH: deploy/tests/abi-mutation-sweep.sh (output lacks /jq is required/): bash: /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/tests/abi-mutation-sweep.sh --config-dir /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/config: No such file or directory
+FAIL  a jq that exits 0 without output: deploy/tests/abi-mutation-sweep.sh (output lacks /jq is required/): bash: /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/tests/abi-mutation-sweep.sh --config-dir /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/deploy/config: No such file or directory
+ok    no jq on PATH: deploy/render.sh (exit 1)
+FAIL  a jq that exits 0 without output: deploy/render.sh (output lacks /jq is required/): Please refer to the documentation quickstart (https://docs.openzeppelin.com/monitor) for proper configuration setup. render: --check failed (binary exit 0; success line or ERROR lines decide)
+ok    no jq on PATH: scripts/local-dry-run.sh (exit 1)
+FAIL  a jq that exits 0 without output: scripts/local-dry-run.sh (exit 0, wanted non-zero): Prepared /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10nojq/.local-dry/config
+-- every jq call whose failure could read as 'no violations' is checked (each site fails by injection)
+FAIL  check-templates S1 (JSON validity): no jq call contained the marker, so nothing was injected
+FAIL  check-templates S1b (shape, monitors): no jq call contained the marker, so nothing was injected
+FAIL  check-templates S1b (shape, triggers): no jq call contained the marker, so nothing was injected
+FAIL  check-templates S1b (shape, networks): no jq call contained the marker, so nothing was injected
+ok    check-templates S2 (plain values) (jq failed 1 time(s); exit 1)
+ok    check-templates S4 (trigger keys) (jq failed 1 time(s); exit 1)
+FAIL  check-templates S4 (trigger names): jq failed 1 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  check-templates S4 (required fields; the F10 site): jq failed 30 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  check-templates S4 (script paths): jq failed 30 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  check-templates S5 (networks): jq failed 1 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+ok    check-templates S6 (network slugs) (jq failed 1 time(s); exit 1)
+FAIL  check-templates S6 (monitor names): jq failed 1 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+ok    check-templates S6 (addresses) (jq failed 32 time(s); exit 1)
+ok    check-templates S6 (networks length) (jq failed 32 time(s); exit 1)
+ok    check-templates S6 (match_conditions) (jq failed 32 time(s); exit 1)
+FAIL  check-templates S6 (trigger references): jq failed 32 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+ok    check-templates S6 (triggers length) (jq failed 32 time(s); exit 1)
+FAIL  check-templates S6 (network references): jq failed 32 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+FAIL  check-templates S6 (trigger_conditions scripts): jq failed 32 time(s) here but the command exited 0: checker: OK (32 monitors, 30 triggers, 1 network)
+ok    check-abi (reference validity) (jq failed 1 time(s); exit 1)
+FAIL  check-abi (shape): no jq call contained the marker, so nothing was injected
+ok    check-abi (per-monitor rules) (jq failed 32 time(s); exit 1)
+FAIL  check-abi (compared count; used to print OK): jq failed 1 time(s) here but the command exited 0: abi-check: OK (32 monitors: every event/function signature and expression parameter exists in the ABI;  contract_spec ev
+ok    check-m15-coverage (name list) (jq failed 1 time(s); exit 2)
+ok    check-m15-coverage (required signatures) (jq failed 1 time(s); exit 2)
+ok    check-m15-coverage (the monitor's events) (jq failed 1 time(s); exit 1)
+ok    check-m15-coverage (Telegram trigger keys) (jq failed 1 time(s); exit 2)
+FAIL  check-m15-coverage (the D2 routing scan; was skipped per file): jq failed 32 time(s) here but the command exited 0: no M15/M10 info event or governance-update function is routed to Telegram
+FAIL  check-m15-coverage (shape): no jq call contained the marker, so nothing was injected
+ok    render.sh (optional second RPC rewrite) (jq failed 1 time(s); exit 5)
+FAIL  render.sh (Telegram chat id rewrite): no jq call contained the marker, so nothing was injected
+ok    render.sh (referenced environment variables) (jq failed 1 time(s); exit 5)
+FAIL  render.sh (rendered monitor count): no jq call contained the marker, so nothing was injected
+FAIL  abi-mutation-sweep (contract_spec count of one monitor): jq failed 1 time(s) here but the command exited 0: abi-mutation-sweep: 17 checker runs, 0 failure(s)
+FAIL  abi-mutation-sweep (mutated-entry count of one monitor): jq failed 16 time(s) here but the command exited 0: abi-mutation-sweep: 34 checker runs, 0 failure(s)
+ok    abi-mutation-sweep (writing the mutated monitor) (jq failed 17 time(s); exit 1)
+FAIL  abi-mutation-sweep: a monitor that is a symlink loop is a counted failure, not skipped (output lacks /not a readable regular file/): FAIL  function-output-renamed mutated nothing anywhere (sweep proves nothing for it) abi-mutation-sweep: 0 checker runs, 16 failure(s)
+-- check-m15-coverage: the required set cannot shrink silently
+FAIL  an M15 section that names one event instead of 16 is red (was: required set of 2, green) (exit 0, wanted non-zero): no M15/M10 info event or governance-update function is routed to Telegram
+FAIL  a missing spec is red and says so (output lacks /spec .* not found/):  source line number 1 M15 no longer mentions "module updates"; revisit the ModuleUpgraded requirement
+FAIL  a later file that redefines telegram_dao_success as Discord cannot hide the Telegram route (was merged with add: green) (exit 0, wanted non-zero): no M15/M10 info event or governance-update function is routed to Telegram
+ok    trigger key defined twice is red in check-templates too (exit 1)
+-- trigger and monitor reference matching is literal
+FAIL  a trigger reference that only matches as a regex (dots) is undefined (exit 0, wanted non-zero): checker: OK (32 monitors, 30 triggers, 1 network)
+-- scripts/local-dry-run.sh: rewrites cannot fail silently, every trigger of a file is handled
+ok    no test channel: only the inbox bridge and the local log remain, no environment reference at all
+ok    with test channels every trigger reads only TEST_DISCORD_WEBHOOK / TEST_TELEGRAM_TOKEN
+FAIL  local-dry-run multi-trigger file (exit 0, refs 'DISCORD_WEBHOOK_INFO ')
+ok    a script trigger other than the inbox bridge is dropped
+FAIL  local-dry-run (TEST_RPC_URL rewrite; was '&& mv', not caught by set -e): jq failed 1 time(s) here but the command exited 0: Prepared /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10dry5/.local-dry/config
+FAIL  local-dry-run (Discord trigger rewrite; the production reference stayed): jq failed 16 time(s) here but the command exited 0: Prepared /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10dry5/.local-dry/config
+FAIL  local-dry-run (monitor trigger lists; was '&& mv'): jq failed 32 time(s) here but the command exited 0: Prepared /var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/tmp.qmjpmPmcnR/f10dry5/.local-dry/config
+ok    local-dry-run (kept trigger list) (jq failed 1 time(s); exit 5)
+FAIL  local-dry-run (production-secret audit): no jq call contained the marker, so nothing was injected
+-- the inbox bridge never appends an empty or partial line
+ok    a complete match is appended as one line (exit 0, one line)
+ok    empty stdin appends nothing (exit 4, inbox 0 bytes)
+ok    {} appends nothing (exit 5, inbox 0 bytes)
+ok    not JSON appends nothing (exit 5, inbox 0 bytes)
+FAIL  a jq that exits 0 without output appends nothing (was: an empty line) (exit 0, inbox 1 bytes)
+ok    no jq at all appends nothing (exit 127, inbox 0 bytes)
+ok    tracked deploy/ tree unchanged by the self-test
+selftest: 49 passed, 125 failed, 0 skipped
