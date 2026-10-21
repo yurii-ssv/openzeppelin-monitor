@@ -5,20 +5,19 @@ and reports, through the episode book (`m9_episodes`):
 
 | Trigger (spec) | Key | Severity | Rule here |
 |---|---|---|---|
-| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no commit of that `blockNum` by first vote + `round_timeout_s` (in blocks); consecutive failed rounds are one incident re-sent per failed round (`revision`); healed by a late commit or a superseding commit |
-| no `RootCommitted` for > 9 h | `cadence` | page | clock-driven (`Every`): worker clock − estimated time of the last commit block (persisted at first sight) > `max_commit_gap_s`; healed by the next commit. A gap that opened and closed while the worker was not evaluating is reported once from block distances |
-| two roots for one `blockNum` | `dissent:<slot>` | warn | per settled round, a slot whose vote is not the reference root (committed root; for an uncommitted round the unique plurality root); re-sent per new dissenting round (`revision`); healed when the slot votes the reference root again |
-| three dissenting rounds in a row from one slot | `dissent:<slot>` | page | the same incident escalates at `dissent_streak` consecutive dissents (rounds the slot did not vote in neither count nor reset) |
-| (two roots, no unique reference) | `split` | warn | an uncommitted settled round with tied roots: dissent not attributable to a slot; healed by the next commit |
+| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no commit of that `blockNum` with a chain timestamp within `round_timeout_s` of its first vote, once the horizon (m9_oracle_common `BlockTimes`: the checkpoint's timestamp, or the clock when blocks stop) is past that deadline; consecutive failed rounds are one incident re-sent per failed round (`revision`); healed by a late commit or a superseding commit |
+| no `RootCommitted` for > 9 h | `cadence` | page | horizon − timestamp of the last commit block (or of `start_block`) > `max_commit_gap_s`: the clock keeps it growing while blocks or events stop; healed by the next commit. A gap that opened and closed while the worker was not evaluating is reported once from the commits' timestamps |
+| two roots for one `blockNum` | `split` | warn | as soon as a round has two distinct roots and no reference root yet (not committed and inside its 30 min, or settled with tied roots): immediate, unattributed; healed when the round settles with a reference root (the dissent moves to `dissent:<slot>`) or a later round commits |
+| two roots for one `blockNum`, attributed | `dissent:<slot>` | warn | per settled round (committed, superseded or timed out), a slot that voted any root other than the reference root (committed root; for an uncommitted round the unique plurality root), also when the same slot voted the reference root too (e.g. across an owner change); re-sent per new dissenting round (`revision`); healed only by positive proof: the slot votes the reference root and nothing else in a settled round |
+| three dissenting rounds in a row from one slot | `dissent:<slot>` | page | the same incident escalates when `dissent_streak` consecutive settled rounds have a dissent from the slot; a round the slot did not vote in, or a tied round, breaks the run (it does not heal the incident) |
 | committed with < 3 distinct slots for the committed root | `weak-commit` | page | distinct `oracleId`s voting the committed root < `min_committing_slots`, or < the votes the round's own `quorum`/weight data require; healed by the next adequate commit |
 | a slot absent from the committed root in the last 6 rounds | `absent:<slot>` | warn | active slot ids from the live parameters; needs `absent_rounds` committed rounds of history (else not evaluated) |
 | `commitRoot` revert from a slot address (inbox) | `revert:<address>` | warn | gated inbox rows of `commitRoot` whose sender is a current or historical slot address; re-sent per revert; healed by that address's next successful vote in a later block |
 
-A round is *settled* when committed, superseded by a higher committed `blockNum`, or past its timeout. Blocks
-are converted with `seconds_per_block`. Live parameters used: `active_oracle_ids`, `oracles`. Absence of logs
-is evidence (the scan is complete and reorg-checked by the framework); a malformed log or unreadable parameters
-raise. Reorg: the book's rule (m9_oracle_common); the persisted last-commit time estimate is recomputed when its
-block is no longer the latest stored commit.
+Block positions order events inside a block (`(block, log index)`); every time rule uses chain timestamps
+(`m9_block_times`, see `BlockTimes`). Live parameters used: `active_oracle_ids`, `oracles`. Absence of logs is
+evidence (the scan is complete and reorg-checked by the framework); a malformed log, unreadable parameters or a
+missing header timestamp raise. Reorg: the book's rule (m9_oracle_common) and the block-time cache's.
 """
 
 from __future__ import annotations
@@ -31,23 +30,25 @@ from checks.m9_oracle_common import (
     COMMIT_ROOT_SELECTOR,
     ORACLE_EVENTS,
     ROUND_KINDS,
+    BlockTimes,
     Episode,
     EpisodeBook,
     History,
     Round,
-    blocks_for,
     book_schema,
-    estimate_time,
     inbox_enabled,
     inbox_gate_pending,
     inbox_rows,
     inbox_unavailable,
     load_history,
     short,
+    times_schema,
+    utc,
 )
 from checks.registry import register
 
 TABLE = "m9_episodes"
+TIMES = "m9_block_times"
 
 
 @register
@@ -64,7 +65,7 @@ class M9OracleQuorum(Check):
         "require_inbox": True,  # the commitRoot-revert rule needs the failed-transaction inbox (inbox.path)
     }
     events = ORACLE_EVENTS
-    schema = book_schema(TABLE)
+    schema = book_schema(TABLE) + ";\n" + times_schema(TIMES)
 
     def __init__(self, config: dict, settings: dict):
         super().__init__(config, settings)
@@ -76,6 +77,7 @@ class M9OracleQuorum(Check):
                              "set checks.m9.require_inbox false to run without it")
         self.schedule = (Every(config["interval_s"]), OnEvents(ROUND_KINDS | {"OracleReplaced"}), OnInbox())
         self.book = EpisodeBook(self.id, TABLE)
+        self.times = BlockTimes(TIMES)
         self.spb = config["seconds_per_block"]
         # votes precede their round's commit by ~65 blocks and follow its reference block: a round whose
         # blockNum is below start_block may have votes before the stored history, so vote-based rules skip it
@@ -91,10 +93,15 @@ class M9OracleQuorum(Check):
         for _ in ctx.events():  # the history is re-derived below; the cursor only says "something changed"
             pass
         hist = load_history(ctx.db, block)
-        timeout = blocks_for(self.config["round_timeout_s"], self.spb)
-        settled = self.settled_rounds(hist, block, timeout)
-        episodes = (self.failed_rounds(hist, block, timeout) + self.cadence(ctx, hist, block)
-                    + self.dissent(hist, settled) + self.weak_commits(hist) + self.absent(hist))
+        self.times.begin(ctx, self.spb)
+        rounds = [r for ref, r in sorted(hist.rounds.items()) if r.votes and ref >= self.complete_from]
+        self.times.get([r.first_vote.block for r in rounds] + [c.block for c in hist.commits]
+                       + [ctx.settings["start_block"], block])  # one batch for the headers not cached yet
+        self.now = self.times.horizon()
+        self.block = block
+        states = [self.round_state(hist, r) for r in rounds]
+        episodes = (self.failed_rounds(states) + self.cadence(ctx, hist, block) + self.splits(hist, states)
+                    + self.dissent(states) + self.weak_commits(hist) + self.absent(hist))
         unknown: set[str] = set()
         if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
             ctx.health("m9-inbox", "M9 commitRoot-revert rule not evaluated: the failed-transaction inbox is not "
@@ -109,100 +116,96 @@ class M9OracleQuorum(Check):
 
     # ---- rounds
 
-    def settled_rounds(self, hist: History, block: int, timeout: int) -> list[tuple[Round, int, str | None]]:
-        """(round, settle block, reference root) for every settled round with votes, by blockNum."""
-        out = []
-        for ref in sorted(hist.rounds):
-            rnd = hist.rounds[ref]
-            if not rnd.votes or ref < self.complete_from:
-                continue
-            close = hist.closing_event(rnd)
-            deadline = rnd.first_vote.block + timeout
-            if close is None and block < deadline:
-                continue  # still open: votes may arrive
-            at = min(close.block, deadline) if close is not None else deadline
-            if rnd.commit is not None:
-                reference = rnd.commit.root
-            else:
-                counts: dict[str, int] = {}
-                for v in rnd.votes:
-                    counts[v.root] = counts.get(v.root, 0) + 1
-                top = max(counts.values())
-                leaders = [r for r, n in counts.items() if n == top]
-                reference = leaders[0] if len(leaders) == 1 else None
-            out.append((rnd, at, reference))
-        return out
+    def round_state(self, hist: History, rnd: Round) -> SimpleNamespace:
+        """One round at this run: its deadline (chain time of the first vote + `round_timeout_s`), the commit that
+        closed it (own or superseding, any time), whether it is settled (closed, or the horizon is past the deadline)
+        and its reference root (the committed root; for a settled uncommitted round the unique plurality root;
+        None while unsettled or tied)."""
+        first_at = self.times(rnd.first_vote.block)
+        deadline = first_at + self.config["round_timeout_s"]
+        close = hist.closing_event(rnd)
+        settled = close is not None or self.now > deadline
+        if rnd.commit is not None:
+            reference = rnd.commit.root
+        elif settled:
+            counts: dict[str, int] = {}
+            for v in rnd.votes:
+                counts[v.root] = counts.get(v.root, 0) + 1
+            top = max(counts.values())
+            leaders = [r for r, n in counts.items() if n == top]
+            reference = leaders[0] if len(leaders) == 1 else None
+        else:
+            reference = None
+        in_time = rnd.commit is not None and self.times(rnd.commit.block) <= deadline
+        failed = not in_time and self.now > deadline
+        return SimpleNamespace(rnd=rnd, ref=rnd.ref, first_at=first_at, deadline=deadline, close=close,
+                               settled=settled, reference=reference, failed=failed,
+                               last_vote_block=rnd.votes[-1].block)
 
-    def failed_rounds(self, hist: History, block: int, timeout: int) -> list[Episode]:
+    def failed_rounds(self, states) -> list[Episode]:
         """Failed rounds grouped into runs that end at the same commit (a late commit of the run's round or a
         superseding one): one incident per run, re-sent for every further failed round (`revision`)."""
         runs: dict[tuple | None, list] = {}
-        for ref, rnd in sorted(hist.rounds.items()):
-            if not rnd.votes or ref < self.complete_from:
-                continue
-            deadline = rnd.first_vote.block + timeout
-            if block < deadline or (rnd.commit is not None and rnd.commit.block <= deadline):
-                continue
-            close = hist.closing_event(rnd)
-            runs.setdefault(close.pos if close is not None else None, []).append((rnd, deadline, close))
+        for st in states:
+            if st.failed:
+                runs.setdefault(st.close.pos if st.close is not None else None, []).append(st)
         out = []
+        timeout_min = self.config["round_timeout_s"] // 60
         for members in runs.values():
             first, last = members[0], members[-1]
-            close = last[2]
+            close = last.close
             if close is None:
                 resolution = ""
-            elif close is last[0].commit:
-                resolution = f"Round {last[0].ref} committed late at block {close.block} (tx {close.tx_hash})."
+            elif close is last.rnd.commit:
+                resolution = f"Round {last.ref} committed late at block {close.block} (tx {close.tx_hash})."
             else:
-                resolution = (f"Round(s) {', '.join(str(m[0].ref) for m in members)} can no longer commit: round "
+                resolution = (f"Round(s) {', '.join(str(m.ref) for m in members)} can no longer commit: round "
                               f"{close.ref_block} committed at block {close.block} (tx {close.tx_hash}); the oracle "
                               f"has recovered.")
-            rnd, deadline = last[0], last[1]
+            rnd = last.rnd
             votes = "; ".join(f"slot {v.slot} {short(v.oracle)} root {v.root[:10]} (block {v.block})" for v in rnd.votes)
             roots = len({v.root for v in rnd.votes})
-            refs = [m[0].ref for m in members]
+            refs = [m.ref for m in members]
             out.append(Episode(
-                key="failed-round", episode=f"failed-round:{first[0].ref}", active=close is None,
-                evidence_block=first[1], severity="page",
-                title=(f"Oracle round {rnd.ref} not committed within {self.config['round_timeout_s'] // 60} min"
+                key="failed-round", episode=f"failed-round:{first.ref}", active=close is None,
+                # an absence: established at this checkpoint while it holds, healed by the closing commit
+                evidence_block=close.block if close is not None else self.block, severity="page",
+                title=(f"Oracle round {rnd.ref} not committed within {timeout_min} min"
                        + (f" ({len(refs)} failed rounds in a row)" if len(refs) > 1 else "")),
-                body=(f"WeightedRootProposed for blockNum {rnd.ref} (first vote at block {rnd.first_vote.block}) and "
-                      f"no RootCommitted by block {deadline}. Votes: {votes}. {roots} distinct root(s)."
+                body=(f"WeightedRootProposed for blockNum {rnd.ref} (first vote at block {rnd.first_vote.block}, "
+                      f"{utc(last.first_at)}) and no RootCommitted by {utc(last.deadline)} (chain time). Votes: "
+                      f"{votes}. {roots} distinct root(s)."
                       + (f" Failed rounds since the last commit: {', '.join(map(str, refs))}." if len(refs) > 1 else "")
                       + " The oracle has no retry: the next target waits for the next round. Check every slot's "
                       "build (#93157)."),
                 subject={"ref_block": rnd.ref}, revision=str(rnd.ref),
-                evidence={"failed_rounds": refs, "votes": [vote_json(v) for v in rnd.votes], "deadline_block": deadline,
-                          "distinct_roots": roots},
+                evidence={"failed_rounds": refs, "votes": [vote_json(v) for v in rnd.votes],
+                          "first_vote_at": last.first_at, "deadline_at": last.deadline, "distinct_roots": roots},
                 resolution=resolution))
         return out
 
     def cadence(self, ctx: Ctx, hist: History, block: int) -> list[Episode]:
         max_gap = self.config["max_commit_gap_s"]
-        gap_blocks = blocks_for(max_gap, self.spb)
         commits = hist.commits
         out = []
         open_gaps = {r[0] for r in ctx.db.conn.execute(
             f"SELECT episode FROM {TABLE} WHERE key='cadence' AND closed=0")}
         for prev, nxt in zip(commits, commits[1:]):  # gaps that closed: resolve the open one, report a missed one
-            if (nxt.block - prev.block) * self.spb > max_gap or f"cadence:{prev.block}" in open_gaps:
-                hours = (nxt.block - prev.block) * self.spb / 3600
-                out.append(self._gap(prev.block, prev.ref_block, False, prev.block + gap_blocks,
-                                     f"about {hours:.1f} h (block distance)",
+            gap = self.times(nxt.block) - self.times(prev.block)
+            if gap > max_gap or f"cadence:{prev.block}" in open_gaps:
+                out.append(self._gap(prev.block, prev.ref_block, False, nxt.block, f"{gap / 3600:.1f} h (chain time)",
                                      f"RootCommitted for blockNum {nxt.ref_block} at block {nxt.block} ended the gap.",
-                                     {"next_commit_block": nxt.block, "next_ref_block": nxt.ref_block}))
+                                     {"next_commit_block": nxt.block, "next_ref_block": nxt.ref_block,
+                                      "gap_s": gap}))
         last_block = commits[-1].block if commits else ctx.settings["start_block"]
         last_ref = commits[-1].ref_block if commits else None
-        mark = ctx.state("last_commit")
-        if not mark or mark.get("block") != last_block:  # new commit, first run, or a reorg replaced it
-            mark = {"block": last_block, "at": estimate_time(ctx, last_block, self.spb)}
-            ctx.set_state("last_commit", mark)
-        age = ctx.clock() - mark["at"]
+        since_at = self.times(last_block)
+        age = self.now - since_at
         if age > max_gap:
             since = (f"the last RootCommitted (blockNum {last_ref}, block {last_block})" if commits else
                      f"start_block {last_block} (no RootCommitted stored since)")
-            out.append(self._gap(last_block, last_ref, True, block, f"{age / 3600:.1f} h (worker clock)", "",
-                                 {"age_s": round(age), "since": since, "estimated_at": mark["at"]}))
+            out.append(self._gap(last_block, last_ref, True, block, f"{age / 3600:.1f} h (to {utc(self.now)})", "",
+                                 {"age_s": round(age), "since": since, "since_at": since_at}))
         return out
 
     def _gap(self, since_block, since_ref, active, evidence_block, length, resolution, extra) -> Episode:
@@ -215,50 +218,96 @@ class M9OracleQuorum(Check):
             subject={"since_block": since_block}, evidence={"since_ref_block": since_ref, **extra},
             resolution=resolution or "RootCommitted observed again.")
 
-    def dissent(self, hist: History, settled) -> list[Episode]:
+    def splits(self, hist: History, states) -> list[Episode]:
+        """Two distinct roots for one blockNum with no reference root to attribute them: immediately (an open
+        round inside its 30 min) and for a settled tied round. Settling with a reference root heals it without a
+        report of its own (`occurred=False`): the dissent is then `dissent:<slot>`, so nothing is lost."""
+        out = []
+        for st in states:
+            rnd = st.rnd
+            seen: set[str] = set()
+            second = None
+            for v in rnd.votes:
+                seen.add(v.root)
+                if len(seen) == 2 and second is None:
+                    second = v
+            if second is None:
+                continue
+            sup = hist.superseded_by(rnd.ref) if rnd.commit is None else None
+            active = st.reference is None and sup is None
+            if active:
+                resolution = ""
+            elif st.reference is not None:
+                resolution = (f"Round {rnd.ref} settled on root {st.reference[:10]}: the dissent is attributed per "
+                              f"slot (dissent:<slot>).")
+            else:
+                resolution = f"A later round committed (blockNum {sup.ref_block})."
+            state = "still open" if not st.settled else "settled with tied roots"
+            out.append(Episode(
+                key="split", episode=f"split:{rnd.ref}", active=active, occurred=st.reference is None,
+                evidence_block=second.block, severity="warn",
+                title=f"Oracle round {rnd.ref}: {len(seen)} different merkleRoots proposed",
+                body=(f"Two or more merkleRoot values proposed for blockNum {rnd.ref} (round {state}, no reference root "
+                      f"to attribute the dissent): %s." % "; ".join(f"slot {v.slot} {short(v.oracle)} {v.root[:10]}"
+                                                                     for v in rnd.votes)),
+                subject={"ref_block": rnd.ref}, revision=str(len(seen)),
+                evidence={"votes": [vote_json(v) for v in rnd.votes], "settled": st.settled},
+                resolution=resolution))
+        return out
+
+    def dissent(self, states) -> list[Episode]:
+        """Per slot, an episode from its first dissenting settled round until positive proof of agreement (it votes
+        the reference root and nothing else in a settled round). Inside it, the run of consecutive dissenting rounds
+        sets the severity: any settled round in which the slot did not dissent (no vote, or tied roots) breaks it."""
         streak_n = self.config["dissent_streak"]
         out = []
-        streaks: dict[int, list] = {}  # slot -> [(round, settle block, vote root), ...] of the current streak
+        eps: dict[int, dict] = {}  # slot -> {"rounds": [(state, roots)], "run": n, "max_run": n}
 
-        def episode(slot, rounds, active, healed_by=None):
-            first, last = rounds[0], rounds[-1]
-            n = len(rounds)
-            sev = "page" if n >= streak_n else "warn"
-            listing = "; ".join(f"round {r.ref}: voted {root[:10]}" for r, _, root in rounds[-6:])
-            body = (f"Slot {slot} voted a different merkleRoot than the reference root in {n} consecutive round(s) "
-                    f"({listing}). A slot on another tree build silently blocks quorum (#93157).")
-            if n >= streak_n:
-                body += f" {n} >= {streak_n} in a row: the quorum margin is gone."
+        def episode(slot, e, active, healed_by=None):
+            rounds = e["rounds"]
+            first, last = rounds[0][0], rounds[-1][0]
+            n, longest = len(rounds), e["max_run"]
+            sev = "page" if longest >= streak_n else "warn"
+            listing = "; ".join(f"round {st.ref}: voted {', '.join(r[:10] for r in roots)}" for st, roots in rounds[-6:])
+            body = (f"Slot {slot} voted a different merkleRoot than the reference root in {n} round(s) since round "
+                    f"{first.ref}, {e['run']} in a row now, longest run {longest} ({listing}). A slot on another tree "
+                    f"build silently blocks quorum (#93157).")
+            if sev == "page":
+                body += f" {longest} >= {streak_n} in a row: the quorum margin is gone."
             return Episode(
-                key=f"dissent:{slot}", episode=f"dissent:{slot}:{first[0].ref}", active=active,
-                evidence_block=first[1], severity=sev,
-                title=f"Oracle slot {slot} dissent ({n} round{'s' if n > 1 else ''} in a row)", body=body,
-                subject={"slot": slot}, revision=f"{first[0].ref}:{last[0].ref}",
-                evidence={"rounds": [{"ref_block": r.ref, "settled_block": b, "voted_root": root} for r, b, root in rounds]},
-                resolution=(f"Slot {slot} voted the reference root again in round {healed_by}." if healed_by else ""))
+                key=f"dissent:{slot}", episode=f"dissent:{slot}:{first.ref}", active=active,
+                evidence_block=first.last_vote_block, severity=sev,
+                title=f"Oracle slot {slot} dissent ({n} round{'s' if n > 1 else ''}, {e['run']} in a row)", body=body,
+                subject={"slot": slot}, revision=f"{first.ref}:{last.ref}",
+                evidence={"rounds": [{"ref_block": st.ref, "voted_roots": roots, "reference": st.reference}
+                                     for st, roots in rounds[-24:]], "run": e["run"], "longest_run": longest},
+                resolution=(f"Slot {slot} voted the reference root (and no other) in round {healed_by}."
+                            if healed_by else ""))
 
-        for rnd, at, reference in settled:
-            if reference is None:
-                close = hist.superseded_by(rnd.ref) if rnd.commit is None else None
-                out.append(Episode(
-                    key="split", episode=f"split:{rnd.ref}", active=close is None, evidence_block=at, severity="warn",
-                    title=f"Oracle round {rnd.ref}: roots tied, dissent not attributable",
-                    body=("Two or more merkleRoot values for blockNum %d with no committed or unique plurality root: %s."
-                          % (rnd.ref, "; ".join(f"slot {v.slot} {v.root[:10]}" for v in rnd.votes))),
-                    subject={"ref_block": rnd.ref}, evidence={"votes": [vote_json(v) for v in rnd.votes]},
-                    resolution=f"A later round committed (blockNum {close.ref_block})." if close else ""))
-                continue
+        for st in states:
+            if not st.settled:
+                continue  # votes may still arrive: judged once settled (it is `split` meanwhile)
             by_slot: dict[int, set[str]] = {}
-            for v in rnd.votes:
+            for v in st.rnd.votes:
                 by_slot.setdefault(v.slot, set()).add(v.root)
-            for slot, roots in sorted(by_slot.items()):
-                if reference in roots:
-                    if streaks.get(slot):
-                        out.append(episode(slot, streaks.pop(slot), False, healed_by=rnd.ref))
+            if st.reference is None:  # tied: no slot's dissent is attributable, every run is broken
+                for e in eps.values():
+                    e["run"] = 0
+                continue
+            for slot in sorted(set(by_slot) | set(eps)):
+                roots = by_slot.get(slot)
+                if roots and roots == {st.reference}:
+                    if slot in eps:
+                        out.append(episode(slot, eps.pop(slot), False, healed_by=st.ref))
+                elif roots:
+                    e = eps.setdefault(slot, {"rounds": [], "run": 0, "max_run": 0})
+                    e["rounds"].append((st, sorted(roots - {st.reference})))
+                    e["run"] += 1
+                    e["max_run"] = max(e["max_run"], e["run"])
                 else:
-                    streaks.setdefault(slot, []).append((rnd, at, sorted(roots)[0]))
-        for slot, rounds in sorted(streaks.items()):
-            out.append(episode(slot, rounds, True))
+                    eps[slot]["run"] = 0  # no vote: not a dissenting round
+        for slot, e in sorted(eps.items()):
+            out.append(episode(slot, e, True))
         return out
 
     def committed(self, hist: History) -> list[Round]:

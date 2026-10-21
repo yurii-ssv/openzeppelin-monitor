@@ -76,7 +76,7 @@ def test_zero_updates_with_leaf_mismatches_pages(tmp_path):
     u.close()
     assert open_keys(u.w, "m11") == {"liveness": "page"}
     inc = incidents(u.w, "m11")[-1]
-    assert "1 of 3 clusters differ" in inc["body"] and u.cids[1][:12] in inc["body"]
+    assert "1 of 3 compared clusters differ" in inc["body"] and u.cids[1][:12] in inc["body"]
 
 
 def test_benign_zero_updates_with_every_leaf_matching_stays_warn(tmp_path):
@@ -202,31 +202,56 @@ def test_inbox_unavailable_keeps_the_revert_rate_incident(tmp_path):
 # ---------------------------------------------------------------- V2x.1: weekly full-state comparison (warn)
 
 
+def mismatch_older_than_one_round(u, cluster=2, leaf=48):
+    """The weekly comparison at round 1 finds the cluster off its leaf; the updater leaves it through round 2."""
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[cluster]: leaf})
+    u.close()
+    assert "state-mismatch" not in open_keys(u.w, "m11")  # one round old: not yet
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[cluster]: leaf})
+    u.close()
+
+
 def test_weekly_full_state_mismatch_warns(tmp_path):
+    u = world(tmp_path)
+    mismatch_older_than_one_round(u)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    inc = incidents(u.w, "m11")[0]
+    assert u.cids[2] in inc["evidence"] and "previous evaluated root" in inc["body"]
+    u.set_eb(32)
+    tick(u.w, u.oc, 1, seconds=3 * 86400)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}  # no new root, no weekly run: not compared again
+    tick(u.w, u.oc, 1, seconds=4 * 86400)  # the weekly comparison: the reported cluster matches now
+    assert open_keys(u.w, "m11") == {}
+    assert "every reported cluster (1) was compared again" in sent(u.w, "m11", "kind='resolved'")[0]["text"]
+
+
+def test_a_mismatch_fixed_by_the_next_round_never_warns(tmp_path):
+    """QA cp2b-1 F6 twin: the mismatch found at one root is gone at the next (the updater fixed it): not older than
+    one round, silent; the follow-up compares only that cluster."""
     u = world(tmp_path)
     u.round(updates=(0,))
     u.set_eb(32, leaves={u.cids[2]: 48})
     u.close()
-    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    calls = u.api.calls
+    u.round(updates=(0,))
     u.set_eb(32)
-    tick(u.w, u.oc, 1, seconds=3 * 86400)
-    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}  # weekly: not re-compared yet
-    tick(u.w, u.oc, 1, seconds=4 * 86400)
-    assert open_keys(u.w, "m11") == {}
+    u.close()
+    assert pw(u.w) == [] and u.api.calls == calls + 1
+    assert u.w.db.meta("check:m11:state_evals")[-1]["scope"] == [u.cids[2]]
 
 
 def test_benign_weekly_full_state_all_match_is_silent(tmp_path):
     u = world(tmp_path)
     u.round(updates=(0,))
     u.close()
-    assert pw(u.w) == [] and u.w.db.meta("check:m11:full_state")["result"]["checked"] == 3
+    assert pw(u.w) == [] and u.w.db.meta("check:m11:state_evals")[-1]["checked"] == 3
 
 
 def test_weekly_full_state_deferred_while_the_api_is_unreachable(tmp_path):
     u = world(tmp_path)
-    u.round(updates=(0,))
-    u.set_eb(32, leaves={u.cids[2]: 48})
-    u.close()
+    mismatch_older_than_one_round(u)
     u.api.down = True
     u.set_eb(32)
     tick(u.w, u.oc, 1, seconds=8 * 86400)
@@ -240,8 +265,7 @@ def test_leaves_at_another_reference_block_are_not_compared(tmp_path):
     u.api.ref = 1  # the API answers for an older root
     u.close()
     assert pw(u.w) == []
-    res = u.w.db.meta("check:m11:full_state") or {}
-    assert not res  # no leaf at the right root: DEFERRED, not stored as "all match"
+    assert not u.w.db.meta("check:m11:state_evals")  # no leaf at the right root: DEFERRED, not stored as "all match"
 
 
 # ---------------------------------------------------------------- V2x.2 thresholds_from_chain
@@ -341,7 +365,7 @@ def test_reorg_depth_n_moving_the_commit_invalidates_cached_senders_and_proof(tm
     u.round(updates=(0,))
     u.close(confirmations + 5)
     assert u.w.db.conn.execute("SELECT COUNT(*) FROM m11_senders").fetchone()[0] == 1
-    saved = u.w.db.meta("check:m11:full_state")
+    saved = u.w.db.meta("check:m11:state_evals")[-1]
     assert saved["commit_block"] >= fork
     u.c.reorg(fork)  # depth > confirmations: the commit and its update leave the chain
     u.ssv.latest_root = 0
@@ -352,7 +376,7 @@ def test_reorg_depth_n_moving_the_commit_invalidates_cached_senders_and_proof(tm
     u.close(confirmations + 5)
     assert open_keys(u.w, "m11") == {"liveness": "warn"}
     assert u.w.db.conn.execute("SELECT COUNT(*) FROM m11_senders WHERE block>=?", (fork,)).fetchone()[0] == 0
-    assert u.w.db.meta("check:m11:full_state")["commit_block"] != saved["commit_block"]
+    assert u.w.db.meta("check:m11:state_evals")[-1]["commit_block"] != saved["commit_block"]
 
 
 def test_reorg_below_the_evaluated_block_recomputes_persisted_proof_results(tmp_path):
@@ -360,7 +384,7 @@ def test_reorg_below_the_evaluated_block_recomputes_persisted_proof_results(tmp_
     u.round(updates=())
     u.set_eb(32, leaves={u.cids[0]: 50})
     u.close()
-    assert open_keys(u.w, "m11") == {"liveness": "page", "state-mismatch": "warn"}
+    assert open_keys(u.w, "m11") == {"liveness": "page"}  # the weekly mismatch is one round old: not reported
     saved = u.w.db.meta("check:m11:zero_proof")
     calls = u.api.calls
     fork = u.c.number - 2  # above the commit and the window end, below the evaluated block
@@ -372,9 +396,10 @@ def test_reorg_below_the_evaluated_block_recomputes_persisted_proof_results(tmp_
     again = u.w.db.meta("check:m11:zero_proof")
     assert again["block"] != saved["block"] and u.api.calls > calls  # recomputed, not reused from deleted blocks
     # README §6.2: re-reported at the lower severity the new chain supports (recorded silently); the weekly
-    # comparison's mismatch was also recomputed on the new chain and resolved
+    # comparison was also recomputed on the new chain
     assert again["result"]["mismatches"] == [] and open_keys(u.w, "m11") == {"liveness": "warn"}
-    assert sent(u.w, "m11", "kind='resolved'")[0]["ikey"] == "state-mismatch"
+    evals = u.w.db.meta("check:m11:state_evals")
+    assert evals[-1]["block"] > fork and evals[-1]["mismatches"] == []
 
 
 def test_reorg_crash_between_detection_and_handling(tmp_path):
@@ -436,7 +461,7 @@ def test_empty_inventory_is_deferred_not_clean(tmp_path):
     u.close()
     assert open_keys(u.w, "m11") == {"liveness": "warn"}
     assert "no active ETH cluster" in incidents(u.w, "m11")[0]["body"]
-    assert u.w.db.meta("check:m11:full_state") is None
+    assert not u.w.db.meta("check:m11:state_evals")
     assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api-weekly%'").fetchone()
 
 
@@ -447,3 +472,270 @@ def test_missing_inbox_is_a_startup_error_unless_opted_out(tmp_path):
     with pytest.raises(SystemExit, match="checks.m11: the revert-rate rule needs the failed-transaction inbox"):
         make_worker(tmp_path, only=["m11"], views=VIEWS)
     make_worker(tmp_path, only=["m11"], views=VIEWS, checks={"m11": {"require_inbox": False}})
+
+
+# ---------------------------------------------------------------- QA cp2b attempt 1 reproducers (permanent)
+
+
+def test_qa1_f1_partial_proof_answer_is_unknown_and_retried(tmp_path):
+    """F1: three active clusters, the API answers two leaves and `cluster not found` for the third: UNKNOWN (never
+    "all match"), persisted as such and retried every run; the retry finds the mismatch and pages."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.round(updates=())
+    del u.api.leaves[u.cids[1]]
+    u.close()
+    saved = u.w.db.meta("check:m11:zero_proof")
+    assert saved["result"]["unknown"]
+    inc = incidents(u.w, "m11")[0]
+    assert "UNKNOWN" in inc["body"] and "all 2 checked clusters match" not in inc["body"]
+    calls = u.api.calls
+    u.api.leaves[u.cids[1]] = 99
+    tick(u.w, u.oc, 1, seconds=300)
+    assert u.api.calls > calls and open_keys(u.w, "m11").get("liveness") == "page", (u.api.calls, calls)
+    assert u.api.calls == calls + 1  # only the unknown cluster is asked again (once: the weekly shares the answer)
+
+
+def test_qa1_f1_partial_proof_answer_in_a_reorg_run_keeps_the_reported_mismatch(tmp_path):
+    """F1 (reorg), set up so the mismatch is reported under F6 (older than one round): reorg below the evaluation
+    that reported it, keeping the commit; the API has no proof for the affected cluster on the new chain: the key
+    is re-reported (unknown), never resolved by the clusters that were compared."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    mismatch_older_than_one_round(u, cluster=1, leaf=64)
+    assert open_keys(u.w, "m11").get("state-mismatch") == "warn"
+    fork = u.c.number - 2
+    u.c.reorg(fork)
+    u.set_eb(32)
+    del u.api.leaves[u.cids[1]]
+    u.c.mine(3)
+    tick(u.w)
+    assert "state-mismatch" in open_keys(u.w, "m11") or u.w.db.meta("reorg:m11"), sent(u.w, "m11")
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"} and not sent(u.w, "m11", "kind='resolved'")
+    u.api.leaves[u.cids[1]] = 32  # the proof is back and matches: positive proof
+    tick(u.w, u.oc, 1, seconds=300)
+    assert open_keys(u.w, "m11") == {}
+
+
+def test_qa1_f6_latest_round_mismatch_must_age_one_round(tmp_path):
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[1]: 64})
+    u.close()
+    assert "state-mismatch" not in open_keys(u.w, "m11"), open_keys(u.w, "m11")
+
+
+def test_qa1_f2_rotation_then_update_in_the_same_block_uses_the_new_owner(tmp_path):
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.commit()
+    new = "0x" + "77" * 20
+    u.oc.replace(4, new, mine=False)
+    u.update(0, sender=new)
+    u.close()
+    assert "liveness" not in open_keys(u.w, "m11"), open_keys(u.w, "m11")
+
+
+def test_qa1_f5_a_later_other_sender_update_cannot_explain_an_earlier_revert(tmp_path):
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.fail("StaleUpdate", ref, i=1, eb=40)
+    u.update(1, eb=40, sender=SLOTS[3])
+    u.close()
+    assert open_keys(u.w, "m11").get("revert-rate") == "warn", open_keys(u.w, "m11")
+
+
+def test_qa1_f8_60_minute_window_closes_without_a_new_block(tmp_path):
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.round(updates=())
+    tick(u.w)
+    tick(u.w, seconds=59 * 60)
+    assert open_keys(u.w, "m11") == {}
+    tick(u.w, seconds=5 * 60)  # the next interval run (300 s) after the window closed
+    assert open_keys(u.w, "m11").get("liveness") == "warn", open_keys(u.w, "m11")
+
+
+def test_qa1_control_health_only_reorg_with_the_api_down_keeps_the_episode(tmp_path):
+    """QA control, set up under F6 (the mismatch is reported once older than one round)."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    mismatch_older_than_one_round(u, cluster=1, leaf=64)
+    old = open_keys(u.w, "m11")
+    assert old == {"state-mismatch": "warn"}
+    fork = u.c.number - 2
+    u.c.reorg(fork)
+    u.api.down = True
+    u.c.mine(3)
+    tick(u.w)
+    assert open_keys(u.w, "m11") == old
+    assert not sent(u.w, "m11", "kind='resolved'")
+    assert u.w.db.conn.execute("SELECT COUNT(*) FROM m11_episodes WHERE closed=0").fetchone()[0] == 1
+
+
+# ---------------------------------------------------------------- repair 1: chain time, ordering, partial answers
+
+
+def test_update_window_is_chain_time_with_missed_slots(tmp_path):
+    """61 min after the commit in only 280 blocks (missed slots): outside the window, the round has 0 updates."""
+    u = world(tmp_path)
+    u.round(updates=())
+    u.c.elapse(280, seconds_per_block=13.1)
+    u.update(0)
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+
+
+def test_update_59_minutes_after_the_commit_in_more_than_300_blocks_counts(tmp_path):
+    u = world(tmp_path)
+    u.round(updates=())
+    commit_ts = u.c.ts(u.c.sealed)
+    u.c.mine(320)
+    u.c.times[u.c.sealed] = commit_ts + 59 * 60 - 12  # a chain whose 320 blocks span 59 min
+    u.update(0)
+    u.close()
+    assert pw(u.w) == []
+
+
+def test_a_revert_in_the_rotation_block_counts_for_either_key(tmp_path):
+    """A reverted tx carries no transaction index: in the block where slot 4 rotates, either key is the updater."""
+    from fixtures_oracle import ERR, PROXY, inbox_line, update_calldata
+
+    from checks.m9_oracle_common import UPDATE_CLUSTER_BALANCE_SELECTOR
+
+    u = world(tmp_path)
+    ref = u.round(updates=(0,))
+    new = "0x" + "77" * 20
+    st = u.ssv.clusters[bytes.fromhex(u.cids[1][2:])]
+    data = update_calldata(ref, u.owners[1], (1, 2, 3, 4), u.ssv._cluster(st), 64)
+    u.c.stub_call(PROXY, data, revert=ERR["MustUseLatestRoot"])
+    u.c.mine()
+    u.oc.replace(4, new, mine=False)
+    tx = u.c.add_tx(SLOTS[4], PROXY, data)  # the old key, after the rotation, in the same block
+    u.c.mine()
+    with open(u.inbox, "a") as fh:
+        fh.write(inbox_line(u.c, tx, SLOTS[4], UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance(uint64,address,"
+                            "uint64[],(uint32,uint64,uint64,bool,uint256),uint32,bytes32[])"))
+    u.close()
+    assert open_keys(u.w, "m11").get("revert-rate") == "warn"
+
+
+def same_block_stale_update(u, ref, revert_index=None):
+    """An updater StaleUpdate revert and another sender's update of the same cluster/EB in one block: the revert
+    first (lower transaction index), unless `revert_index` says the node put it later."""
+    from fixtures_oracle import ERR, PROXY, inbox_line, update_calldata
+
+    from checks.m9_oracle_common import UPDATE_CLUSTER_BALANCE_SELECTOR
+
+    st = u.ssv.clusters[bytes.fromhex(u.cids[1][2:])]
+    data = update_calldata(ref, u.owners[1], (1, 2, 3, 4), u.ssv._cluster(st), 40)
+    u.c.stub_call(PROXY, data, revert=ERR["StaleUpdate"])
+    u.c.mine()
+    tx = u.c.add_tx(SLOTS[4], PROXY, data)
+    if revert_index is not None:
+        u.c.txs[tx]["transactionIndex"] = hex(revert_index)
+    u.update(1, eb=40, sender=SLOTS[3])  # same block, later transaction index; mines it
+    with open(u.inbox, "a") as fh:
+        fh.write(inbox_line(u.c, tx, SLOTS[4], UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance(uint64,address,"
+                            "uint64[],(uint32,uint64,uint64,bool,uint256),uint32,bytes32[])"))
+
+
+def test_same_block_stale_update_before_the_other_senders_update_counts(tmp_path):
+    u = world(tmp_path)
+    ref = u.round(updates=(0,))
+    same_block_stale_update(u, ref)  # no transactionIndex from the node: not provably after the other update
+    u.close()
+    assert open_keys(u.w, "m11").get("revert-rate") == "warn"
+
+
+def test_same_block_stale_update_after_the_other_senders_update_is_benign(tmp_path):
+    u = world(tmp_path)
+    ref = u.round(updates=(0,))
+    same_block_stale_update(u, ref, revert_index=99)  # the node says the revert came after the other update
+    u.close()
+    assert pw(u.w) == []
+
+
+def test_partial_zero_round_proof_survives_a_restart_and_keeps_retrying(tmp_path):
+    u = world(tmp_path)
+    u.round(updates=())
+    u.api.leaves.pop(u.cids[2])
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+    w2 = u.restart()
+    calls = u.api.calls
+    tick(w2, u.oc, 1, seconds=300)
+    assert u.api.calls == calls + 1 and w2.db.meta("check:m11:zero_proof")["result"]["unknown"]
+    u.api.leaves[u.cids[2]] = 32
+    tick(w2, u.oc, 1, seconds=300)
+    assert not w2.db.meta("check:m11:zero_proof")["result"]["unknown"]
+    assert "all 3 checked clusters match" in incidents(w2, "m11")[0]["body"]
+
+
+def test_a_partial_weekly_answer_never_resolves_a_reported_mismatch(tmp_path):
+    u = world(tmp_path)
+    mismatch_older_than_one_round(u)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    u.set_eb(32)
+    u.api.leaves.pop(u.cids[2])  # the reported cluster has no proof; the others match
+    u.round(updates=(0,))
+    u.api.leaves.pop(u.cids[2], None)
+    u.close()
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"} and not sent(u.w, "m11", "kind='resolved'")
+    u.api.leaves[u.cids[2]] = 32
+    tick(u.w, u.oc, 1, seconds=300)
+    assert open_keys(u.w, "m11") == {}
+
+
+def test_reorg_orphaning_the_weekly_clearance_reopens_the_mismatch(tmp_path):
+    """Class 2: the evaluation that resolved the mismatch leaves the chain (reorg below its evaluated block); the
+    evaluations that established it survive and the API is down: the clearance is gone, the mismatch reopens."""
+    u = world(tmp_path)
+    mismatch_older_than_one_round(u)
+    u.round(updates=(0,))
+    u.set_eb(32)
+    u.close()
+    assert open_keys(u.w, "m11") == {} and len(sent(u.w, "m11", "kind='resolved'")) == 1
+    fork = u.c.number - 2
+    u.c.reorg(fork)
+    u.api.down = True
+    u.c.mine(3)
+    tick(u.w)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    u.api.down = False
+    tick(u.w, u.oc, 1, seconds=300)
+    assert open_keys(u.w, "m11") == {}
+
+
+def test_an_unvalidated_tuple_is_unknown_not_a_match(tmp_path):
+    u = world(tmp_path)
+    inv_get = u.w.inventory.get
+
+    def broken(block):
+        inv = inv_get(block)
+        ci = inv.clusters[u.cids[0]]
+        object.__setattr__(ci, "cluster", None) if hasattr(ci, "__dataclass_fields__") else None
+        return inv
+
+    u.round(updates=())
+    u.w.inventory.get = broken
+    u.close()
+    res = u.w.db.meta("check:m11:zero_proof")["result"]
+    assert [x["cluster"] for x in res["unknown"]] == [u.cids[0]] and res["checked"] == 2
+
+
+def test_follow_ups_of_a_persisting_mismatch_do_not_restart_the_weekly_comparison(tmp_path):
+    """Only the tracked cluster is compared at each later root; the full comparison stays weekly even after the
+    evaluation that ran it is trimmed from the kept evaluations (three)."""
+    u = world(tmp_path)
+    mismatch_older_than_one_round(u)
+    for _ in range(4):
+        calls = u.api.calls
+        u.round(updates=(0,))
+        u.set_eb(32, leaves={u.cids[2]: 48})
+        u.close()
+        assert u.api.calls == calls + 1
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    assert len(sent(u.w, "m11")) == 1  # the same clusters: no re-send per round

@@ -42,9 +42,57 @@ ERR = {name: "0x" + keccak(sig.encode())[:4].hex() for name, sig in {
     "IncorrectClusterState": "IncorrectClusterState()", "MustUseLatestRoot": "MustUseLatestRoot()"}.items()}
 
 
+class TimedChain(FakeChain):
+    """FakeChain whose headers carry a `timestamp` (the oracle rules use chain time). A block is stamped when it is
+    sealed: 12 s after its parent, or later when the shared clock says more time has passed (missed slots, a chain
+    that stopped). So mining without moving the clock is still 12 s per block, `tick` keeps chain and worker time
+    together, and a clock-only `tick` is a chain that produces no block. `slot_s` > 12 models missed slots."""
+
+    def __init__(self, start_block: int = 1000, clock=None, chain_id: int = 1):
+        super().__init__(start_block, chain_id)
+        self.clock = clock or FakeClock()
+        self.slot_s = 12
+        self.times = {self.sealed: int(self.clock())}  # older blocks: 12 s apart below the first stamp
+        self.replaced: dict[int, int] = {}  # heights a reorg replaced: the new block reuses the height's slot time
+
+    def ts(self, n: int) -> int:
+        if n in self.times:
+            return self.times[n]
+        first = min(self.times)
+        assert n < first, f"block {n} is not sealed"
+        return self.times[first] - 12 * (first - n)
+
+    def mine(self, n: int = 1) -> int:
+        for _ in range(n):
+            sealed = self.number
+            slot = self.replaced.pop(sealed, None)
+            self.times[sealed] = max(self.ts(sealed - 1) + 1, slot) if slot is not None else max(
+                self.ts(sealed - 1) + self.slot_s, int(self.clock()))
+            super().mine(1)
+        return self.number
+
+    def reorg(self, from_block: int) -> None:
+        keep = {b: t for b, t in self.times.items() if b < from_block}
+        self.replaced.update({b: t for b, t in self.times.items() if b >= from_block})
+        super().reorg(from_block)  # re-seals from_block - 1 through mine(): keep its stamp
+        self.times = keep
+
+    def _handle(self, m: str, p: list):
+        res = super()._handle(m, p)
+        if m == "eth_getBlockByNumber" and res is not None:
+            res = dict(res, timestamp=hex(self.ts(int(res["number"], 16))))
+        return res
+
+    def elapse(self, blocks: int, seconds_per_block: float = 12) -> None:
+        """Blocks with the clock moving `seconds_per_block` per block (a worker that is not stepping: downtime)."""
+        for _ in range(blocks):
+            self.clock.advance(seconds_per_block)
+            self.mine()
+
+
 class OracleChain:
     def __init__(self, chain: FakeChain | None = None, slots=None, quorum_bps=QUORUM_BPS, active=(1, 2, 3, 4)):
-        self.c = chain or FakeChain()
+        self.c = chain or TimedChain()
         self.slots = dict(SLOTS if slots is None else slots)
         self.quorum_bps = quorum_bps
         self.active = tuple(active)
@@ -133,15 +181,21 @@ class OracleChain:
 
 def oracle_worker(tmp_path, ids=("m9",), oc: OracleChain | None = None, clock=None, checks=None, inbox=True,
                   **over):
+    """A worker started at the chain's head: the worker clock is the chain's clock, moved up to the head's
+    timestamp (the chain ran ahead while blocks were mined without the clock)."""
     oc = oc or OracleChain()
+    if clock is not None:
+        oc.c.clock = clock
     oc.c.mine(100)
+    clock = oc.c.clock
+    clock.now = max(clock.now, oc.c.ts(oc.c.sealed))
     kw = {}
     if inbox:
         path = tmp_path / "failed-tx.jsonl"
         if not path.exists():
             path.write_text("")
         kw["inbox"] = {"path": str(path)}
-    _, w = make_worker(tmp_path, only=list(ids), chain=oc.c, clock=clock or FakeClock(), views=VIEWS,
+    _, w = make_worker(tmp_path, only=list(ids), chain=oc.c, clock=clock, views=VIEWS,
                        checks=checks or {}, **kw, **over)
     return oc, w
 
@@ -426,7 +480,7 @@ def replay_mainnet(tmp_path, rows=None, step_every: int = 50, after: int = 400, 
     from eb_events import TOPIC0
 
     rows = MAINNET_2026_08 if rows is None else rows
-    chain = FakeChain(start_block=rows[0][0] - 300)
+    chain = TimedChain(start_block=rows[0][0] - 300)
     slots = {}
     for r in rows:
         if r[3] == "V":
@@ -434,7 +488,7 @@ def replay_mainnet(tmp_path, rows=None, step_every: int = 50, after: int = 400, 
     oc = OracleChain(chain, slots=slots, active=sorted(slots))
     chain.mine()
     (tmp_path / "failed-tx.jsonl").write_text("")
-    _, w = make_worker(tmp_path, only=list(ids), chain=chain, clock=FakeClock(), views=VIEWS,
+    _, w = make_worker(tmp_path, only=list(ids), chain=chain, clock=chain.clock, views=VIEWS,
                        start_block=chain.sealed, activation_block=chain.sealed,
                        inbox={"path": str(tmp_path / "failed-tx.jsonl")}, **over)
     w.step()

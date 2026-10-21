@@ -6,7 +6,7 @@ reassignment can let one address vote twice on the same `(blockNum, root)` or lo
 | Trigger (spec) | Key | Severity | Rule here |
 |---|---|---|---|
 | `OracleReplaced` while a `WeightedRootProposed` round is open and not committed | `rotation:<block>:<log index>` | page | a round with a vote strictly before the `OracleReplaced` log (same block: lower log index) and neither its own nor a superseding `RootCommitted` before it; healed when every such round has closed (committed, or superseded by a higher committed `blockNum`) |
-| `newOracle` already holds another slot | `dup:<address>` | page | the live slot map (`ctx.params.oracles`, re-read by the framework at every `OracleReplaced`) has one address under two slot ids; healed when it no longer does |
+| `newOracle` already holds another slot | `dup:<address>` | page | derived from the logs, event by event: the slot map *at each* `OracleReplaced` (the live map `ctx.params.oracles`, re-read by the framework at every `OracleReplaced`, rewound through the later stored rotations) already has `newOracle` under another slot id; healed by the first later rotation after which the address holds one slot. A duplicate that appears and heals between two sweeps (even in one block) is still reported once. Also a live-map duplicate no stored rotation explains (history before `start_block`); healed when the live map no longer has it |
 
 Every `OracleReplaced` → info is the Monitor's (CP1A template), not this check's. History before the check's
 first run is reported only while still open (episode book, m9_oracle_common); its reorg rule applies to
@@ -54,7 +54,7 @@ class M10OracleRotation(Check):
         for _ in ctx.events():
             pass
         hist = load_history(ctx.db, block)
-        return self.book.apply(ctx, self.rotations(hist) + self.duplicates(block))
+        return self.book.apply(ctx, self.rotations(hist) + self.duplicates(hist, block))
 
     def rotations(self, hist: History) -> list[Episode]:
         out = []
@@ -91,13 +91,44 @@ class M10OracleRotation(Check):
                 resolution=f"Every round open at the rotation has closed ({healed})."))
         return out
 
-    def duplicates(self, block: int) -> list[Episode]:
-        holders: dict[str, list[int]] = {}
+    def duplicates(self, hist: History, block: int) -> list[Episode]:
+        zero = "0x" + "00" * 20
+        maps = [dict(self.oracles)]  # maps[i]: the slot map after the i-th last rotation (maps[0] = live)
+        for ev in reversed(hist.replaced):
+            before = dict(maps[-1])
+            before[ev.extra["oracleId"]] = ev.extra["old"]
+            maps.append(before)
+        maps.reverse()  # maps[0]: before the first stored rotation; maps[i + 1]: after rotation i
+
+        def holders(m: dict, addr: str) -> list[int]:
+            return sorted(s for s, a in m.items() if a == addr)
+
+        out, explained = [], set()
+        for i, ev in enumerate(hist.replaced):
+            slot, new = ev.extra["oracleId"], ev.extra["new"]
+            others = [s for s in holders(maps[i], new) if s != slot]
+            if not others or new == zero:
+                continue
+            healed = next((j for j in range(i + 1, len(hist.replaced)) if len(holders(maps[j + 1], new)) < 2), None)
+            if healed is None:
+                explained.add(new)
+            heal_ev = hist.replaced[healed] if healed is not None else None
+            out.append(Episode(
+                key=f"dup:{new}", episode=f"dup:{new}:{ev.block}:{ev.log_index}", active=heal_ev is None,
+                evidence_block=ev.block, severity="page", title=f"Oracle address {short(new)} assigned a second slot",
+                body=(f"OracleReplaced(slot {slot}, {ev.extra['old']} -> {new}) at block {ev.block} (tx {ev.tx_hash}) "
+                      f"while {new} already held slot(s) {others}. One key holding two slots votes twice per round "
+                      f"(replaceOracle should revert OracleAlreadyAssigned)."),
+                subject={"address": new}, revision=f"{ev.block}:{ev.log_index}",
+                evidence={"tx_hash": ev.tx_hash, "block": ev.block, "log_index": ev.log_index, "slot": slot,
+                          "already_held": others},
+                resolution=(f"OracleReplaced at block {heal_ev.block} (tx {heal_ev.tx_hash}): {short(new)} holds one "
+                            f"slot again." if heal_ev else "")))
+        live: dict[str, list[int]] = {}
         for slot, addr in sorted(self.oracles.items()):
-            holders.setdefault(addr, []).append(slot)
-        out = []
-        for addr, slots in sorted(holders.items()):
-            if len(slots) < 2 or int(addr, 16) == 0:
+            live.setdefault(addr, []).append(slot)
+        for addr, slots in sorted(live.items()):
+            if len(slots) < 2 or int(addr, 16) == 0 or addr in explained:
                 continue
             out.append(Episode(
                 key=f"dup:{addr}", episode=f"dup:{addr}", active=True, evidence_block=self.params_block or block,
@@ -106,5 +137,5 @@ class M10OracleRotation(Check):
                       f"One key holding two slots votes twice per round (replaceOracle should revert "
                       f"OracleAlreadyAssigned)."),
                 subject={"address": addr}, evidence={"slots": slots, "params_block": self.params_block},
-                revision=",".join(map(str, slots))))
+                revision=",".join(map(str, slots)), resolution="The live slot map holds the address under one slot."))
         return out

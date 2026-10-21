@@ -158,18 +158,35 @@ def test_benign_unanimous_round_is_silent(tmp_path):
 def test_three_dissenting_rounds_in_a_row_from_one_slot_page(tmp_path):
     oc, w = oracle_worker(tmp_path)
     tick(w)
-    for _ in range(2):
+    for _ in range(3):
         oc.round(variants={3: 1})
         tick(w, oc, 1)
-    oc.round(voters=(1, 2, 4))  # slot 3 skipped: neither dissent nor agreement
-    tick(w, oc, 1)
-    assert open_keys(w, "m9") == {"dissent:3": "warn"}
-    oc.round(variants={3: 1})
-    tick(w, oc, 1)
     assert open_keys(w, "m9") == {"dissent:3": "page"}
     assert pages_warns(w) == [("dissent:3", "warn", "open"), ("dissent:3", "warn", "update"),
                               ("dissent:3", "page", "escalate")]
     assert "quorum margin is gone" in sent(w, "m9")[-1]["text"]
+
+
+def test_a_skipped_vote_breaks_the_dissent_run_without_healing_it(tmp_path):
+    """QA cp2b-1 F7: "in a row" means consecutive settled rounds. A round the slot did not vote in is not a dissent
+    (it breaks the run: no page for dissent/dissent/skip/dissent) and not an agreement (it does not resolve)."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    for _ in range(2):
+        oc.round(variants={3: 1})
+        tick(w, oc, 1)
+    oc.round(voters=(1, 2, 4))  # slot 3 skipped
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"}  # still open: no positive proof of agreement
+    oc.round(variants={3: 1})
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"}  # dissent / dissent / skip / dissent: not three in a row
+    for _ in range(2):
+        oc.round(variants={3: 1})
+        tick(w, oc, 1)
+    assert open_keys(w, "m9")["dissent:3"] == "page"  # three consecutive dissents after the skip
+    assert sent(w, "m9", "kind='resolved'") == []
+    assert [s for k, s, _ in pages_warns(w) if k == "dissent:3"] == ["warn"] * 4 + ["page"]
 
 
 def test_benign_two_dissents_then_agreement_never_pages_and_resolves(tmp_path):
@@ -182,7 +199,7 @@ def test_benign_two_dissents_then_agreement_never_pages_and_resolves(tmp_path):
     tick(w, oc, 1)
     assert open_keys(w, "m9") == {}
     assert [s for _, s, _ in pages_warns(w)] == ["warn", "warn"]
-    assert "voted the reference root again" in sent(w, "m9", "kind='resolved'")[0]["text"]
+    assert "voted the reference root (and no other)" in sent(w, "m9", "kind='resolved'")[0]["text"]
 
 
 def test_dissent_in_a_failed_round_uses_the_plurality_root(tmp_path):
@@ -394,7 +411,10 @@ def test_rpc_budget_no_eth_call_per_sweep_with_350_clusters(tmp_path):
         tick(w, oc, 1, seconds=120)
     run = w.db.meta("run:m9")
     assert run["rpc_calls"].get("eth_call", 0) == 0  # bound: 0 eth_call (all from stored logs + live parameters)
-    assert sum(run["rpc_calls"].values()) == 0
+    # chain time: one header per block a rule newly needs (checkpoint, first vote, commit), cached afterwards
+    assert set(run["rpc_calls"]) <= {"eth_getBlockByNumber"} and run["rpc_calls"]["eth_getBlockByNumber"] <= 3
+    tick(w, seconds=120)  # clock only: every header is cached
+    assert sum(w.db.meta("run:m9")["rpc_calls"].values()) == 0
 
 
 # ---------------------------------------------------------------- reorg (README §6.2)
@@ -569,7 +589,8 @@ def test_replay_mainnet_2026_08_outage(tmp_path):
     assert f'"failed_rounds": {json.dumps(failed)}' in fr["evidence"]
     assert [r["kind"] for r in sent(w, "m9", "kind IN ('open','update')") if r["ikey"] == "failed-round"] == (
         ["open"] + ["update"] * 7)
-    assert "can no longer commit: round 25725603" in sent(w, "m9", "kind='resolved'")[0]["text"]
+    resolved = [r for r in sent(w, "m9", "kind='resolved'") if r["ikey"] == "failed-round"]
+    assert "can no longer commit: round 25725603" in resolved[0]["text"]
     assert opened["cadence"]["severity"] == "page" and opened["cadence"]["state"] == "resolved"
     assert opened["split"]["severity"] == "warn" and "25718430" in opened["split"]["body"]
     assert opened["dissent:3"]["severity"] == "page" and opened["dissent:3"]["state"] == "open"
@@ -593,3 +614,257 @@ def test_missing_inbox_is_a_startup_error_unless_opted_out(tmp_path):
     oc, w = oracle_worker(tmp_path, inbox=False, checks={"m9": {"require_inbox": False}})
     tick(w)
     assert w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:m9-inbox%'").fetchone()
+
+
+# ---------------------------------------------------------------- QA cp2b attempt 1 reproducers (permanent)
+
+
+def test_qa1_f3_two_roots_in_one_block_warn_before_the_timeout(tmp_path):
+    """F3: two roots for one blockNum, no quorum yet: warn as soon as the second root is observed."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 1, mine=False)
+    oc.vote(ref, 3, variant=1, mine=False)
+    oc.c.mine()
+    tick(w, oc, 1)
+    assert any(r["severity"] == "warn" for r in sent(w, "m9")), open_keys(w, "m9")
+    assert open_keys(w, "m9") == {"split": "warn"}
+
+
+def test_qa1_f3_two_roots_from_one_slot_after_a_midround_owner_change(tmp_path):
+    """F3: slot 1 votes root A, changes owner mid-round, votes root B; slots 2 and 3 commit A: the slot that also
+    voted the committed root still proposed a second root (not suppressed)."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 1)
+    oc.replace(1, "0x" + "77" * 20)
+    oc.vote(ref, 1, variant=1)
+    oc.vote(ref, 2)
+    oc.vote(ref, 3)
+    tick(w, oc, 1)
+    assert any(r["severity"] == "warn" for r in sent(w, "m9")), open_keys(w, "m9")
+    assert open_keys(w, "m9") == {"dissent:1": "warn"}
+
+
+def test_qa1_f7_streak_requires_consecutive_rounds(tmp_path):
+    """F7: dissent, dissent, skipped vote, dissent: the last three rounds are not three dissents: warn, not page."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    for variants, voters in [({3: 1}, (1, 2, 3, 4)), ({3: 1}, (1, 2, 3, 4)), ({}, (1, 2, 4)), ({3: 1}, (1, 2, 3, 4))]:
+        oc.round(variants=variants, voters=voters)
+        tick(w, oc, 1)
+    assert open_keys(w, "m9").get("dissent:3") == "warn", open_keys(w, "m9")
+
+
+def test_qa1_f8_30_minute_timeout_fires_without_a_new_block(tmp_path):
+    """F8: a proposal, then 31 minutes of clock and no block: the failed-round page fires from the clock."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    oc.vote(oc.c.number - 1, 1)
+    tick(w)
+    tick(w, seconds=29 * 60)
+    assert open_keys(w, "m9") == {}
+    tick(w, seconds=2 * 60)
+    assert open_keys(w, "m9").get("failed-round") == "page", open_keys(w, "m9")
+
+
+def test_qa1_control_no_events_restart_silence_daily_config(tmp_path):
+    cfg = {"m9": {"max_commit_gap_s": 25 * 3600}}
+    oc, w = oracle_worker(tmp_path, checks=cfg)
+    tick(w)
+    tick(w, seconds=24 * 3600)
+    assert open_keys(w, "m9") == {}
+    w = restart(tmp_path, w, oc, checks=cfg)
+    tick(w)
+    tick(w, seconds=1.1 * 3600)
+    assert open_keys(w, "m9") == {"cadence": "page"}
+    n = len(sent(w, "m9"))
+    w = restart(tmp_path, w, oc, checks=cfg)
+    tick(w)
+    assert len(sent(w, "m9")) == n
+
+
+def test_qa1_control_first_sweep_without_baseline_long_silence(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    oc.c.mine(3000)
+    tick(w)
+    assert open_keys(w, "m9") == {"cadence": "page"}
+
+
+def test_qa1_control_proposal_after_commit_is_not_counted_as_quorum(tmp_path):
+    from fixtures_oracle import WRP
+
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    ref = oc.c.number - 1
+    root = oc.root(ref)
+    oc.c.emit_event("RootCommitted", [root, "0x%064x" % ref], b"")
+    for slot in (1, 2, 3):
+        oc.c.emit_event(WRP, [root, "0x%064x" % ref], u256(10) + u256(30) + u256(slot) + u256(int(SLOTS[slot], 16)))
+    oc.c.mine()
+    tick(w, oc, 1)
+    assert open_keys(w, "m9").get("weak-commit") == "page"
+
+
+def test_qa1_control_page_and_warn_routing_realert_cadence(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 1)
+    oc.vote(ref, 3, variant=1)
+    tick(w, oc, 155)
+    initial = sent(w, "m9")
+    assert {r["severity"] for r in initial} == {"warn", "page"}
+    assert all(r["delivery"] == "telegram" for r in initial)
+    tick(w, seconds=6 * 3600 + 1)
+    w.housekeeping()
+    rows = sent(w, "m9")
+    assert sum(r["kind"] == "realert" and r["severity"] == "page" for r in rows) == 1
+    assert not any(r["kind"] == "realert" and r["severity"] == "warn" for r in rows)
+    tick(w, seconds=18 * 3600)
+    w.housekeeping()
+    assert sum(r["kind"] == "realert" and r["severity"] == "warn" for r in sent(w, "m9")) == 1
+
+
+# ---------------------------------------------------------------- repair 1: chain time, split lifecycle, inputs
+
+
+def test_failed_round_deadline_is_chain_time_not_a_block_count(tmp_path):
+    """Missed slots: 120 blocks 16 s apart are 32 min of chain time (> 30 min) although fewer than 150 blocks."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    oc.vote(oc.c.number - 1, 1)
+    oc.vote(oc.c.number - 1, 2)
+    tick(w)
+    oc.c.elapse(100, seconds_per_block=16)  # 26.7 min of chain time in 100 blocks
+    tick(w)
+    assert open_keys(w, "m9") == {}
+    oc.c.elapse(20, seconds_per_block=16)  # 32 min
+    tick(w)
+    assert open_keys(w, "m9") == {"failed-round": "page"}
+
+
+def test_commit_29_minutes_after_the_first_vote_in_more_than_150_blocks_is_in_time(tmp_path):
+    """The other direction: 160 blocks (more than 150) that span 29 min of chain time are inside the 30 min."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 1)
+    oc.vote(ref, 2)
+    for _ in range(160):
+        oc.c.mine()  # 12 s per block on the chain ...
+    oc.c.times[oc.c.sealed] = oc.c.ts(oc.c.sealed - 160) + 29 * 60  # ... except that the head is at +29 min
+    oc.vote(ref, 3)  # commits at +29 min (the block after the head)
+    tick(w, oc, 1)
+    assert pages_warns(w) == []
+
+
+def test_split_warns_immediately_and_resolves_when_attributed_at_settlement(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 3, variant=1)
+    oc.vote(ref, 1)
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"split": "warn"}  # one vote each: not attributable yet
+    oc.vote(ref, 2)
+    oc.vote(ref, 4)  # commits root A
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"}
+    (res,) = sent(w, "m9", "kind='resolved'")
+    assert res["ikey"] == "split" and "attributed per slot" in res["text"]
+
+
+def test_a_round_settled_before_any_sweep_reports_its_dissent_not_a_split(tmp_path):
+    """The split of an open round that settles before a sweep sees it is not lost: it is the slot's dissent."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    oc.round(variants={3: 1}, voters=(3, 1, 2, 4))
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"} and [k for k, *_ in pages_warns(w)] == ["dissent:3"]
+
+
+def test_a_tied_round_breaks_the_run_without_healing(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    for _ in range(2):
+        oc.round(variants={3: 1})
+        tick(w, oc, 1)
+    ref = oc.c.number - 1
+    oc.vote(ref, 1)
+    oc.vote(ref, 3, variant=1)  # tied, never commits
+    tick(w, oc, 160)
+    oc.round(variants={3: 1})  # supersedes the tied round
+    tick(w, oc, 1)
+    assert open_keys(w, "m9")["dissent:3"] == "warn"  # dissent, dissent, tie, dissent: not three in a row
+    assert not [r for r in sent(w, "m9", "kind='resolved'") if r["ikey"] == "dissent:3"]
+
+
+def test_a_header_without_timestamp_fails_the_run_instead_of_guessing(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    oc.vote(oc.c.number - 1, 1)
+    real = oc.c._handle
+
+    def no_time(m, p):
+        res = real(m, p)
+        if m == "eth_getBlockByNumber" and res is not None:
+            res = {k: v for k, v in res.items() if k != "timestamp"}
+        return res
+
+    oc.c._handle = no_time
+    tick(w, oc, 200)
+    run = w.db.meta("run:m9")
+    assert run["errors"] >= 1 and "no header timestamp" in run["last_error"]
+    assert open_keys(w, "m9") == {}  # nothing concluded from a missing time
+    oc.c._handle = real
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"failed-round": "page"}
+
+
+def test_a_header_from_another_fork_fails_the_run(tmp_path):
+    """The header's hash must be the scanned block's: a node answering from another fork is not read as time."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    oc.vote(oc.c.number - 1, 1)
+    tick(w, oc, 1)
+    w.db.conn.execute("DELETE FROM m9_block_times")
+    w.db.conn.execute("UPDATE blocks SET hash='0xdead' WHERE number=(SELECT MAX(number) FROM blocks)")
+    from rpc import RpcError
+
+    with pytest.raises(RpcError, match="differs from the scanned"):  # an RPC failure: the step fails, retried
+        w.run_checks(force=True)
+    assert "differs from the scanned" in w.db.meta("run:m9")["last_error"]
+
+
+def test_reorg_removing_the_evidence_of_an_already_resolved_failed_round_is_silent(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    tick(w, oc, 2)
+    first = oc.c.number
+    ref = failed_round(oc, w)
+    oc.vote(ref, 3)  # committed late: resolved
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {} and len(sent(w, "m9", "kind='resolved'")) == 1
+    n = len(sent(w, "m9"))
+    oc.reorg(first, latest=0, refs={ref})  # the votes, the failure and the late commit leave the chain
+    tick(w, oc, 3)
+    assert open_keys(w, "m9") == {} and len(sent(w, "m9")) == n
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m9_episodes WHERE key='failed-round'").fetchone()[0] == 0
+
+
+def test_reorg_orphaning_the_clearance_of_a_resolved_dissent_reopens_it(tmp_path):
+    """Class 2: the agreement round that resolved a dissent leaves the chain; the dissent rounds survive."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    oc.round(variants={3: 1})
+    tick(w, oc, 1)
+    fork = oc.c.number
+    ref = oc.round(voters=(3, 1, 2))  # slot 3 agrees: resolved
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {}
+    oc.reorg(fork, latest=ref - 2, refs={ref})
+    tick(w, oc, 2)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"}
+    assert [k for k, s, kind in pages_warns(w)] == ["dissent:3", "dissent:3"]  # a new incident on the new chain

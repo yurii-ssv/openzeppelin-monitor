@@ -1,4 +1,4 @@
-"""Oracle-family helpers shared by M9, M10 and M11 (CP2b): the round model, the episode book, block-time estimates.
+"""Oracle-family helpers shared by M9, M10 and M11 (CP2b): the round model, the episode book, chain block times.
 
 Not a check (nothing is registered here). Everything is derived from the stored proxy logs of the canonical
 chain (`logs`, rewound by the framework on a reorg) and the gated inbox (`inbox.canonical = 1`), so a run
@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import bisect
 import json
-import math
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from checks.base import Ctx, Finding
 from eb_storage import keccak
+from rpc import RpcError
 
 WRP = "WeightedRootProposed"
 WRP_SIGNATURE = "WeightedRootProposed(bytes32,uint64,uint256,uint256,uint32,address)"
@@ -148,15 +149,68 @@ def load_history(db, upto: int) -> History:
     return History(rounds, commits, replaced)
 
 
-def blocks_for(seconds: float, seconds_per_block: float) -> int:
-    return max(1, math.ceil(seconds / seconds_per_block))
+def times_schema(table: str) -> str:
+    return f"CREATE TABLE IF NOT EXISTS {table} (block INTEGER PRIMARY KEY, hash TEXT NOT NULL, ts INTEGER NOT NULL)"
 
 
-def estimate_time(ctx: Ctx, block: int, seconds_per_block: float) -> float:
-    """Wall time of `block` estimated from the worker clock: the clock reads the head, which is `confirmations`
-    blocks above the checkpoint. Missed slots make real blocks older, so ages derived from this are lower bounds."""
-    head = ctx.block + max(int(ctx.settings.get("confirmations", 0)), 0)
-    return ctx.clock() - (head - block) * seconds_per_block
+class BlockTimes:
+    """Chain timestamps (`eth_getBlockByNumber`) of the blocks a check's time rules use, cached in `table`.
+
+    Every minute- or hour-based rule compares chain timestamps of its evidence blocks with `horizon()`, never
+    block distances: missed slots do not stretch a window and a chain that stops producing blocks still lets the
+    clock close it. A header the node does not return, one without a timestamp, or one whose hash differs from the
+    hash the scan recorded for that block (a reorg the framework has not processed yet) raises: a time rule is
+    never evaluated on a guessed time. Reorg rule: in a reorg run the cached rows above the ancestor are deleted
+    (re-read from the new chain)."""
+
+    def __init__(self, table: str):
+        self.table = table
+
+    def begin(self, ctx: Ctx, seconds_per_block: float) -> None:
+        self.ctx, self.spb, self.mem = ctx, seconds_per_block, {}
+        if ctx.reorg_ancestor is not None:
+            ctx.db.conn.execute(f"DELETE FROM {self.table} WHERE block>?", (ctx.reorg_ancestor,))
+
+    def get(self, blocks) -> dict[int, int]:
+        want = sorted({int(b) for b in blocks} - set(self.mem))
+        conn = self.ctx.db.conn
+        for i in range(0, len(want), 500):
+            chunk = want[i : i + 500]
+            self.mem.update({r[0]: r[1] for r in conn.execute(
+                f"SELECT block, ts FROM {self.table} WHERE block IN ({','.join('?' * len(chunk))})", chunk)})
+        missing = [b for b in want if b not in self.mem]
+        if missing:
+            if max(missing) > self.ctx.block:
+                raise ValueError(f"block time asked above the checkpoint {self.ctx.block}: {max(missing)}")
+            self.ctx.rpc.counts["eth_getBlockByNumber"] += len(missing)
+            headers = self.ctx.rpc.rpc.batch([("eth_getBlockByNumber", [hex(b), False]) for b in missing])
+            recorded = {}
+            for i in range(0, len(missing), 500):
+                chunk = missing[i : i + 500]
+                recorded.update({r[0]: r[1] for r in conn.execute(
+                    f"SELECT number, hash FROM blocks WHERE number IN ({','.join('?' * len(chunk))})", chunk)})
+            for b, hdr in zip(missing, headers):
+                if not hdr or hdr.get("timestamp") in (None, "", "0x"):
+                    raise RpcError(f"eth_getBlockByNumber({b}) returned no header timestamp")
+                h = (hdr.get("hash") or "").lower()
+                if b in recorded and h != recorded[b]:
+                    raise RpcError(f"block {b}: header hash {h[:12]} differs from the scanned {recorded[b][:12]} "
+                                   f"(reorg not processed yet)")
+                ts = int(hdr["timestamp"], 16)
+                self.mem[b] = ts
+                conn.execute(f"INSERT OR REPLACE INTO {self.table} VALUES (?,?,?)", (b, h, ts))
+        return {b: self.mem[int(b)] for b in blocks}
+
+    def __call__(self, block: int) -> int:
+        return self.get([block])[block]
+
+    def horizon(self) -> float:
+        """The time up to which the stored chain is complete: every block with a timestamp at or before it is at or
+        below the checkpoint, or does not exist yet. The checkpoint's own timestamp, or, when blocks stop arriving,
+        the worker clock less the confirmation depth (+2 slots of margin for the head read)."""
+        conf = int(self.ctx.settings.get("confirmations", 0))
+        lag = (conf + 2) * self.spb if conf >= 0 else 96 * self.spb  # finalized: 64..95 slots behind the head
+        return max(float(self(self.ctx.block)), self.ctx.clock() - lag)
 
 
 _FN = "(lower(selector)=? OR function LIKE ?)"
@@ -315,6 +369,10 @@ class EpisodeBook:
                     handled.add(key)
                 self.conn.execute(f"UPDATE {self.table} SET closed=1 WHERE episode=?", (ep,))
         return out
+
+
+def utc(ts: float) -> str:
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
 
 def short(addr: str) -> str:

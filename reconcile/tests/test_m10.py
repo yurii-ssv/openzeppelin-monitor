@@ -238,3 +238,84 @@ def test_first_sweep_reports_a_rotation_whose_round_is_still_open_not_a_closed_o
     oc, w = oracle_worker(tmp_path, ids=("m10",), oc=oc, start_block=start, activation_block=start)
     tick(w)
     assert len(pages(w)) == 1 and str(ref2) in incidents(w, "m10")[0]["body"]
+
+
+# ---------------------------------------------------------------- QA cp2b attempt 1 reproducer (permanent), repair 1
+
+
+def test_qa1_f4_transient_duplicate_before_the_next_sweep_pages(tmp_path):
+    """F4: in one block slot 2 first receives slot 1's address, then a fresh one: the first OracleReplaced met the
+    already-held trigger although the live map at the next sweep has no duplicate."""
+    oc, w = oracle_worker(tmp_path, ids=("m10",))
+    tick(w)
+    oc.replace(2, SLOTS[1], mine=False)
+    oc.replace(2, "0x" + "77" * 20, mine=False)
+    oc.c.mine()
+    tick(w, oc, 1)
+    assert any(r["severity"] == "page" and r["ikey"].startswith("dup:") for r in sent(w, "m10")), sent(w, "m10")
+    assert open_keys(w, "m10") == {}  # reported once, then resolved by the second rotation
+    (res,) = sent(w, "m10", "kind='resolved'")
+    assert "holds one slot again" in res["text"]
+    tick(w, oc, 2, seconds=600)
+    assert len(sent(w, "m10")) == 2
+
+
+def test_transient_duplicate_with_a_restart_between_scan_and_check_is_reported_once(tmp_path):
+    oc, w = setup(tmp_path)
+    oc.replace(3, SLOTS[4])
+    oc.replace(3, NEW)
+    w.check_reorg()
+    w.scan()  # stored, the check has not run: the process dies
+    saved = SimpleNamespace(clock=w.clock, cfg=w.cfg)
+    del w
+    w2 = restart(tmp_path, saved, oc, ids=("m10",))
+    tick(w2)
+    tick(w2, oc, 1, seconds=400)
+    assert [(k.split(":")[0], s, kind) for k, s, kind in pages(w2)] == [("dup", "page", "open")]
+    assert len(sent(w2, "m10", "kind='resolved'")) == 1
+
+
+def test_reorg_removing_an_already_resolved_duplicate_is_silent(tmp_path):
+    oc, w = setup(tmp_path)
+    fork = oc.c.number
+    oc.replace(2, SLOTS[1], mine=False)
+    oc.replace(2, NEW, mine=False)
+    oc.c.mine()
+    tick(w, oc, 1)
+    n = len(sent(w, "m10"))
+    assert n == 2 and open_keys(w, "m10") == {}
+    oc.slots[2] = SLOTS[2]
+    oc.reorg(fork, latest=0)  # neither rotation exists on the new chain
+    tick(w, oc, 2)
+    assert len(sent(w, "m10")) == n and open_keys(w, "m10") == {}
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m10_episodes").fetchone()[0] == 0
+
+
+def test_a_duplicate_assigned_after_a_rotation_away_is_judged_at_its_own_position(tmp_path):
+    """Slot 1's key moves to a fresh key first, then slot 2 takes slot 1's *old* key: no duplicate at that position."""
+    oc, w = setup(tmp_path)
+    old1 = SLOTS[1]
+    oc.replace(1, NEW, mine=False)
+    oc.replace(2, old1, mine=False)
+    oc.c.mine()
+    tick(w, oc, 1)
+    assert pages(w) == []
+
+
+def test_unreadable_parameters_keep_the_duplicate_page(tmp_path):
+    from fixtures_oracle import VIEWS
+
+    from params import GETTERS, selector
+
+    oc, w = setup(tmp_path)
+    oc.replace(2, SLOTS[1])
+    tick(w, oc, 1)
+    assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"}
+    oc.replace(2, NEW, mine=False)  # would heal it, but the live map cannot be re-read
+    oc.c.stub_call(VIEWS, selector(GETTERS["quorum_bps"]), revert="0x")
+    tick(w, oc, 1)
+    assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"}
+    oc.stub()
+    oc.c.emit_event("QuorumUpdated", [], u256(7500))
+    tick(w, oc, 1)
+    assert open_keys(w, "m10") == {}
