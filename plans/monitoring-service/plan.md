@@ -150,7 +150,7 @@ Every row is run on its own (no `&&` chains credited), with exit code and counts
 | V0.1 | `zsh -lic 'for t in cargo rustc uv docker anvil; do command -v $t; done'` | all present (OG1) | any missing | host change |
 | V0.2 | `git diff --summary \| grep -c "mode change"` | `0` after the revert; `git diff --numstat` still lists exactly the 5 content files of F1 | a content diff lost | — |
 | V0.3 | `git grep -nE "discord\.com/api/webhooks/[0-9]+/\|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}" -- . ':!tests/integration/fixtures'` | 0 rows on the integration branch | a secret is tracked | any commit |
-| V0.3f | Falsifier: add `TOKEN=1234567890:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` to a scratch tracked file, rerun V0.3, remove, `git status --porcelain` clean | V0.3 reddens, tree clean after | scan does not catch it | — |
+| V0.3f | Falsifier: add a dummy token built at run time, `printf 'TOKEN=1234567890:AA%s\n' "$(printf 'x%.0s' {1..34})"` (never write its literal value into a tracked document), to a scratch tracked file, rerun V0.3, remove, `git status --porcelain` clean | V0.3 reddens, tree clean after | scan does not catch it | — |
 | V0.4 | `git check-ignore -v config.zip .local-dry` | both ignored | not ignored | `.gitignore` |
 | V0.5 | `git ls-files reconcile plans docs/ssv-specs deploy scripts/local-dry-run.sh docker-compose.local.yaml docker-compose.reconcile.yaml \| wc -l` | > 0 for each path; `git ls-files reconcile/.venv reconcile/data` = 0 | venv or data tracked | — |
 | V0.6 | `jq -r '.. \| objects \| select(.type? == "plain") \| .value' deploy/config/triggers/*.json deploy/config/networks/*.json` | empty (all secrets and RPC are environment references) | any plain value | template edit |
