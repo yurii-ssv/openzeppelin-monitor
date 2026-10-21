@@ -22,7 +22,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eb_events import TOPIC0  # noqa: E402
-from rpc import Rpc, RpcError  # noqa: E402
 from eb_storage import (  # noqa: E402
     Cluster,
     cluster_eb_slot,
@@ -31,6 +30,7 @@ from eb_storage import (  # noqa: E402
     ssv_cluster_slot,
     u256,
 )
+from rpc import Rpc, RpcError  # noqa: E402
 
 PROXY = "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1"
 BASE = 10_000
@@ -140,7 +140,7 @@ class FakeChain:
         return h
 
     def _eth_call(self, obj: dict, block: int) -> str:
-        to, data = obj["to"].lower(), obj.get("data", obj.get("input", "0x")).lower()
+        to, data = (obj.get("to") or "").lower(), obj.get("data", obj.get("input", "0x")).lower()
         self.calls.append((to, data, block))
         entries = self.call_stubs.get((to, data)) or self.call_stubs.get((to, data[:10])) or []
         live = [e for e in entries if e[0] <= block]
@@ -227,7 +227,7 @@ class FakeChain:
         if m == "eth_getTransactionByHash":
             if p[0] in self.txs:
                 return self.txs[p[0]]
-            return {"from": self.senders.get(p[0], "0x" + "0" * 40)}
+            return {"from": self.senders[p[0]]} if p[0] in self.senders else None
         if m == "eth_getCode":
             return "0x"
         if m == "eth_call":

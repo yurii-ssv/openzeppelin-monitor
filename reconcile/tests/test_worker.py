@@ -15,6 +15,9 @@ import eb_model as M
 from eb_reconcile import DB, Config, Worker, load_config  # noqa: F401
 from eb_storage import cluster_id
 
+# The ported #94775 scenarios (V1B.6): `pytest -k m5` selects every test in this module.
+pytestmark = pytest.mark.m5
+
 OWNER = "0x" + "aa" * 20
 OTHER = "0x" + "bb" * 20
 OPS = (11, 12, 13, 14)

@@ -30,6 +30,7 @@ import eb_model as M  # noqa: E402
 from eb_events import decode_log  # noqa: E402
 from eb_reconcile import DB, DEFAULTS, Config, RecordOnly, Rpc, Telegram, Worker  # noqa: E402
 from eb_storage import EB_LATEST_COMMITTED, cluster_id, decode_latest_committed, keccak, u256  # noqa: E402
+from rpc import Chain  # noqa: E402
 
 PROXY = "0xDD9BC35aE942eF0cFa76930954a156B3fF30a4E1"
 VIEWS = "0xafE830B6Ee262ba11cce5F32fDCd760FFE6a66e4"
@@ -132,8 +133,9 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Config({**DEFAULTS, **json.loads((HERE / "config.example.json").read_text())})
             cfg.raw.update(start_block=fork_block + 1, activation_block=fork_block + 1, confirmations=0,
-                           db_path=f"{tmp}/eb.sqlite", sweep_interval_s=0, full_sweep_interval_s=0,
-                           proxy=PROXY.lower())
+                           db_path=f"{tmp}/eb.sqlite", proxy=PROXY.lower(), inbox={}, inventory={"api_url": None},
+                           metrics={})
+            cfg.raw["checks"]["m5"].update(sweep_interval_s=0, full_sweep_interval_s=0)
             cfg.raw["alerts"] = {**cfg.alerts, "label": "MAINNET FORK TEST (not a real incident)", "digest_interval_s": 0}
             notifier = RecordOnly()
             if args.telegram:
@@ -146,8 +148,9 @@ def main() -> int:
             def check(label, status, ref=None, obs=None, disc=None):
                 w.check_reorg()
                 w.scan()
-                evals = {e.cluster_id: e for e in (w.sweep(force=True) or [])}
+                w.run_checks(force=True)
                 w.deliver()
+                evals = {e.cluster_id: e for e in w.checks["m5"].last_evals}
                 e = evals[cid]
                 got = (e.status, e.reference_vunits, e.observed_vunits, e.discrepancy_vunits)
                 want = (status, ref, obs, disc)
@@ -202,11 +205,14 @@ def main() -> int:
                  str(s2), OWNER, arr(ops), cl, "2048", "[]")
             check("clean next-round root", M.CLEAN, 640_000, 640_000, 0)
 
-            rows = w.db.conn.execute("SELECT key, severity, delivery, attempts, last_error FROM outbox ORDER BY created_at").fetchall()
+            rows = w.db.conn.execute("SELECT key, severity, delivery, receipt, attempts, last_error FROM outbox "
+                                     "ORDER BY created_at").fetchall()
             print("alerts:", json.dumps([dict(r) for r in rows], indent=1))
-            inc = w.db.conn.execute("SELECT id, kind, state, max_shortfall_vunits FROM incidents").fetchall()
+            inc = w.db.conn.execute("SELECT id, kind, state, max_shortfall_vunits FROM m5_incidents").fetchall()
             print("incidents:", json.dumps([dict(r) for r in inc], indent=1))
-            layout = w.verify_layout(block(), deep=True)
+            print("live params on fork:", json.dumps(w.params.values, default=str))
+            b = block()
+            layout = w.checks["m5"].verify_layout(Chain(w.rpc, b), w.db, b, deep=True)
             print("layout guard on fork:", layout or "ok")
             return 0 if not layout else 1
     finally:

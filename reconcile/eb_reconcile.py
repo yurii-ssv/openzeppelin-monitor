@@ -150,7 +150,7 @@ class Worker:
         self.last_run: dict[str, float] = {}
         self.last_block: dict[str, int] = {}
         self.prepared: set[str] = set()
-        self.pending: dict[str, set[str]] = {c: {"start"} for c in self.checks}
+        self.pending: dict[str, set[str]] = {c: set() for c in self.checks}
 
     # ---- identity / bootstrap
 

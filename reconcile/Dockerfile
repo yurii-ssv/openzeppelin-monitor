@@ -5,7 +5,8 @@ RUN useradd --uid 10001 --create-home reconcile \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY eb_storage.py eb_events.py eb_model.py eb_reconcile.py ./
+COPY *.py ./
+COPY checks ./checks
 
 USER reconcile
 ENV PYTHONUNBUFFERED=1 EB_RECONCILE_CONFIG=/app/config.json

@@ -94,7 +94,7 @@ class Ctx:
     settings: dict  # the whole worker config (proxy, views, chain_id, …), read-only
     clock: Callable[[], float]
     log: logging.Logger
-    reasons: frozenset[str]  # why it runs: interval, events, inbox, block, force, params, reorg, start
+    reasons: frozenset[str]  # why it runs: interval, events, inbox, block, force, params, reorg (digest)
     _events: Callable[[], Iterator] = None
     _inbox: Callable[[], list] = None
     _inventory: Callable[[int | None], Any] = None
