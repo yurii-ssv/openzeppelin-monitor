@@ -18,7 +18,8 @@ Task contract: [plan.md §8 CP1A](../../plan.md) · Attempt log: [attempts.md](a
 | S4 dry-run + compose + .env.example | DONE | `58240a5` | — |
 | S5 V rows + falsifiers | DONE | attempt 2 (all V1A rows run; none NOT RUN) | — |
 | S6 handoff | DONE | this block, plan.md status line | Codex QA |
-| R1 repair 1 (F1, F2, F3, F4, F8) | DONE — AWAITING FRESH QA | [repair 1](attempts.md#repair-1), code head `10c7a8f`, runner `evidence/repair-1/vrows.sh` | fresh Codex QA decides; F5/F6/F7 recorded, not touched |
+| R1 repair 1 (F1, F2, F3, F4, F8) | DONE — QA attempt 2 FAILED (F1b, F8b) | [repair 1](attempts.md#repair-1), code head `10c7a8f`, runner `evidence/repair-1/vrows.sh` | superseded by R2 |
+| R2 repair 2 (F8b fixed, F1b documented) | DONE — AWAITING FRESH QA | [repair 2](attempts.md#repair-2), code head `f04c79e`, runner `evidence/repair-2/vrows.sh` | fresh Codex QA decides; F5/F6/F7 recorded, not touched |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -51,5 +52,20 @@ Evidence: evidence/repair-1/vrows-run.log (every row exit+counts), red-baseline-
 Decisions for coordinator: Telegram DAO monitor lost the M15 events AND their functions; non-M15 extras (ownership/upgrade-admin/initialize/rescue) still on Telegram; attacker rule is tx-level (internal calls invisible); attacker plain transfers to unrelated addresses no longer page.
 Not touched: F5 (CP3), F6, F7.
 Pending human input: none.
+Next owner: fresh Codex QA.
+```
+
+
+## Repair 2 handoff (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / live dispatch: task_8f80ac8c19a9 / ctx_da0703b996d4
+Assignment outcome: F8b fixed; F1b documented as an M13 coverage boundary (not repairable in the Monitor). V1A rows + falsifiers re-run, none NOT RUN. Completed work != acceptance; fresh QA decides.
+Base -> head: 6c94b27 -> docs commit after code head f04c79e (branch mtabasco/ms-cp1a)
+Changed paths: deploy/{check-abi.sh,check-templates.sh,render.sh,README.md}; deploy/abi/{reference.json,provenance.json,normalize.jq,derive.sh}; deploy/tests/{selftest.sh,abi-mutation-sweep.sh}; workers/cp1a/**. No template changed.
+F8b: A8/A9 compare every contract_spec event/function (3356 entries, 30 monitors) with a committed reference derived from ssv-network f7ac487 (forge build, codehash = lock) and Safe 1.3.0, verified on-chain by real logs. Six tracked-template mutations red then green; 16-kind sweep 510 runs 0 failures; same sweep on the repair-1 gate: 359 cells accepted. selftest 51/0/0, fork suite 15/0, evidence/repair-2/vrows-run.log (endpoints per row: eth.drpc.org, publicnode for render).
+F1b: README "M13 coverage boundary" lists covered vs uncovered (internal CALLs, constructors, selfdestruct) with QA reproducers; no scope change.
+Not touched: F5, F6, F7.
+Pending human input: none (Marco decides worker balance-delta watching).
 Next owner: fresh Codex QA.
 ```

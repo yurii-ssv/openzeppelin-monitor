@@ -117,3 +117,54 @@ Same entry shape as execution-log.md events, worker-side. Append only. Measured 
 - Falsifiers: all red then restored; `git status --porcelain` after the run shows only the evidence log written by the run.
 - Resulting head: see the status line in plan.md (docs-only commit after `10c7a8f`).
 - Next action: fresh Codex QA; I clear no finding.
+
+
+<a id="repair-2"></a>
+## Repair 2 — F8b (ABI layout gate) fixed; F1b recorded as an M13 coverage boundary (F5/F6/F7 untouched)
+
+- Observed UTC: 2026-10-21 (afternoon); Task / Dispatch: `task_8f80ac8c19a9` / `ctx_da0703b996d4` (fresh implementer, Claude Sonnet 5.5 high); worker terminal `term_d3ab588f-8395-4f97-961a-3bb665e0bb8f`.
+- Frozen start head: `6c94b27f904818e85242a7dc91c69f078fe4c813` (`git rev-parse HEAD` confirmed before any write; porcelain clean). Input: [qa/cp1a-attempt-2.md](../../qa/cp1a-attempt-2.md) §1 F1b/F8b, §2.
+- Implementation head: `f04c79ec046c96311185199cedf4778957a43d0b` (+ a docs-only record commit with this entry, the evidence logs and the status line). Not touched: `src/`, `qa/**`, `execution-log.md`, `.gitignore`, `config/`, `config.zip`, `.env`, the monitor/trigger templates themselves (no template changed: every `contract_spec` already equals the reference).
+
+### F8b (HIGH) — fixed
+
+`deploy/check-abi.sh` compared canonical `name(types)` and expression names, never `indexed`, and compared the monitor with its own copied ABI. New checks **A8/A9** compare every event and function of every `contract_spec` (all 30 monitors that carry one, 3356 entries) with a committed reference, `deploy/abi/reference.json`, in full: name, `anonymous`, each input's name/type/tuple components/order and (events) `indexed`, each function's outputs. The shared normalizer is `deploy/abi/normalize.jq`.
+
+| Reference | Derivation (never from the monitor under check) |
+|---|---|
+| SSV proxy `0xDD9B…a4E1` (122 events/functions) | `.abi` of `SSVNetworkSSVStakingUpgrade` from `forge build --skip test --skip script` of `ssvlabs/ssv-network` at `f7ac4870074b9408855a7912f9c6e1f959996be8` (plan pin `v2.0.0+f7ac487`, checkout via `git archive`). The deployed implementation is that contract: on-chain code hash of `0xa72a…08E9` = `0xf518bf4b…076b` = `contracts.lock.json`; selector `0xd0937f03` (`initializeSSVStaking`) occurs in the deployed code. The repo's committed `abis/SSVNetwork.json` at the pin lacks `initializeSSVStaking`, so it was not used. |
+| DAO Safe `0xb350…E6b6` (46) | `.abi` of `@safe-global/safe-deployments@1.37.0` `v1.3.0/gnosis_safe.json`; its mainnet 1.3.0 address `0xd9Db…09552` is the Safe proxy's slot-0 singleton, `VERSION()` = `1.3.0`. |
+
+On-chain verification of the layouts (`abi/provenance.json`; endpoint `https://eth.drpc.org`, read at block 26241166): real `UnstakeRequested` log, block 24920762, tx `0x17db7982…95a7`: 2 topics, 64 data bytes (= one indexed `user`); real `FeesSynced`, block 24920823: 1 topic, 64 data bytes; real Safe `ExecutionSuccess`, block 24060370: 1 topic, 64 data bytes (txHash not indexed in 1.3.0). The Safe has emitted no `ExecutionFailure`; its layout is the 1.3.0 ABI's. The monitors' existing specs are byte-for-byte (normalized) equal to both references; no template changed. `deploy/abi/derive.sh --check` reproduces `reference.json` from the two sources (exit 0).
+
+Mutations proven red then restored green (tracked template mutated, `git checkout` restore, porcelain empty): indexed flags swapped user/amount (QA's case), input type changed, input order swapped, extra input, missing input, function output changed. `render.sh` exit 1 with `A9 …` each, `check-templates.sh` exit 1 (S7), restored `render.sh` exit 0 (rows in `evidence/repair-2/vrows-run.log`). The sweep `deploy/tests/abi-mutation-sweep.sh` applies 16 mutation kinds (indexed flipped/swapped, type, order, extra/missing input, rename, anonymous; function input and output variants) to **every contract_spec entry of all 30 specced monitors** at once and requires exit non-zero and exactly one `A9` per mutated entry: 510 checker runs, 0 failures. The same sweep against the repair-1 gate (`evidence/repair-2/red-baseline-abi-sweep-repair1-gate.log`): 480 failing cells, and in 359 of them the old gate exited 0 on a mutated ABI.
+
+### F1b (HIGH) — NOT repaired, by design: documented
+
+`deploy/README.md` section "M13 coverage boundary" lists exactly what the three M13 templates cover (direct transactions: from/to/value/function, incoming direct value to the retired keys, attacker direct interactions incl. reverted and zero-value) and what the Monitor cannot see (internal CALLs to the retired keys, attacker paths through intermediate contracts, constructor-created transfers, SELFDESTRUCT value), citing QA attempt 2's reproducers (blocks 26240404–26240418 and the minimal helper repro). It states that no template can close it and that CP1A does not deliver "any interaction / any incoming value" for M13. No scope change; the coordinator is asking Marco whether balance-delta watching of the retired keys moves into the stateful worker.
+
+### Measurements on `f04c79e` (`evidence/repair-2/vrows.sh` → `vrows-run.log`, every row has exit and counts; endpoints per row)
+
+| Row | Result |
+|---|---|
+| V1A.1 | render exit 0 (`https://ethereum-rpc.publicnode.com`), abi-check OK (32 monitors, 3356 entries equal the reference), 32 active monitors, 0 ERROR; raw `--check` exit 0, success line, 0 ERROR |
+| V1A.1f | brace removed: raw exit 0, no success line, 2 ERROR (accepted deviation); render.sh exit 1 (ABI-1 unparseable); dangling trigger: render exit 1, abi-check OK, 3 ERROR, no success line; restored 0 |
+| V1A.1 ABI falsifiers | `Nonexistent(uint256)`: render 1, check-templates 1, restored 0; F8b six mutations above |
+| V1A.2 | 0 plain values; secret-shape grep exit 1 (0 rows); checker OK (32 / 30 / 1) |
+| V1A.3 (`eth.drpc.org`) | 26239237: 1 match, inbox +1, 11 keys; 26239259 control 0/+0; 26239255: 1/+1; 0 ERROR |
+| V1A.4/4f | 26177496: 1; 26239694 own sender: 0; predicate removed: 1; restored 0; 0 ERROR |
+| V1A.5 | 25991146 incoming: 1; 26169289 outgoing: 0; 26167892 old-key attempt: 1; 26239655 control: 0 |
+| V1A.6 | 26240350 `== 0`: 0 → `> 0`: 1 → restored 0 |
+| V1A.7 | all 16 M15 events on Discord (9 extras); none routed to Telegram; real OracleReplaced 26169066: Telegram 0 / Discord 1 |
+| V1A.8 | `docker compose config` exit 0, `/app/data` → worktree `data`; `max_past_blocks` 3600, recovery config present, 1 RPC |
+| selftest | 51 passed, 0 failed, 0 skipped (31 baseline + 20 new F8b cases incl. the sweep and render.sh) |
+| fork suite | `deploy/tests/m13-fork-regression.sh`: 15 cases, 0 failures (anvil fork of `https://eth.drpc.org` @ 26240350, local txs only) |
+
+### Notes
+
+1. A8/A9 do not cover `error`/`constructor`/`fallback` entries, `stateMutability` or `internalType`, or expression semantics (A5 stays a name check). A reference entry missing from a spec is tolerated; a spec entry missing from or different to the reference is red.
+2. The reference is only as authoritative as its derivation: re-derive (and re-verify on chain) whenever the proxy implementation or the Safe changes; `contracts.lock.json` drift is the trigger.
+3. F5/F6/F7 unchanged. Fresh QA decides; I clear no finding.
+
+- Resulting head: see the status line in plan.md (docs-only commit after `f04c79e`).
+- Next action: fresh Codex QA.
