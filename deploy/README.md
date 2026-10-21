@@ -7,7 +7,8 @@ secrets stay `{"type":"environment","value":"<NAME>"}` references.
 |---|---|
 | `config/` | monitor, trigger, network and filter templates, rendered by `render.sh` |
 | `render.sh` | copies `config/` into a config directory, then runs `check-abi.sh` and the Monitor's `--check` |
-| `check-templates.sh` | structural checker (S0–S7); S7 runs `check-abi.sh` |
+| `check-templates.sh` | structural checker (S0–S7, S1b shape); S7 runs `check-abi.sh` |
+| `shape.jq` | type-level shape of monitors, triggers and networks, shared by the checkers (a wrong type is a FAIL line, not a jq error) |
 | `check-abi.sh` | ABI gate A1–A9, see below |
 | `check-m15-coverage.sh` | each of the 17 M15/M10 events (spec names + `ModuleUpgraded`, full signature from the reference ABI) is on the Discord monitor, and none is unconditional on a Telegram route |
 | `abi/` | the committed reference ABI the gate compares against |
@@ -100,3 +101,16 @@ cases, all pass).
 Re-open this only by a new owner decision: a page for the attacker rows needs a component with traces
 (`debug_traceTransaction` / `trace_block`) or a balance watch of our own wallets, and neither is in scope
 under D10.
+
+## Fail-closed gates (repair 4, F10)
+
+A gate must never read "the command failed" as "no violations". Every `jq`, `grep`, `find` and `ls`
+in `check-templates.sh`, `check-abi.sh`, `check-m15-coverage.sh`, `render.sh`, `abi/derive.sh`,
+`tests/abi-mutation-sweep.sh` and `scripts/local-dry-run.sh` has its status checked: a failing jq is a
+`FAIL` line (or aborts the render), and an empty result is only "nothing found" when the command
+succeeded. Inputs that cannot be read as one JSON value of the right shape (`shape.jq`) are failures:
+empty, unreadable or binary files, symlink loops and dangling links, stray non-JSON files in
+`monitors/ triggers/ networks/`, a trigger whose `config` is a string, a monitor whose `events` is an
+object. The secret scan (S3) reads binary files as text and refuses symlinks it cannot follow. A missing
+or non-working `jq` exits non-zero with `jq is required`. `tests/selftest.sh` (section F10) covers each
+class and injects a jq failure at each site (`SELFTEST_ONLY=f10` runs just that section).

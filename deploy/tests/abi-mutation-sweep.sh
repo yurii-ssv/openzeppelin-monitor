@@ -19,9 +19,10 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
+{ command -v jq >/dev/null && [ "$(jq -n '1 + 1' 2>/dev/null)" = 2 ]; } || { echo "abi-mutation-sweep: jq is required (not on PATH, or not working)" >&2; exit 2; }
 CHECK=("${ABI_CHECK:-$ROOT/deploy/check-abi.sh}") # ABI_CHECK: run the sweep against another gate (e.g. the repair-1 one, to see it red)
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+TMP=$(mktemp -d) || { echo "abi-mutation-sweep: cannot create a temporary directory" >&2; exit 2; }
+trap 'rm -rf "$TMP"' EXIT
 
 # kind name -> jq function body applied to ONE contract_spec entry (returns the mutated entry)
 declare -a KINDS=(
@@ -68,12 +69,15 @@ fail=0; runs=0
 mutated_by_kind=(); monitors_by_kind=() # indexed like KINDS (macOS bash 3.2 has no associative arrays)
 for i in "${!KINDS[@]}"; do mutated_by_kind[$i]=0; monitors_by_kind[$i]=0; done
 for f in "$CFG"/monitors/*.json; do
-  [ -f "$f" ] || continue
+  [ -f "$f" ] && [ -r "$f" ] || { echo "FAIL  ${f#"$ROOT"/} is not a readable regular file (monitor not swept)"; fail=$((fail + 1)); continue; }
   base=$(basename "$f")
-  specced=$(jq '[.addresses[]? | .contract_spec? | select(type == "array" and length > 0)] | length' "$f")
+  # a jq that fails here must not look like "nothing to mutate": every skipped monitor is a counted failure
+  specced=$(jq '[.addresses[]? | .contract_spec? | select(type == "array" and length > 0)] | length' "$f") \
+    || { echo "FAIL  $base: jq failed counting its contract_spec entries (monitor not swept)"; fail=$((fail + 1)); continue; }
+  case "$specced" in '' | *[!0-9]*) echo "FAIL  $base: contract_spec count is not a number ('$specced')"; fail=$((fail + 1)); continue ;; esac
   [ "$specced" -gt 0 ] || continue
   d="$TMP/cfg"; rm -rf "$d"; mkdir -p "$d/monitors"
-  cp "$f" "$d/monitors/$base"
+  cp "$f" "$d/monitors/$base" || { echo "FAIL  $base: cannot copy the monitor"; fail=$((fail + 1)); continue; }
   # control: unmutated copy is green
   args=(--config-dir "$d"); [ -z "$REF" ] || args+=(--reference "$REF")
   runs=$((runs + 1))
@@ -82,8 +86,11 @@ for f in "$CFG"/monitors/*.json; do
     kind=${KINDS[$i]}
     flt=$(filter_for "$kind")
     # n = entries whose normalized layout changed; the mutated file replaces every contract_spec
-    n=$(jq -L "$ROOT/deploy/abi" "include \"normalize\"; [.addresses[]? | .contract_spec? | select(type == \"array\") | . as \$a | (\$a | map($flt)) as \$b | [range(0; \$a | length) | select([\$a[.] | norm_entry] != [\$b[.] | norm_entry])] | length] | add // 0" "$f")
-    jq "(.addresses[]? | select((.contract_spec | type) == \"array\") | .contract_spec) |= map($flt)" "$f" > "$d/monitors/$base"
+    n=$(jq -L "$ROOT/deploy/abi" "include \"normalize\"; [.addresses[]? | .contract_spec? | select(type == \"array\") | . as \$a | (\$a | map($flt)) as \$b | [range(0; \$a | length) | select([\$a[.] | norm_entry] != [\$b[.] | norm_entry])] | length] | add // 0" "$f") \
+      || { echo "FAIL  $base $kind: jq failed counting the mutated entries"; fail=$((fail + 1)); continue; }
+    case "$n" in '' | *[!0-9]*) echo "FAIL  $base $kind: mutated-entry count is not a number ('$n')"; fail=$((fail + 1)); continue ;; esac
+    jq "(.addresses[]? | select((.contract_spec | type) == \"array\") | .contract_spec) |= map($flt)" "$f" > "$d/monitors/$base" \
+      || { echo "FAIL  $base $kind: jq failed writing the mutated monitor"; fail=$((fail + 1)); continue; }
     out=$("${CHECK[@]}" "${args[@]}" 2>&1); rc=$?
     runs=$((runs + 1))
     a9=$(grep -c ' A9 ' <<<"$out")

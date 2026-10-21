@@ -35,5 +35,8 @@ line=$(printf '%s' "$input" | jq -ce --arg observed_at "$observed_at" '
     }
   | if (.tx_hash and .block_hash and .from and .to and .selector and .function) then . else error("incomplete match") end')
 
+# A jq that exits 0 without output must not append an empty line to the inbox.
+[ -n "$line" ] || { echo "inbox_append: no inbox line was produced from the match" >&2; exit 1; }
+
 # One short write in append mode: lines are far below PIPE_BUF, so concurrent appends do not interleave.
 printf '%s\n' "$line" >> "$INBOX_PATH"

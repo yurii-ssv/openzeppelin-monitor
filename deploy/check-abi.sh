@@ -22,11 +22,15 @@
 #       see `indexed` and compares the monitor with itself. The reference is deploy/abi/reference.json,
 #       derived from the contracts at the plan pin v2.0.0+f7ac487 (see deploy/abi/provenance.json and
 #       deploy/README.md), never from the monitor being checked.
+#   A0  the monitor's type-level shape (deploy/shape.jq): events as an object, addresses as a string, ...
+#       is one FAIL line, not a jq error that skips the file
 # Tuples are expanded: (uint32,uint64)[] etc. Exit 0 only if every assertion holds; prints one FAIL
-# line per violation, and fails on a missing directory, no monitor files or an unparsable file.
+# line per violation, and fails on a missing directory, no monitor files, an empty, unreadable, looping
+# or unparsable file, a jq that fails, and a missing or non-working jq ("jq is required", exit 2).
 set -uo pipefail
 
-ABI_DIR="$(cd "$(dirname "$0")" && pwd)/abi"
+DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
+ABI_DIR="$DEPLOY_DIR/abi"
 CFG=""
 REF="$ABI_DIR/reference.json"
 while [ $# -gt 0 ]; do
@@ -37,7 +41,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$CFG" ] || { echo "usage: deploy/check-abi.sh --config-dir <dir> [--reference <file>]" >&2; exit 2; }
-command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
+{ command -v jq >/dev/null && [ "$(jq -n '1 + 1' 2>/dev/null)" = 2 ]; } || { echo "abi-check: jq is required (not on PATH, or not working)" >&2; exit 2; }
+[ -f "$DEPLOY_DIR/shape.jq" ] || { echo "abi-check: FAIL: $DEPLOY_DIR/shape.jq is missing" >&2; exit 1; }
 [ -f "$ABI_DIR/normalize.jq" ] || { echo "abi-check: FAIL: $ABI_DIR/normalize.jq is missing" >&2; exit 1; }
 jq -e '(.contracts | type == "object" and length > 0) and ([.contracts[].abi | type == "array" and length > 0] | all)' "$REF" >/dev/null 2>&1 \
   || { echo "abi-check: FAIL: reference ABI $REF is missing, unparsable or empty" >&2; exit 1; }
@@ -45,10 +50,24 @@ jq -e '(.contracts | type == "object" and length > 0) and ([.contracts[].abi | t
 
 errors=0
 n=0
-entries=0
-for f in "$CFG"/monitors/*.json; do
-  [ -f "$f" ] || continue
+shopt -s nullglob
+files=("$CFG"/monitors/*.json)
+# Every directory entry must be a readable regular .json file; a skipped entry is a failure, not a pass.
+listing=$(find "$CFG/monitors" -mindepth 1 -maxdepth 1 2>&1) || { echo "abi-check: FAIL: cannot list $CFG/monitors: $listing" >&2; exit 1; }
+while IFS= read -r e; do
+  case "${e##*/}" in "" | .gitkeep) ;; .*) echo "FAIL: ${e#"$CFG"/} unexpected hidden entry in monitors/"; errors=$((errors + 1)) ;; *.json) ;;
+    *) echo "FAIL: ${e#"$CFG"/} unexpected entry in monitors/ (only *.json files)"; errors=$((errors + 1)) ;; esac
+done <<<"$listing"
+for f in ${files[@]+"${files[@]}"}; do
   n=$((n + 1))
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then echo "FAIL: ${f#"$CFG"/} is not a readable regular file (unreadable, a directory, or a dangling or looping symlink)"; errors=$((errors + 1)); continue; fi
+  if [ ! -s "$f" ]; then echo "FAIL: ${f#"$CFG"/} is empty"; errors=$((errors + 1)); continue; fi
+  shape_out=$(jq -r -L "$DEPLOY_DIR" 'include "shape"; if length == 1 then .[0] | monitor_shape[] else "expected exactly one JSON value, found \(length)" end' -s "$f" 2>&1) \
+    || { echo "FAIL: ABI-1 ${f#"$CFG"/}: not parseable by jq: $shape_out"; errors=$((errors + 1)); continue; }
+  if [ -n "$shape_out" ]; then
+    while IFS= read -r line; do echo "FAIL: ${f#"$CFG"/} A0 $line"; errors=$((errors + 1)); done <<<"$shape_out"
+    continue
+  fi
   out=$(jq -r -L "$ABI_DIR" --slurpfile ref "$REF" '
     include "normalize";
     def idents: [match("(?:^|[\\s(])([A-Za-z_][A-Za-z0-9_]*)(?:\\[[^\\]]*\\]|\\.[A-Za-z0-9_]+)*\\s*(?:==|!=|>=|<=|>|<|(?i:contains)|(?i:starts_with)|(?i:ends_with))"; "g").captures[0].string];
@@ -117,5 +136,6 @@ if [ $errors -ne 0 ]; then
   echo "abi-check: $errors failure(s)"
   exit 1
 fi
-compared=$(jq -s '[.[] | .addresses[]? | .contract_spec? | select(type == "array") | .[] | select(.type == "event" or .type == "function")] | length' "$CFG"/monitors/*.json)
+compared=$(jq -s '[.[] | .addresses[]? | .contract_spec? | select(type == "array") | .[] | select(.type == "event" or .type == "function")] | length' "${files[@]}") \
+  || { echo "abi-check: FAIL: could not count the compared contract_spec entries (jq failed)" >&2; exit 1; }
 echo "abi-check: OK ($n monitors: every event/function signature and expression parameter exists in the ABI; $compared contract_spec events/functions equal the reference layout)"

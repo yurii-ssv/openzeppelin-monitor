@@ -17,9 +17,16 @@
 #   placeholder values for any environment variable the config references that is unset in this
 #   shell (--check only validates shape; real values are read at run time). The binary's own exit
 #   code is not a gate (it exits 0 even when validation fails), so render.sh requires its
-#   "Configuration validation completed successfully" line and zero ERROR lines;
+#   "Configuration validation completed successfully" line and zero ERROR lines, and that the count in
+#   its "Found N active monitor(s)" line equals the number of unpaused monitor templates rendered (a file
+#   the Monitor silently skipped is not a pass);
 # - --strict (production deploy): fail instead of warn when TELEGRAM_CHAT_ID or any environment
 #   variable referenced by the rendered config is unset, and never use placeholders for --check.
+#
+# Every jq call is checked (set -e plus explicit messages): a failing jq aborts the render, an empty
+# result is never read as "nothing to do", and a malformed template (a network whose rpc_urls is not an
+# array, a trigger file that is not an object) is an error instead of being coerced into shape.
+# A missing or non-working jq exits 1 with "jq is required".
 #
 # The binary defaults to target/release/openzeppelin-monitor; override with MONITOR_BIN.
 set -euo pipefail
@@ -41,7 +48,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$OUT" ] || { echo "usage: deploy/render.sh --out <dir> [--strict] [--no-check]" >&2; exit 2; }
-command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+{ command -v jq >/dev/null && [ "$(jq -n '1 + 1' 2>/dev/null)" = 2 ]; } || { echo "render: jq is required (not on PATH, or not working)" >&2; exit 1; }
 
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -56,15 +63,16 @@ if [ -d "$OUT/triggers/scripts" ]; then
   find "$OUT/triggers/scripts" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' \) -exec chmod +x {} +
 fi
 
-rewrite() { # rewrite <file> <jq args...>: in-place jq edit
+rewrite() { # rewrite <file> <jq args...>: in-place jq edit; a failing jq aborts the render, leaving nothing half-written
   local f=$1; shift
-  jq "$@" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  if ! jq "$@" "$f" > "$f.tmp"; then rm -f "$f.tmp"; echo "render: jq failed rewriting ${f#"$OUT"/}" >&2; exit 1; fi
+  mv "$f.tmp" "$f"
 }
 
 # Optional second RPC.
 if [ -z "${MAINNET_RPC_URL_2:-}" ]; then
   for f in "$OUT"/networks/*.json; do
-    rewrite "$f" '.rpc_urls |= map(select((.url.type == "environment" and .url.value == "MAINNET_RPC_URL_2") | not))'
+    rewrite "$f" 'if (.rpc_urls | type) != "array" then error("rpc_urls must be an array, got \(.rpc_urls | type)") else .rpc_urls |= map(select((.url.type == "environment" and .url.value == "MAINNET_RPC_URL_2") | not)) end'
   done
 fi
 
@@ -72,7 +80,7 @@ fi
 if [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
   for f in "$OUT"/triggers/*.json; do
     rewrite "$f" --arg chat "$TELEGRAM_CHAT_ID" \
-      'map_values(if .trigger_type == "telegram" and .config.chat_id == "${TELEGRAM_CHAT_ID}" then .config.chat_id = $chat else . end)'
+      'if type != "object" then error("a trigger file must be an object, got \(type)") else map_values(if .trigger_type == "telegram" and .config.chat_id == "${TELEGRAM_CHAT_ID}" then .config.chat_id = $chat else . end) end'
   done
 elif $STRICT; then
   echo "render: --strict and TELEGRAM_CHAT_ID is unset" >&2; exit 1
@@ -82,7 +90,8 @@ fi
 
 # Environment variables the rendered config refers to.
 refs=$(jq -r '.. | objects | select(.type? == "environment") | .value' \
-  "$OUT"/networks/*.json "$OUT"/triggers/*.json | sort -u)
+  "$OUT"/networks/*.json "$OUT"/triggers/*.json | sort -u) \
+  || { echo "render: jq failed collecting the environment variables the config references" >&2; exit 1; }
 missing=""
 for v in $refs; do
   [ -n "${!v:-}" ] || missing="$missing $v"
@@ -134,5 +143,11 @@ if [ $rc -ne 0 ] || ! grep -q 'Configuration validation completed successfully' 
   echo "render: --check failed (binary exit $rc; success line or ERROR lines decide)" >&2
   exit 1
 fi
-printf '%s\n' "$plain" | grep -E 'Found [0-9]+ (active monitor|network)' | sed 's/^.*openzeppelin_monitor: //'
+found=$(printf '%s\n' "$plain" | grep -E 'Found [0-9]+ (active monitor|network)' | sed 's/^.*openzeppelin_monitor: //') \
+  || { echo "render: the Monitor's summary lines (Found N active monitor(s)) are missing; cannot confirm what it validated" >&2; exit 1; }
+printf '%s\n' "$found"
+want=$(jq -s '[.[] | select(.paused != true)] | length' "$OUT"/monitors/*.json) \
+  || { echo "render: jq failed counting the rendered monitors" >&2; exit 1; }
+got=$(printf '%s\n' "$found" | sed -n 's/^.*Found \([0-9][0-9]*\) active monitor.*$/\1/p')
+[ "$got" = "$want" ] || { echo "render: the Monitor validated '${got:-no}' active monitor(s) but $want unpaused monitor template(s) were rendered" >&2; exit 1; }
 echo "Rendered $OUT; --check passed${missing:+ (placeholders used for:$missing)}"

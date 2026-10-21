@@ -44,8 +44,8 @@ for _ in $(seq 1 60); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break
 cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil did not start (fork url $FORK_URL)" >&2; cat "$LOG/anvil.log" >&2; exit 2; }
 
 for a in $A1 $A2 $OLD4 $OLDLIQ $W4 $LIQ $OTHER $OTHER2; do
-  cast rpc --rpc-url "$RPC" anvil_impersonateAccount "$a" >/dev/null
-  cast rpc --rpc-url "$RPC" anvil_setBalance "$a" 0xde0b6b3a7640000 >/dev/null
+  cast rpc --rpc-url "$RPC" anvil_impersonateAccount "$a" >/dev/null || { echo "cannot impersonate $a on the fork" >&2; exit 2; }
+  cast rpc --rpc-url "$RPC" anvil_setBalance "$a" 0xde0b6b3a7640000 >/dev/null || { echo "cannot fund $a on the fork" >&2; exit 2; }
 done
 
 # Render once without deliveries (no TEST_* set), against the fork.

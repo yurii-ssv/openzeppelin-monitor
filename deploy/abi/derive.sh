@@ -23,6 +23,7 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+{ command -v jq >/dev/null && [ "$(jq -n '1 + 1' 2>/dev/null)" = 2 ]; } || { echo "derive: jq is required (not on PATH, or not working)" >&2; exit 2; }
 [ -n "$SSV_OUT" ] && [ -n "$SAFE" ] || { echo "usage: derive.sh --ssv-out <dir> --safe-abi <file> [--out <file>] [--check]" >&2; exit 2; }
 IMPL="$SSV_OUT/SSVNetworkSSVStakingUpgrade.sol/SSVNetworkSSVStakingUpgrade.json"
 [ -f "$IMPL" ] || { echo "derive: $IMPL not found" >&2; exit 1; }
@@ -35,8 +36,10 @@ derived=$(jq -n -L "$HERE" --slurpfile prov "$HERE/provenance.json" --slurpfile 
      contracts: ($p.contracts
        | .["0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1"] |= (. + {abi: ($ssv[0].abi | norm_abi)})
        | .["0xb35096b074fdb9bbac63e3adae0bbde512b2e6b6"] |= (. + {abi: ($safe[0].abi | norm_abi)}))}')
+[ -n "$derived" ] || { echo "derive: the sources produced no output" >&2; exit 1; }
 if $CHECK; then
-  [ "$derived" = "$(jq . "$OUT")" ] && { echo "derive: $OUT equals its sources"; exit 0; }
+  committed=$(jq . "$OUT") || { echo "derive: cannot read $OUT as JSON" >&2; exit 1; }
+  [ "$derived" = "$committed" ] && { echo "derive: $OUT equals its sources"; exit 0; }
   echo "derive: $OUT differs from what the sources give" >&2; exit 1
 fi
 printf '%s\n' "$derived" > "$OUT"
