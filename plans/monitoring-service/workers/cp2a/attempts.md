@@ -151,3 +151,76 @@ Note (method): a first pass without a fresh bytecode cache reported F2 as surviv
 - NOT RUN: none of the owned rows. Out of scope, not run: an anvil fork end-to-end of these checks (CP3).
 - Resulting head: the commit recorded on plan.md's CP2a status line (this log is part of it).
 - Next action: Codex QA on the lane head.
+
+<a id="repair-1"></a>
+## Repair 1 — QA attempt 1 findings H1–H3, M1–M3, then the defect classes
+
+- Observed UTC: 2026-10-21 (start ≈ 14:2xZ; record written 15:13Z).
+- Task / Dispatch: `task_f5b9000cb000` / `ctx_90755f17174e`; coordinator `term_89e2fa6f-482b-4551-995f-1f0e41c726a2`;
+  worker terminal `term_cdfc247b-9fa7-4bd7-80d6-5daf87bb04d7`. Fresh implementer, `claude-opus-5-5`, effort high.
+- Frozen start head: `098c2cd27ac67dc767531cf258932ebe45222b3f` (`git rev-parse HEAD`; = QA evidence commit on top of
+  `7211819`), `git status --porcelain` empty. Environment: existing `reconcile/.venv` (Python 3.12.15) verified, nothing
+  installed.
+- Inputs read in full: `qa/cp2a-attempt-1.md` (§1–§6, Appendix A–C), `reconcile/checks/README.md`, spec M3/M4/M14,
+  `plan/monitoring-service:plans/monitoring-service/qa/DEFECT-CLASSES.md` (coordinator message mid-task), the pin
+  `f7ac487` (`SSVClusters.deposit/liquidate/liquidateSSV`, `SSVViews` SSV variants, `ClusterLib.isLiquidatable*`).
+- QA Appendix A reproduced on the frozen head: `pytest -q <scratch>/test_independent.py` → **7 failed, 28 passed**
+  (the same seven). After the repair: **35 passed**.
+
+### Changes (commits `165a764`, `a78f242`, `a9a1445`, `e0374e4`, `a7556e5`, `da2fecb`)
+
+| Finding | Fix | Regression(s) (red on 098c2cd, green after) |
+|---|---|---|
+| H1 M3 API omission resolved a live page | `lookup`: a tracked/re-checked cluster the inventory does not list with a validated tuple is read from storage with its persisted tuple, `m3_tuples` history and latest log as candidates; only empty slots / non-ETH version / views on a validated tuple resolve; no identity → UNKNOWN (raise in a reorg run) | `test_m3.py::test_qa1_h1_empty_api_does_not_resolve_a_live_computed_zero_page[False,True]` (QA scenario, plus fresh-evaluation evidence), `…after_a_restart_reads_the_persisted_tuple`, `…reorg_below_the_onset_with_an_empty_api_reports_the_key_again`, `…empty_api_and_an_unvalidatable_tuple_stays_unknown`, `…reorg_key_without_identity_raises_and_keeps_the_marker`, `…reorg_key_listed_nowhere_without_identity_raises`; controls green on both: `…api_error_resolves_nothing`, `…then_a_real_liquidation_resolves_on_proof`, `…absent_from_storage_on_the_new_chain_resolves` |
+| H1 class in M14 (zero test) | `at_zero` falls back to storage (`stored_cluster`) when the inventory omits the cluster | `test_m14.py::test_qa1_h1_class_inventory_omission_does_not_lower_a_zero_page` |
+| H2 M14 UNKNOWN reorg evidence resolved | `m14_pending` (inbox id, cluster if known, reason, block time): retried every run, health until evaluated / orphaned / older than the window; any unreadable transaction in a reorg run raises (marker kept); a pending entry that could be a hit holds the open incident (no resolve, no lower severity) | `test_qa1_h2_reorg_missing_replacement_transaction_does_not_clean_resolve` (QA scenario + marker kept + no re-alert while pending), `…unreadable_transaction_is_retried_until_evaluated`, `…pending_entry_keeps_an_open_incident_past_the_window`; control `…reorg_run_with_a_known_cluster_unknown_keeps_its_key` |
+| H3 legacy SSV `liquidateSSV` | version from storage at the evaluated block; `…SSV` views (`cluster_calls(version=…)`), SSV burn for the dust predicate, `getBalanceSSV` zero test; function/version mismatch = no hit (reverts by version) | `test_qa1_h3_legacy_ssv_cluster_liquidate_ssv_front_run_is_info`, `…benign_one_block_of_ssv_burn_and_eth_liquidate_are_silent`, `…legacy_cluster_at_computed_zero_pages`, `…legacy_minissv_stub_scenario` (QA scenario); control `…benign_healthy_cluster_is_silent`; `test_v2a7_liquidate_ssv_entry_is_correlated_too` (attempt 1: liquidateSSV on an ETH cluster counted) replaced by `test_v2a7_benign_liquidate_ssv_on_an_eth_cluster_reverts_by_version` |
+| M1 7,200 blocks ≠ 24 h | `window_s` (86,400) of chain time: hit time = its header timestamp (`block_times`, hash-checked) | `test_qa1_m1_three_hits_over_26_hours_of_chain_time_do_not_warn` (QA scenario), `…window_is_header_time_not_the_worker_clock` |
+| M2 anchored at the last hit | window anchored at the checkpoint header's timestamp each run; a downgrade is silent (`m14_open.last_hit`: info re-sent only for a new hit) | `test_qa1_m2_old_hits_expire_at_the_current_checkpoint` |
+| M3 later same-block top-up | events split before/after the failed tx (`transactionIndex`, `logIndex`); after-events → state derived from end of B−1 (last log, deposit log minus value, API tuple; views validate) + deposits before it; undecidable → UNKNOWN pending; "no deposit below one block of burn" decided first | `test_qa1_m3_later_same_block_top_up_does_not_hide_the_attack` (QA scenario), `…undeterminable_position_state_is_unknown_not_dismissed`, `…unknown_order_with_several_events_in_the_block_is_unknown`; controls `…previous_block_dust_with_a_later_same_block_top_up_is_a_hit`, `…benign_top_up_before_the_failed_transaction_is_silent`, `…benign_healthy_cluster_with_a_later_top_up_is_silent` |
+| Sweep finding (seed 12) | M3 reorg run re-checks every cluster of `m3_tuples` observed above A (a resolution on a deleted block) | `test_sweep_m3_resolution_on_a_deleted_block_is_found_again_without_the_api` |
+| Sweep finding (seed 13) | `m3_tuples`: last 8 validated tuples per cluster as candidates | `test_sweep_m3_reorg_removing_the_latest_change_uses_an_earlier_validated_tuple` |
+| Sweep finding (seeds 3, 5, …) | B−1 tuple = first-in-block deposit log minus its value (`deposit` only adds msg.value at the pin) | `test_sweep_m14_cluster_without_earlier_logs_later_top_up_uses_the_deposit_tuple_minus_value` |
+| Sweep finding (seed 21) | no qualifying deposit decided before the position state (no false UNKNOWN) | `test_sweep_m14_no_deposit_below_one_block_of_burn_is_decided_before_the_position_state` |
+| Class 5 (state table) | M3 full sweep on `OperatorFeeExecuted` (`events` declaration) | `test_class5_fee_increase_onset_is_seen_at_its_block_even_if_healed_before_the_next_sweep` |
+| Class 11 | config validated at construction (M3 1 ≤ N ≤ N2, intervals > 0; M4 interval > 0; M14 window, repeat, interval) | `test_class11_invalid_configuration_is_a_startup_error` (m3 ×4, m4 ×2, m14 ×3) |
+| Class 1 / 2 / 10 controls | — (already correct; untested before) | `test_m14.py::test_class1_calldata_that_is_not_the_liquidation_is_permanent_not_pending`, `test_m4.py::test_class2_resolution_on_a_deleted_block_is_paged_again[0-1,12-20]`, `test_m14.py::test_class2_window_resolution_on_deleted_blocks_reopens_on_a_shorter_chain`, `…class10_restart_while_an_entry_is_pending_retries_it`, `…class10_restart_while_the_reorg_run_raises_keeps_the_marker_until_it_can_evaluate`, `test_qa1_old_database_hits_without_block_time_are_filled_from_headers` |
+
+Fixture changes (`fixtures_liquidation.py`): SSV view variants with the version check (`IncorrectClusterVersion()` =
+`0xf6749746`, as LIVE), legacy clusters (`Clusters.create(version="SSV")`), header timestamps (12 s slots + `elapse`,
+worker-clock floor when attached), `deposit` no longer settles (mirrors the pin), `reorg` also trims balances and call
+stubs. Config: `checks.m14.window_blocks` → `window_s` (86400). Schema: additive (`ensure_columns`), `m3_tuples`,
+`m14_pending` new.
+
+RED on the frozen head: `repair1/red-on-frozen.txt` — every new test of test_m3/m4/m14 (43 functions, 51 cases) plus
+the sweep, run with the frozen `098c2cd` check modules and the new tests/fixtures overlaid in scratch: **39 of 51 cases
+red**; the 12 green are the named controls and benign twins (incl. the class-2 controls `test_m4…class2…[0-1,12-20]`,
+`test_m14…class2_window…`) and `test_class11…m14[cfg0]`, green there for another reason (the frozen M14 rejects
+`window_s` as an unknown key). Sweep on the frozen checks: M3 17/40 seeds red, M14 46/60 red.
+
+### Verification (lane head after `da2fecb`, 2026-10-21T15:1xZ, `reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider …`)
+
+| V-ID | Command | Result |
+|---|---|---|
+| V2x.1 | `reconcile/tests/test_m3.py`, `test_m4.py`, `test_m14.py` (each) | exit 0: 52 / 29 / 58 passed |
+| V2x.2 | `… -k thresholds_from_chain` (each) | exit 0: 5 / 2 / 3 passed |
+| V2x.3 | `… -k restart` (each) | exit 0: 3 / 1 / 3 passed |
+| V2x.4 | `… -k rpc_budget` (each) | exit 0: 1 / 1 / 1 passed (M14 also bounds `eth_getBlockByNumber` ≤ 2, `eth_getStorageAt` ≤ 4 per entry) |
+| V2a.7 | `test_m14.py -k v2a7` | exit 0: 9 passed |
+| V2x.5 | `reconcile/.venv/bin/python plans/monitoring-service/workers/cp2a/repair1/mutate.py <QA Appendix A file>` | exit 0: **41/41 mutants red** (pytest exit 1), all restored byte for byte, `git status --porcelain` 0 — F1–F15 (F10–F15 re-targeted at the new M14), QF3, QF4, QF14, R1–R12 (one per finding/sweep finding), C5, C11×3, S1–S6 (the sweep alone reddens on H1, M1, M2, M3, H3, H2 mutants); `repair1/falsifiers.jsonl` |
+| sweep | `test_liquidation_sweep.py` | exit 0: 100 passed (M3 40 seeds × 30 steps, M14 60 seeds × 30 steps) |
+| V2x.6 | `reconcile/tests` ; `ruff check reconcile` | exit 0: **479 passed**; `All checks passed!` |
+| QA App. A | `<scratch>/test_independent.py` | 35 passed (was 7 failed) |
+| LIVE (new, read-only) | `live/ssv_views_live.py reconcile https://ethereum-rpc.publicnode.com …` | exit 0, block 26,241,773 (`0xe595a093…fb1f`), 5 legacy clusters: API tuple validates against `clusters[id]`, `isLiquidatableSSV`/`getBalanceSSV`/`getBurnRateSSV` answer, ETH `isLiquidatable` reverts `0xf6749746`; header timestamp read hash-checked; `live/ssv-views-26241773.json` |
+
+NOT RUN: M4 LIVE (M4's equation unchanged — only config validation added; QA re-measured it at 26,241,506); the full
+M3 LIVE views traversal (evaluation path unchanged; the new SSV/timestamp reads are covered by the probe above); anvil
+fork end-to-end (CP3). `git merge --no-edit plan/monitoring-service` was attempted and **aborted**: it conflicts in
+`execution-log.md`, which this lane may not write (DEFECT-CLASSES.md read from the branch instead).
+
+Semantic notes for the coordinator (no ask needed; they do not change the work): (1) at the pin `SSVClusters.deposit`
+validates `VERSION_ETH`, so a `ClusterDeposited` on a legacy SSV cluster cannot be emitted post-upgrade — the legacy
+path (H3) is implemented and tested on the fixture as required; on mainnet a legacy `liquidateSSV` front-run would use
+another tuple change (e.g. `removeValidator`, `migrateClusterToETH`), which spec M14 does not name. (2) The attempt-1
+fixture settled the tuple on `deposit`; the pin does not (fixed). (3) Not modelled: an operator/network fee change
+inside block B between the deposit and the failed liquidation.

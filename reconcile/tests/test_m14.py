@@ -27,6 +27,7 @@ from fixtures_liquidation import (
 )
 from harness import advance, outbox, stub_params
 
+from checks.m3_views import LIQUIDATE
 from eb_storage import cluster_id
 
 pytestmark = pytest.mark.m14
@@ -831,3 +832,21 @@ def test_class10_restart_while_the_reorg_run_raises_keeps_the_marker_until_it_ca
 def test_class11_invalid_configuration_is_a_startup_error(tmp_path, cfg):
     with pytest.raises(SystemExit, match="checks.m14"):
         make(tmp_path, cfg={"m14": cfg})
+
+
+def test_class1_calldata_that_is_not_the_liquidation_is_permanent_not_pending(tmp_path):
+    """The transaction is readable and its input is not the inbox's liquidation call: a permanent fact (health once),
+    not an UNKNOWN to retry, and nothing is held open by it."""
+    from fakechain import PROXY
+
+    chain, w, cl, path = make(tmp_path)
+    tx = chain.add_tx("0x" + "16" * 20, PROXY, "0xbc26e7e5" + "00" * 64)
+    with open(path, "a") as fh:
+        fh.write(json.dumps({"schema": 1, "tx_hash": tx, "block": chain.number, "block_hash": chain.hash(chain.number),
+                             "to": PROXY, "selector": "0x" + LIQUIDATE["liquidate"].hex(),
+                             "function": "liquidate(address,uint64[],(uint32,uint64,uint64,bool,uint256))",
+                             "status": "failure"}) + "\n")
+    chain.mine()
+    advance(w)
+    assert "calldata unusable" in unknown_health(w)[-1] and not incidents(w, "m14")
+    assert not w.db.conn.execute("SELECT * FROM m14_pending").fetchall()
