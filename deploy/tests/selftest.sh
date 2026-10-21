@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Offline self-test for the deploy-side gates (CP1A repair 1: F2, F3, F8, template structure of F1/F4).
+# Offline self-test for the deploy-side gates (CP1A repair 1: F2, F3, F8, template structure of F1/F4;
+# repair 2: F8b ABI layout gate against the committed reference).
 # Every mutation is made in a throw-away copy of deploy/ (never in the tracked tree); the script
 # asserts that the tracked tree is byte-identical before and after.
 #
@@ -123,6 +124,58 @@ jq -e '(.addresses | length) == 2
   "$m/ssv_retired_addresses_monitor.json" >/dev/null \
   && ok "retired-address monitor: two retired keys, incoming (to ==) and value > 0 only" \
   || bad "retired-address monitor structure"
+
+echo "== F8b: ABI layout (indexed, type, order, arity, outputs) against the committed reference"
+SEED=deploy/config/monitors/ssv_seed_stake_monitor.json
+UNST='.addresses[0].contract_spec[] | select(.type=="event" and .name=="UnstakeRequested") | .inputs'
+abi_red() { # abi_red <label> <monitor file under deploy/config/monitors> <jq filter> <pattern>
+  local r; r=$(fresh abi-layout)
+  mutate "$r/deploy/config/monitors/$2" "$3"
+  expect "$1" nonzero "$4" -- bash "$r/deploy/check-abi.sh" --config-dir "$r/deploy/config"
+}
+abi_red "indexed flags swapped between user and amount (QA's F8b case)" ssv_seed_stake_monitor.json \
+  "($UNST) |= (.[0].indexed = false | .[1].indexed = true)" 'A9 event UnstakeRequested\(address,uint256,uint256\) .*differs from the reference'
+abi_red "indexed dropped from user" ssv_seed_stake_monitor.json \
+  "($UNST) |= (.[0].indexed = false)" 'A9 event UnstakeRequested\(address,uint256,uint256\) .*differs from the reference'
+abi_red "input type changed (amount uint256 -> uint64)" ssv_seed_stake_monitor.json \
+  "($UNST) |= (.[1].type = \"uint64\")" 'A9 event UnstakeRequested\(address,uint64,uint256\) .*not in the reference ABI \(reference has: UnstakeRequested\(address,uint256,uint256\)\)'
+abi_red "input order swapped (same types, names reordered)" ssv_seed_stake_monitor.json \
+  "($UNST) |= ([.[0], .[2], .[1]])" 'A9 event UnstakeRequested\(address,uint256,uint256\) .*differs from the reference'
+abi_red "input order swapped (types reordered)" ssv_seed_stake_monitor.json \
+  "($UNST) |= ([.[1], .[0], .[2]])" 'A9 event UnstakeRequested\(uint256,address,uint256\) .*not in the reference ABI'
+abi_red "extra input" ssv_seed_stake_monitor.json \
+  "($UNST) += [{\"name\":\"extra\",\"type\":\"uint256\",\"indexed\":false}]" 'A9 event UnstakeRequested\(address,uint256,uint256,uint256\) .*not in the reference ABI'
+abi_red "missing input" ssv_seed_stake_monitor.json \
+  "($UNST) |= .[0:2]" 'A9 event UnstakeRequested\(address,uint256\) .*not in the reference ABI'
+abi_red "input renamed (expressions refer to input names)" ssv_seed_stake_monitor.json \
+  "($UNST) |= (.[0].name = \"account\")" 'A9 event UnstakeRequested\(address,uint256,uint256\) .*differs from the reference'
+abi_red "event anonymous flag flipped" ssv_seed_stake_monitor.json \
+  '(.addresses[0].contract_spec[] | select(.type=="event" and .name=="FeesSynced") | .anonymous) = true' 'A9 event FeesSynced\(uint256,uint256\) .*differs from the reference'
+abi_red "function output changed (Safe execTransaction success bool -> uint8)" ssv_dao_safe_reverted_monitor.json \
+  '(.addresses[0].contract_spec[] | select(.type=="function" and .name=="execTransaction") | .outputs[0].type) = "uint8"' 'A9 function execTransaction\(.*differs from the reference'
+abi_red "function output removed (proxy registerOperator)" ssv_oracle_success_monitor.json \
+  '(.addresses[0].contract_spec[] | select(.type=="function" and .name=="registerOperator") | .outputs) = []' 'A9 function registerOperator\(.*differs from the reference'
+abi_red "function input type changed on an unmonitored entry still fails (sweep covers the whole contract_spec)" ssv_dao_success_monitor.json \
+  '(.addresses[0].contract_spec[] | select(.type=="function" and .name=="getVersion")) |= (.inputs = [{"name":"x","type":"bool"}])' 'A9 function getVersion\(bool\) .*not in the reference ABI'
+abi_red "an extra entry that is not in the contract at all" ssv_oracle_success_monitor.json \
+  '.addresses[0].contract_spec += [{"type":"event","name":"Sneaky","anonymous":false,"inputs":[]}]' 'A9 event Sneaky\(\) .*not in the reference ABI'
+abi_red "contract_spec at an address the reference does not know" ssv_oracle_success_monitor.json \
+  '.addresses[0].address = "0x000000000000000000000000000000000000dEaD"' 'A8 address 0x000000000000000000000000000000000000dEaD carries a contract_spec but has no entry'
+r=$(fresh abi-ref); mutate "$r/deploy/abi/reference.json" \
+  '(.contracts["0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1"].abi[] | select(.type=="event" and .name=="UnstakeRequested") | .inputs[1].indexed) = true'
+expect "the reference, not the monitor, decides: a changed reference turns the tracked monitors red" nonzero 'A9 event UnstakeRequested' -- bash "$r/deploy/check-abi.sh" --config-dir "$r/deploy/config"
+expect "missing reference file" nonzero 'reference ABI .* is missing, unparsable or empty' -- bash "$ROOT/deploy/check-abi.sh" --config-dir "$ROOT/deploy/config" --reference "$TMP/no-such-reference.json"
+echo '{"contracts":{}}' > "$TMP/empty-ref.json"
+expect "empty reference" nonzero 'reference ABI .* is missing, unparsable or empty' -- bash "$ROOT/deploy/check-abi.sh" --config-dir "$ROOT/deploy/config" --reference "$TMP/empty-ref.json"
+r=$(fresh abi-restored)
+expect "restored (unmutated) copy is green and compares every contract_spec entry" zero 'abi-check: OK \(32 monitors.*[0-9]+ contract_spec events/functions equal the reference layout' -- bash "$r/deploy/check-abi.sh" --config-dir "$r/deploy/config"
+if [ -x "$BIN" ]; then
+  r=$(fresh abi-render); mutate "$r/deploy/config/monitors/ssv_seed_stake_monitor.json" "($UNST) |= (.[0].indexed = false | .[1].indexed = true)"
+  expect "render.sh exits non-zero on the swapped indexed layout" nonzero 'A9 event UnstakeRequested' -- env MONITOR_BIN="$BIN" bash "$r/deploy/render.sh" --out "$TMP/abi-layout-out/config"
+else
+  skipped=$((skipped + 1)); echo "SKIP  render.sh indexed-layout case (no $BIN)"
+fi
+expect "mutation sweep: every kind x every contract_spec entry of every monitor is red, exactly one A9 per mutated entry" zero 'abi-mutation-sweep: [0-9]+ checker runs, 0 failure' -- bash "$ROOT/deploy/tests/abi-mutation-sweep.sh"
 
 after=$(cd "$ROOT" && find deploy -type f -exec shasum {} + | sort | shasum)
 [ "$before" = "$after" ] && ok "tracked deploy/ tree unchanged by the self-test" || bad "tracked deploy/ tree changed during the self-test"

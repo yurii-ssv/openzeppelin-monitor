@@ -19,7 +19,8 @@
 #       networks[] non-empty; match_conditions present with at least one non-empty
 #       events/functions/transactions list (an empty set matches every transaction)
 #   S7  deploy/check-abi.sh on the same config dir: every event/function signature and
-#       expression parameter exists in the monitor's ABI (the Monitor's own --check does not)
+#       expression parameter exists in the monitor's ABI, and every contract_spec event/function
+#       equals the committed reference layout incl. `indexed` (the Monitor's own --check does neither)
 # Inputs are validated first: a missing or empty --config-dir (no monitors, triggers or networks),
 # a missing --root or deploy/ directory, a failing secret scan and a failing sibling script are all
 # failures, never "OK". Counts come from the checked directory only.

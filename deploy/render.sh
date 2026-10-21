@@ -11,8 +11,9 @@
 #   chat_id (a plain string in the Monitor schema, so it cannot be an environment reference).
 #   Message bodies contain ${transaction.hash}-style tokens that are left untouched;
 # - unless --no-check, first runs deploy/check-abi.sh on the rendered config (every monitor event /
-#   function signature and expression parameter must exist in its ABI; the Monitor's own --check
-#   never compares them), then runs `openzeppelin-monitor --check` against the rendered config, with
+#   function signature and expression parameter must exist in its ABI, and every contract_spec event /
+#   function must equal the committed reference layout in deploy/abi/reference.json: name, types,
+#   indexed flags, order, outputs; the Monitor's own --check never compares any of it), then runs `openzeppelin-monitor --check` against the rendered config, with
 #   placeholder values for any environment variable the config references that is unset in this
 #   shell (--check only validates shape; real values are read at run time). The binary's own exit
 #   code is not a gate (it exits 0 even when validation fails), so render.sh requires its
