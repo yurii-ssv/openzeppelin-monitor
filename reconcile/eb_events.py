@@ -27,8 +27,45 @@ SIGNATURES = {
     "OracleReplaced": "OracleReplaced(uint32,address,address)",
 }
 
+# Governance and parameter events (spec M15). The worker re-reads the live parameters when one of
+# these is scanned (params.py). Signatures from ISSVDAO.sol, CoreLib.sol and ERC1967 at the pin.
+PARAM_SIGNATURES = {
+    "NetworkFeeUpdated": "NetworkFeeUpdated(uint256,uint256)",
+    "NetworkFeeUpdatedSSV": "NetworkFeeUpdatedSSV(uint256,uint256)",
+    "LiquidationThresholdPeriodUpdated": "LiquidationThresholdPeriodUpdated(uint64)",
+    "LiquidationThresholdPeriodSSVUpdated": "LiquidationThresholdPeriodSSVUpdated(uint64)",
+    "MinimumLiquidationCollateralUpdated": "MinimumLiquidationCollateralUpdated(uint256)",
+    "MinimumLiquidationCollateralSSVUpdated": "MinimumLiquidationCollateralSSVUpdated(uint256)",
+    "OperatorFeeIncreaseLimitUpdated": "OperatorFeeIncreaseLimitUpdated(uint64)",
+    "OperatorMaximumFeeUpdated": "OperatorMaximumFeeUpdated(uint256)",
+    "MinimumOperatorEthFeeUpdated": "MinimumOperatorEthFeeUpdated(uint256)",
+    "DeclareOperatorFeePeriodUpdated": "DeclareOperatorFeePeriodUpdated(uint64)",
+    "ExecuteOperatorFeePeriodUpdated": "ExecuteOperatorFeePeriodUpdated(uint64)",
+    "QuorumUpdated": "QuorumUpdated(uint16)",
+    "MinBlocksBetweenUpdatesUpdated": "MinBlocksBetweenUpdatesUpdated(uint32)",
+    "CooldownDurationUpdated": "CooldownDurationUpdated(uint64)",
+    "ModuleUpgraded": "ModuleUpgraded(uint8,address)",
+    "Upgraded": "Upgraded(address)",
+}
+SIGNATURES.update(PARAM_SIGNATURES)
+PARAM_KINDS = frozenset(PARAM_SIGNATURES) | {"OracleReplaced"}
+
 TOPIC0 = {name: "0x" + keccak(sig.encode()).hex() for name, sig in SIGNATURES.items()}
 KIND_BY_TOPIC0 = {topic: name for name, topic in TOPIC0.items()}
+
+
+def register_event(name: str, signature: str) -> str:
+    """Track one more proxy event (a check's `events`); returns its topic0.
+
+    Logs of events registered here are stored raw: `Event.extra = {"topics": [...], "data": "0x…"}`.
+    """
+    topic = "0x" + keccak(signature.encode()).hex()
+    if SIGNATURES.get(name, signature) != signature or KIND_BY_TOPIC0.get(topic, name) != name:
+        raise ValueError(f"event {name} is already registered with another signature")
+    SIGNATURES[name] = signature
+    TOPIC0[name] = topic
+    KIND_BY_TOPIC0[topic] = name
+    return topic
 
 CLUSTER_KINDS = {
     "ValidatorAdded",
@@ -121,6 +158,9 @@ def decode_log(log: dict) -> Event | None:
         return ev
     if kind == "OracleReplaced":
         ev.extra = {"oracleId": int(topics[1], 16), "old": _address(topics[2]), "new": _address(topics[3])}
+        return ev
+    if kind not in CLUSTER_KINDS:
+        ev.extra = {"topics": [t.lower() for t in topics[1:]], "data": log["data"].lower()}
         return ev
 
     ev.owner = _address(topics[1])

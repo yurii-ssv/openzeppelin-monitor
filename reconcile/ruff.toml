@@ -1,0 +1,21 @@
+# `ruff check reconcile` (plan §7 V1B.2). The classic rule set (E4, E7, E9, F) plus import order, named
+# explicitly so a ruff upgrade does not change what the gate checks.
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[lint.isort]
+known-first-party = ["alerts", "checks", "db", "eb_events", "eb_model", "eb_reconcile", "eb_storage", "inbox",
+                     "inventory", "metrics", "notify", "params", "rpc"]
+
+[lint.per-file-ignores]
+# Registration lines stay in per-lane blocks so wave-2 merges are textual.
+"checks/__init__.py" = ["I001"]
+# QA attempt-2 probes kept in their original one-line style so they diff against the QA report.
+"tests/test_qa2_regressions.py" = ["E701", "E702"]
+# QA attempt-3 Appendix A and B, byte for byte except the ROOT line (style only: one-line statements, the
+# probes' own sys.path/import layout and unused imports).
+"tests/qa3_orphan_repro.py" = ["E401", "E402", "E702", "F401", "I001"]
+"tests/test_qa3_appendix_b.py" = ["E401", "E402", "E701", "E702", "F401", "I001"]

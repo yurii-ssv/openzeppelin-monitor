@@ -1,14 +1,16 @@
 ---
-# EB reconciliation worker for Immunefi #94775 (plans/94775-eb-collapse-monitoring.md).
-# Runs beside the monitor; combine with either compose file:
+# SSV watch worker (plan §6): the stateful half of the monitoring service, grown from the #94775
+# EB reconciliation worker. Runs beside the monitor; combine with either compose file:
 #
 #   docker compose -f docker-compose.local.yaml -f docker-compose.reconcile.yaml up -d --build
 #   docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml up -d --build
 #
-# Needs reconcile/config.json (copy reconcile/config.example.json) and, in ./.env:
-#   EB_RECONCILE_RPC_URL   archive-capable Ethereum RPC with eth_getLogs
-#   EB_TELEGRAM_TOKEN      only when alerts.mode is "telegram"
-#   EB_TELEGRAM_CHAT_ID    only when alerts.mode is "telegram"
+# Needs reconcile/config.json (copy reconcile/config.example.json) and, in ./.env (names only here):
+#   MAINNET_RPC_URL        Ethereum RPC with eth_getLogs over history (config rpc_url_env)
+#   TELEGRAM_TOKEN         page/warn route, only when alerts.mode is "live"
+#   TELEGRAM_CHAT_ID       page/warn route, only when alerts.mode is "live"
+#   DISCORD_WEBHOOK_INFO   info/digest route, only when alerts.mode is "live"
+# Development and QA keep alerts.mode "record" or point the *_env names of the config at TEST_*.
 
 services:
   eb-reconcile:
@@ -17,15 +19,25 @@ services:
     build:
       context: ./reconcile
     environment:
-      EB_RECONCILE_RPC_URL: ${EB_RECONCILE_RPC_URL:?set EB_RECONCILE_RPC_URL in .env}
-      EB_TELEGRAM_TOKEN: ${EB_TELEGRAM_TOKEN:-}
-      EB_TELEGRAM_CHAT_ID: ${EB_TELEGRAM_CHAT_ID:-}
+      MAINNET_RPC_URL: ${MAINNET_RPC_URL:?set MAINNET_RPC_URL in .env}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      DISCORD_WEBHOOK_INFO: ${DISCORD_WEBHOOK_INFO:-}
+      TEST_TELEGRAM_TOKEN: ${TEST_TELEGRAM_TOKEN:-}
+      TEST_TELEGRAM_CHAT_ID: ${TEST_TELEGRAM_CHAT_ID:-}
+      TEST_DISCORD_WEBHOOK: ${TEST_DISCORD_WEBHOOK:-}
       LOG_LEVEL: ${EB_RECONCILE_LOG_LEVEL:-info}
     restart: unless-stopped
     security_opt:
       - no-new-privileges
     read_only: true
+    ports:
+      # /metrics (config metrics.port); bound to the host loopback only.
+      - "127.0.0.1:${WATCH_METRICS_PORT:-9464}:9464"
     volumes:
       - ./reconcile/config.json:/app/config.json:ro
-      # Durable state (SQLite + WAL, checkpoint, incidents, outbox). Never /dev/null.
+      # Durable state (SQLite + WAL, checkpoint, incidents, outbox, inbox offset). Never /dev/null.
       - ${EB_RECONCILE_DATA_DIR:-./reconcile/data}:/data
+      # The Monitor's failed-transaction inbox (plan §6), read-only: <monitor data>/inbox/failed-tx.jsonl.
+      # Create the file (empty) before the first start: a missing inbox is a monitor-health alert.
+      - ${MONITOR_INBOX_DIR:-./data/inbox}:/inbox:ro

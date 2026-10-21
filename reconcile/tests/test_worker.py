@@ -15,6 +15,9 @@ import eb_model as M
 from eb_reconcile import DB, Config, Worker, load_config  # noqa: F401
 from eb_storage import cluster_id
 
+# The ported #94775 scenarios (V1B.6): `pytest -k m5` selects every test in this module.
+pytestmark = pytest.mark.m5
+
 OWNER = "0x" + "aa" * 20
 OTHER = "0x" + "bb" * 20
 OPS = (11, 12, 13, 14)
@@ -26,7 +29,7 @@ class Capture:
         self.sent: list[tuple[str, str, str]] = []
         self.fail = fail
 
-    def send(self, severity, text, key):
+    def send(self, severity, text, key, route=None):
         if self.fail:
             self.fail -= 1
             raise RuntimeError("telegram HTTP 502")
@@ -60,9 +63,9 @@ def make(tmp_path, chain=None, notifier=None, **over):
 def tick(w: Worker):
     w.check_reorg()
     w.scan()
-    evals = w.sweep(force=True) or []
+    w.run_checks(force=True)
     w.deliver()
-    return {e.cluster_id: e for e in evals}
+    return {e.cluster_id: e for e in w.checks["m5"].last_evals}
 
 
 def ev_for(evals, owner=OWNER, ops=OPS) -> M.Evaluation:
@@ -101,14 +104,14 @@ def test_poc_trace_numbers_and_alerts(tmp_path):
     e = ev_for(tick(w))
     assert e.status == M.LATENT
     assert (e.reference_vunits, e.observed_vunits, e.discrepancy_vunits) == (1_270_000, 640_000, 630_000)
-    assert not [s for s in w.notifier.severities() if s in ("critical", "warning")]
+    assert not [s for s in w.notifier.severities() if s in ("page", "warn")]
 
     ssv.remove(OWNER, OPS, dummies)
     e = ev_for(tick(w))
     assert e.status == M.CONFIRMED
     assert (e.reference_vunits, e.observed_vunits, e.discrepancy_vunits) == (640_000, 10_000, 630_000)
     assert len(e.matched_keys) == 63
-    crit = [t for s, k, t in w.notifier.sent if s == "critical"]
+    crit = [t for s, k, t in w.notifier.sent if s == "page"]
     assert len(crit) == 1
     assert "Shortfall: 630,000 vUnits (2016 ETH of fee weight)" in crit[0]
     assert "with empty shares" in crit[0] and "(63 with empty shares)" in crit[0]
@@ -116,7 +119,7 @@ def test_poc_trace_numbers_and_alerts(tmp_path):
     # later sweeps at new blocks do not re-page
     chain.mine(5)
     tick(w)
-    assert len([s for s in w.notifier.severities() if s == "critical"]) == 1
+    assert len([s for s in w.notifier.severities() if s == "page"]) == 1
 
     # a clean next-round root restores 2,048 ETH and resolves the incident
     s2 = chain.number
@@ -126,8 +129,9 @@ def test_poc_trace_numbers_and_alerts(tmp_path):
     e = ev_for(tick(w))
     assert (e.status, e.observed_vunits) == (M.CLEAN, 640_000)
     assert any(":resolved:" in k for k in w.notifier.keys())
-    inc = w.db.conn.execute("SELECT * FROM incidents").fetchall()
+    inc = w.db.conn.execute("SELECT * FROM m5_incidents").fetchall()
     assert len(inc) == 1 and inc[0]["state"] == "resolved" and inc[0]["max_shortfall_vunits"] == 630_000
+    assert [r["state"] for r in w.db.conn.execute("SELECT state FROM incidents")] == ["resolved"]
 
 
 def test_poc_repeated_each_round_updates_same_incident(tmp_path):
@@ -166,7 +170,7 @@ def test_partial_removal_still_confirms_with_exact_gap(tmp_path):
 
 
 def _no_pages(w):
-    return not [s for s in w.notifier.severities() if s in ("critical", "warning")]
+    return not [s for s in w.notifier.severities() if s in ("page", "warn")]
 
 
 def test_benign_post_s_removal_after_update(tmp_path):
@@ -244,7 +248,7 @@ def test_update_by_non_owner_is_classified_the_same(tmp_path):
     ssv.remove(OWNER, OPS, keys(63, 100))
     e = ev_for(tick(w))
     assert e.status == M.CONFIRMED
-    crit = [t for s, k, t in w.notifier.sent if s == "critical"][0]
+    crit = [t for s, k, t in w.notifier.sent if s == "page"][0]
     assert "0x" + "dd" * 20 in crit
 
 
@@ -323,10 +327,10 @@ def test_liquidated_cluster_confirmed_is_a_warning(tmp_path):
     ssv.remove(OWNER, OPS, d)
     e = ev_for(tick(w))
     assert e.status == M.CONFIRMED and e.active is False
-    assert "warning" in w.notifier.severities() and "critical" not in w.notifier.severities()
+    assert "warn" in w.notifier.severities() and "page" not in w.notifier.severities()
     ssv.reactivate(OWNER, OPS)
     e = ev_for(tick(w))
-    assert e.status == M.CONFIRMED and e.active is True and "critical" in w.notifier.severities()
+    assert e.status == M.CONFIRMED and e.active is True and "page" in w.notifier.severities()
 
 
 def test_legacy_ssv_cluster_then_migration(tmp_path):
@@ -457,13 +461,13 @@ def test_delivery_retries_then_succeeds(tmp_path):
     ssv.update(OWNER, OPS, 2048)
     ssv.remove(OWNER, OPS, keys(63, 50))
     tick(w)
-    row = w.db.conn.execute("SELECT * FROM outbox WHERE severity='critical'").fetchone()
+    row = w.db.conn.execute("SELECT * FROM outbox WHERE severity='page'").fetchone()
     assert row["sent_at"] is None and row["attempts"] == 1
     w.db.conn.execute("UPDATE outbox SET next_attempt_at=0")
     w.deliver()
     w.db.conn.execute("UPDATE outbox SET next_attempt_at=0")
     w.deliver()
-    row = w.db.conn.execute("SELECT * FROM outbox WHERE severity='critical'").fetchone()
+    row = w.db.conn.execute("SELECT * FROM outbox WHERE severity='page'").fetchone()
     assert row["sent_at"] is not None and row["attempts"] == 2
 
 
