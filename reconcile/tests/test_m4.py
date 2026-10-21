@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fakechain import PROXY
 from fixtures_liquidation import (
     OPS,
     OPS2,
@@ -18,7 +19,6 @@ from fixtures_liquidation import (
     setup,
     stub_m4,
 )
-from fakechain import PROXY
 from harness import VIEWS, advance, outbox
 
 from checks.m3_views import GET_NETWORK_EARNINGS, GET_OPERATOR_EARNINGS
