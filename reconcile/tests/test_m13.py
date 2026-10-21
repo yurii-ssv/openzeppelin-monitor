@@ -193,10 +193,12 @@ def test_m13_empty_balance_result_raises_never_no_change(tmp_path):
     assert all(r[0] < chain.sealed for r in before)
 
 
-def test_m13_attribution_failure_still_pages(tmp_path):
+@pytest.mark.parametrize("mode", ["fail", "empty"])
+def test_m13_attribution_failure_still_pages(tmp_path, mode):
+    """A failed or empty receipts lookup is reported as such ("lookup failed"), never as "none found"."""
     chain, w = setup(tmp_path)
     tx = top_up(chain)
-    chain.fail_methods = {"eth_getBlockReceipts"}
+    setattr(chain, f"{mode}_methods", {"eth_getBlockReceipts"})
     step(w, chain)
     (row,) = outbox(w)
     assert row["severity"] == "page" and tx in row["text"] and "lookup failed" in row["text"]
@@ -262,6 +264,24 @@ def test_m13_sample_helper_is_bounded_and_ends_at_the_checkpoint():
     assert sample(0, 12, 5, 10) == ([5, 10, 12], False)
 
 
+def test_m13_thresholds_from_chain_and_config_addresses(tmp_path):
+    """No constant in the check: the reference is the chain's balance at the previous read block (a top-up smaller
+    than the pre-existing dust still pages), and the watched set comes from config (a third address, no code
+    change)."""
+    extra = "0x" + "77" * 20
+    chain = WalletChain()
+    chain.set_balance(FUNDER, eth(100))
+    chain.set_balance(RETIRED_SLOT4, eth(0.01))
+    chain.mine()
+    addrs = {RETIRED_SLOT4: "old slot 4", extra: "another retired key"}
+    chain, w = wallet_worker(tmp_path, ["m13"], chain=chain, checks={"m13": {"addresses": addrs}})
+    advance(w)
+    top_up(chain, RETIRED_SLOT4, value=10**9)  # 1 gwei
+    top_up(chain, extra, value=1)  # 1 wei
+    step(w, chain)
+    assert sorted(k for _, _, k in sent(w)) == sorted([f"{RETIRED_SLOT4}:{chain.sealed}", f"{extra}:{chain.sealed}"])
+
+
 def test_m13_required_addresses_raise_at_construction(tmp_path):
     with pytest.raises(SystemExit, match="checks.m13.addresses is required"):
         wallet_worker(tmp_path, ["m13"], checks={"m13": {"addresses": {}}})
@@ -282,6 +302,19 @@ def test_m13_restart_does_not_duplicate_the_page(tmp_path):
     assert [k for _, k, _ in sent(w2)] == ["open"]
     step(w2, chain, seconds=21_601)
     assert [k for _, k, _ in sent(w2)] == ["open", "realert"]
+
+
+def test_m13_restart_with_a_prior_non_zero_balance_is_silent(tmp_path):
+    """The baseline is durable: dust present before the first start does not page after a restart."""
+    chain, w = setup(tmp_path)
+    chain.mine(5)
+    _, w2 = wallet_worker(tmp_path, ["m13"], chain=chain, start_block=w.cfg.start_block,
+                          activation_block=w.cfg.activation_block, clock=w.clock)
+    advance(w2)
+    step(w2, chain)
+    assert outbox(w2) == []
+    assert w2.db.conn.execute("SELECT balance FROM m13_watch WHERE address=?", (RETIRED_SLOT4,)).fetchone()[0] == \
+        str(eth(0.01))
 
 
 # ---------------------------------------------------------------- reorgs (README §6.1, §6.2)
