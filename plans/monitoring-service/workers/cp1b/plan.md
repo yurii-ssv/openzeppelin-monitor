@@ -19,6 +19,7 @@ Task contract: [plan.md §8 CP1B](../../plan.md) · Attempt log: [attempts.md](a
 | S5 V1B.1–V1B.9, V1B.11 + falsifiers | DONE | [attempt-3](attempts.md#attempt-3) | — |
 | S6 V1B.10 fork e2e (LIVE) | DONE (PASS on anvil fork of block 26,240,643) | [attempt-3](attempts.md#attempt-3) | — |
 | S7 docs, status line, handoff | DONE | this file | Codex QA |
+| R1 repair of QA attempt 1 (legacy outbox routing, stale params, missing inbox) | DONE (code `4819c9e`) | [repair-1](attempts.md#repair-1) | fresh Codex QA |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -38,4 +39,19 @@ New findings: (1) spec M5 warn/page/info grading differs from the preserved prec
 Pending human input: M5 severity decision (non-blocking).
 Next owner: Codex QA on the lane head.
 Preservation: everything committed; reconcile/.venv untracked (ignored).
+```
+
+## Repair 1 handoff (≤ 250 words, also sent as the `worker_done` summary)
+
+```text
+Task / live dispatch: task_713a86050a2e / ctx_d9005050e993 (run_96be3e0c7302)
+Assignment outcome: completed; the three QA attempt-1 findings repaired, no reproducer weakened.
+Base -> resulting commit: c21a51f -> code 4819c9e (records commit on top = lane head) on mtabasco/ms-cp1b.
+Changed paths: reconcile/{db,eb_reconcile,params,inbox,metrics}.py, reconcile/README.md, reconcile/checks/README.md, reconcile/tests/test_qa_regressions.py (new), docker-compose.reconcile.yaml (comment), workers/cp1b/**, CP1B status line.
+Mechanism: legacy outbox severities normalised at migration, NULL route resolved by severity at delivery; failed param read invalidates values (ParamsUnavailable on access), drops prepare, skips dependent runs without advancing cursors, healthy=false, retried every step (README §5.1); unreadable/missing inbox -> inbox-unavailable health per outage, healthy=false, empty file valid (§5.2).
+Verification: 3 QA probes red on c21a51f, green after; Appendix A verbatim 12/12; V1B.1 69 passed/0 skipped; V1B.2 clean; V1B.3 1; V1B.4 2; V1B.5 4; V1B.6 32; V1B.7 6; V1B.8 curl OK; V1B.4f/V1B.7f red then restored green; V1B.10 LIVE PASS x5 (fork 26,240,758). NOT RE-RUN: V1B.9 (inventory untouched).
+Log anchor: workers/cp1b/attempts.md#repair-1.
+New finding: deployment must create the empty inbox file before start (CP1A/CP3).
+Next owner: fresh Codex QA.
+Preservation: everything committed; reconcile/.venv ignored.
 ```

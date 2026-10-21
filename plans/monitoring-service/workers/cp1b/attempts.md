@@ -69,3 +69,41 @@ V1B.6 names (all PASSED): test_poc_trace_numbers_and_alerts, test_poc_repeated_e
   4. Env names: the worker config and `docker-compose.reconcile.yaml` now use `MAINNET_RPC_URL`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `DISCORD_WEBHOOK_INFO` (D2) instead of `EB_RECONCILE_RPC_URL`/`EB_TELEGRAM_*`; `.env.example` (CP1A) should list them; CP3 owns the composed file.
 - Resulting head: `aaf5c258d1c2ac1162f7692725a78882ea9f33de` (records commit follows)
 - Next action: status line, handoff, worker_done.
+
+<a id="repair-1"></a>
+## Repair 1 — QA attempt 1 findings (fresh implementer)
+
+- Observed UTC: 2026-10-21T13:30Z – 13:50Z
+- Task / Dispatch: `task_713a86050a2e` / `ctx_d9005050e993` (run `run_96be3e0c7302`); worker terminal `term_649570f1-74fe-4cb1-af2a-d88968f27dcc`; Claude Opus high (self-identifies as claude-opus-5-5).
+- Frozen start head: `c21a51fd88e69c434781800ecb16e650437c7f1e` (`git rev-parse HEAD` confirmed; porcelain 0). Input: [QA attempt 1](../../qa/cp1b-attempt-1.md) §1, §2, Appendix A.
+- Code commit: `4819c9e84f456622f8c7e78283ce2129f2080649`.
+- Environment: as attempt 3 (`reconcile/.venv` resolves, Python 3.12.15; Foundry anvil on PATH). Every pytest run used a fresh `PYTHONPYCACHEPREFIX` and `-p no:cacheprovider`.
+
+Repairs (no reproducer expectation changed):
+
+1. **HIGH legacy pending outbox** — `db.migrate` (`_normalise_legacy_outbox`, only when the pre-framework outbox lacked `receipt`): severities `critical`/`warning` → `page`/`warn`; a sent row's receipt (stored in `delivery` by the old worker) → `receipt`, `delivery` = `telegram` for `telegram:<id>` receipts; unsent rows keep `delivery` NULL. `Worker.deliver` routes a NULL-route row by `alerts.routes[severity]` (config-aware) and records the route on send. Keys, texts, created_at and retry state are unchanged.
+2. **HIGH stale parameters** — `params.Params.invalidate`/`ok`/`error` + `ParamsUnavailable`: after a failed read (revert, empty data, RPC) every attribute/item/`.get` access raises; `values` is `{}`; `block` keeps the last good read. `reload_params` invalidates, clears every check's `prepare` (so copies cached in `prepare` cannot be used), sends the `params` health (re-sent per health window), re-raises transport errors, and retries every step while `not ok`; success re-prepares and adds reason `params` to every check. `run_checks` treats `ParamsUnavailable` as a skipped run (rolled back, cursors not advanced, `errors` counted, no extra `check-error`). `step` writes `healthy: false` with the reason; `status()` gains `params` and `inbox` objects; metric `ssv_watch_input_unavailable{input}`. Digest sections no longer crash the step on a check exception. Documented in `checks/README.md` §2, §4, §5.1.
+3. **MEDIUM missing inbox** — `inbox.Inbox.read` raises `InboxUnavailable` for a missing, non-regular or unreadable file (an existing empty file is valid). `poll_inbox` records `meta inbox:unavailable`, sends `inbox-unavailable` health once per outage (re-sent per health window), and clears on recovery; `step` reports `healthy: false`. Documented in `checks/README.md` §5.2, `reconcile/README.md`, and a compose comment (the deployment must create the empty file before the Monitor's first append).
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| QA probes red on frozen head | (new file only, before any source edit) `reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_qa_regressions.py -k qa1` | exit 1; **3 failed**: `route None` / `sent_at` NULL; `[42960, 42960]`; "missing configured inbox produced no health" — the QA texts | local | scratch `red_frozen.txt` sha256 `58388b385a4b8cab…` |
+| QA probes green | `… pytest -q reconcile/tests/test_qa_regressions.py` | exit 0; 7 passed (3 ported probes + 4 repair tests) | local | — |
+| QA Appendix A verbatim | Appendix A saved unchanged except ROOT → this worktree; `pytest -q <scratch>/test_cp1b_independent.py` | exit 0; **12 passed** (QA head: 9 passed / 3 failed) | local | — |
+| V1B.1 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests -rs` | exit 0; **69 passed**, 0 skipped (62 + 7 new) — on committed `4819c9e`, porcelain 0 | local | — |
+| V1B.2 | `reconcile/.venv/bin/ruff check reconcile` | exit 0; All checks passed | local | — |
+| V1B.3 | `… test_framework.py -k scheduler_dispatches_registered_check` | exit 0; 1 passed, 31 deselected | local | — |
+| V1B.4 | `… test_framework.py -k restart_idempotent` | exit 0; 2 passed, 30 deselected | local | — |
+| V1B.4f | `alerts.py` `return ":".join((check, key))` → `return key`; same selection; restore from copy | red: 1 failed / 1 passed; restored porcelain of `alerts.py` empty; 2 passed | local | scratch `falsifiers.txt` sha256 `c7c3209fe480ed32…` |
+| V1B.5 | `… test_framework.py -k routing` | exit 0; 4 passed, 28 deselected | local | — |
+| V1B.6 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests -k m5` | exit 0; 32 passed, 37 deselected (test_worker.py untouched) | local | — |
+| V1B.7 | `… test_framework.py -k inbox` | exit 0; 6 passed, 26 deselected | local | — |
+| V1B.7f | `inbox.py` `"0x12e04c87"` → `"0x12e04c88"`; same selection; restore from copy | red: 2 failed / 4 passed; restored (diff vs HEAD contains no `12e04c88`); 6 passed | local | scratch `falsifiers.txt` |
+| V1B.8 | `reconcile/.venv/bin/python reconcile/tests/fake_once.py --port 19464 --hold 8`; separately `curl -s http://127.0.0.1:19464/metrics` | server exit 0, curl exit 0; `ssv_watch_checkpoint_block 1011`, `lag_blocks 0`, `open_incidents{check="m5",severity="page"} 1`, `outbox_undelivered 0`, `check_last_run_seconds{check="m5"}` present; new `ssv_watch_input_unavailable{input="params"} 0`, `{input="inbox"} 0` | local, fake chain | scratch `metrics.txt` sha256 `ff98ba6d45138479…` |
+| V1B.10 (re-run: step/deliver path touched) | `PATH=$HOME/.foundry/bin:$PATH FORK_RPC_URL=https://ethereum-rpc.publicnode.com reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py` | exit 0; fork block **26,240,758**; **PASS ×5** (clean 640000/640000; clean 1270000; latent 1270000/640000/630000; confirmed 640000/10000/630000, 63 matched, page → telegram recorded; clean next root, resolution info → telegram); live params read on the fork; the script's anvil exited (the one remaining anvil, pid 62270 on port 18545 forking drpc, belongs to another session and was left alone) | LIVE anvil fork, record mode | scratch `fork_e2e.txt` sha256 `ed2e99fe03189bf1…` |
+| (extra) | `MAINNET_RPC_URL=http://placeholder.invalid docker compose -f docker-compose.reconcile.yaml config -q` | exit 0 (compose change is a comment) | local docker | — |
+
+- NOT RE-RUN: V1B.9 (LIVE inventory probe; `inventory.py` untouched).
+- Deployment dependency (new, for CP1A/CP3): the inbox file must exist (empty) before the worker starts, otherwise `inbox-unavailable` health fires until the Monitor's first append. Not editable from this lane (`deploy/`, `docker-compose.yaml`).
+- Findings are not cleared here; a fresh Codex QA decides.
+- Resulting head: code `4819c9e`; records commit on top (lane head, reported in worker_done).
