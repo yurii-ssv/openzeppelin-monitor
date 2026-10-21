@@ -393,3 +393,11 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 ## Event 0035 — Ruling v2.1: harness default-disables unnamed lane checks
 
 - CP2d (`msg_0f1ad9e18669`, `ctx_f28f28892d56`) found a fourth frozen-test failure after the three-hunk merge (`test_config_rejects_unknown_check_ids_and_keys` passes `checks=`, so hunk 3 did not apply and every registered check was built). Coordinator replaced hunk 3 with a general rule in `tests/harness.py make_worker`: with neither stubs nor only, every registered check except m5 is disabled unless named in `checks=` — commit `500abe4a2daa32e848f46ec1306c1c1fa36a100d`. Verified: 240 pass, ruff clean; with an extra registered lane check that raises at construction only `test_config_example_loads_and_builds_every_check` fails, which is the intended guard that a lane adds its `checks.<id>` to `config.example.json`. All four lanes asked to merge the integration branch again; CP2e at start.
+
+
+<a id="event-0036"></a>
+## Event 0036 — CP2d independent QA attempt 1 FAIL
+
+- Observed UTC: 2026-10-21T14:23Z. Task `task_913d3dbc2cdc`, Dispatch `ctx_c6554db292c9`; frozen lane head `588888bdcb7c215f798a23e86cc9475a85b22995`, QA branch `mtabasco/ms-qa-cp2d`. [Report](qa/cp2d-attempt-1.md).
+- Measurements: 91 CP2d tests pass; full suite 330 pass plus localhost bind EPERM, permission-enabled isolated metrics control passes (331 covered); lint passes. All 12 receipts independently authenticated through public nodies archive RPC, 11 pre-call synthetic tuples match the real tx inputs; eight implementer mutations and two QA mutations each red then restored green.
+- Verdict **FAIL**: independent suite 6 red / 23 green. F1 HIGH: empty API falsely resolves M1 unknown and M2 hard incidents, including reorg; F2 HIGH: same-block repair/re-poison never pages; F3 HIGH: reorg of settlement leaves canonical persisted M2 revert cleared; F4 MEDIUM: 64-candidate cap loses the available earliest repair tuple. No implementation repair; only report, CP2d status line and this event written. Next owner: fresh CP2d repair worker, then independent QA attempt 2; DEF-3 fork PoC stays deferred.
