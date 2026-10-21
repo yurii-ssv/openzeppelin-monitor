@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fakechain import _enc, _topic_addr
 from fixtures_cluster import (
     INCORRECT_STATE,
     LIQUIDATOR,
@@ -19,6 +20,7 @@ from fixtures_cluster import (
     STRANGER,
     UPDATER,
     ClusterChain,
+    _emit_cluster,
     current_tuple,
     deposit,
     failed_tx,
@@ -32,7 +34,7 @@ from harness import VIEWS, advance, api_row, make_worker, outbox, stub_params
 
 from checks.m1_cluster_abi import IS_LIQUIDATED
 from checks.m1_stale_tuple import _tup
-from eb_storage import u256
+from eb_storage import Cluster, u256
 from rpc import RpcError
 
 pytestmark = pytest.mark.m1
@@ -646,3 +648,206 @@ def test_m1_inventory_failure_is_health_and_receipts_are_still_validated(tmp_pat
     advance(w)
     assert outbox(w, "kind='health' AND check_id='m1' AND text LIKE '%inventory could not be built%'")
     assert [(r["severity"], r["kind"]) for r in out(w) if r["kind"] != "health"] == [("warn", "open")]
+
+
+# ---------------------------------------------------------------- QA attempt 1 regressions (repair 1)
+
+
+def test_m1_same_block_repair_then_re_poison_pages(tmp_path):
+    """QA F2: a repair followed by a re-poisoning in one block keeps both, in log order: page under the incident."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    deposit(ssv, value=0, mine=False)
+    poison(ssv)
+    advance(w)
+    assert kinds(w) == [("warn", "open"), ("page", "escalate")]
+    assert evidence(w)["re_poisoned"] is True and len(incidents(w)) == 1
+    assert [d["kind"] for d in detections(w)] == ["poison", "repair", "poison"]
+    rep, pois = detections(w)[1:]
+    assert rep["block"] == pois["block"] and rep["log_index"] < pois["log_index"]
+
+
+def test_m1_same_block_bulk_repair_then_re_poison_pages(tmp_path):
+    """A multi-event transaction whose events all carry one tuple wrote and emitted it: a repair, even mid-block."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    multi_benign(ssv, n=3, mine=False)
+    poison(ssv)
+    advance(w)
+    assert kinds(w)[-1] == ("page", "escalate") and evidence(w)["re_poisoned"] is True
+
+
+def test_m1_same_block_unreadable_transaction_before_a_poisoning_is_health_not_a_repair(tmp_path):
+    """Twin: a superseded transaction with differing tuples cannot be validated mid-block; it is no repair (warn
+    stays) and the gap is reported as health."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    first, _, _ = poison(ssv, mine=False)
+    poison(ssv)
+    advance(w)
+    assert kinds(w)[-1] == ("warn", "update") and evidence(w)["re_poisoned"] is False
+    assert outbox(w, f"kind='health' AND key LIKE 'health:m1-intra-block:%' AND text LIKE '%{first}%'")
+
+
+def api_only_key(tmp_path, api_valid=False, after_fork=False):
+    """A cluster in storage with no stored log; the SSV API lists it (tuple valid or not)."""
+    chain = ClusterChain()
+    from fakechain import MiniSSV
+
+    ssv = MiniSSV(chain)
+    chain.mine()
+    rows: list = []
+    chain, w, _ = api_m1(tmp_path, rows, chain=chain, ssv=ssv)
+    chain.mine()
+    advance(w)
+    fork = chain.number
+    cid, st = ssv._get(OWNER2, OPS2)
+    st["count"] = 2
+    ssv._persist(cid, st)
+    chain.mine()
+    cl = current_tuple(ssv, OWNER2, OPS2)
+    rows.append(api_row(OWNER2, OPS2, 2, cl.network_fee_index, cl.index, True, cl.balance + (0 if api_valid else 1)))
+    return chain, w, ssv, rows, fork, cl
+
+
+@pytest.mark.parametrize("answer", ["empty", "error"])
+def test_m1_reorg_with_empty_or_failed_inventory_keeps_the_unknown_key_and_marker(tmp_path, answer):
+    """QA F1 (M1): an empty API answer is no proof that an API-only cluster recovered; the reorg run raises (marker
+    kept, incident kept) until a tuple is known again."""
+    chain, w, ssv, rows, _, cl = api_only_key(tmp_path)
+    tick(w, chain)
+    key2 = key_of(OWNER2, OPS2)
+    assert [i["key"] for i in incidents(w, "open")] == [key2]
+    fork = chain.number
+    chain.mine(3)
+    tick(w, chain)
+    chain.reorg(fork)
+    chain.mine(2)
+    good = w.inventory.http_get
+    if answer == "empty":
+        saved = list(rows)
+        rows.clear()
+    else:
+        def down(url):
+            raise OSError("api down")
+
+        w.inventory.http_get = down
+    advance(w)
+    assert outbox(w, "kind='health' AND key LIKE 'health:check-error:%' AND check_id='m1' AND text LIKE "
+                     "'%cannot re-evaluate%'")
+    assert [i["key"] for i in incidents(w, "open")] == [key2] and w.db.meta("reorg:m1") is not None
+    # the API answers again with the canonical tuple: the key is evaluated and resolves on positive proof
+    if answer == "empty":
+        rows.extend(saved)
+    w.inventory.http_get = good
+    rows[0] = api_row(OWNER2, OPS2, 2, cl.network_fee_index, cl.index, True, cl.balance)
+    w.inventory._api_at = None
+    chain.mine()  # the inventory is cached per block
+    advance(w)
+    assert w.db.meta("reorg:m1") is None and incidents(w, "open") == []
+
+
+def test_m1_empty_inventory_outside_a_reorg_keeps_the_unknown_incident(tmp_path):
+    chain, w, ssv, rows, _, _ = api_only_key(tmp_path)
+    tick(w, chain)
+    rows.clear()
+    tick(w, chain)
+    tick(w, chain)
+    assert len(incidents(w, "open")) == 1 and [k for k in kinds(w) if k[1] != "health"] == [("warn", "open")]
+    assert outbox(w, "kind='health' AND key LIKE 'health:m1-inventory-missing%'")
+
+
+def test_m1_cluster_absent_from_storage_resolves_with_an_empty_inventory(tmp_path):
+    """Twin: storage proves absence (the cluster was written only on orphaned blocks), API rows are not needed."""
+    chain, w, ssv, rows, fork, _ = api_only_key(tmp_path)
+    tick(w, chain)
+    assert len(incidents(w, "open")) == 1
+    chain.reorg(fork)
+    chain.mine(2)
+    rows.clear()
+    advance(w)
+    assert incidents(w, "open") == [] and w.db.meta("reorg:m1") is None
+
+
+def test_m1_earliest_repair_tuple_before_66_stale_snapshots(tmp_path):
+    """QA F4: the validating tuple at log 0 is found however many distinct stale snapshots follow it, with one
+    storage read and one confirming call (no candidate cap)."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    canonical = current_tuple(ssv)
+    tx = chain.new_tx(OWNER)
+    _emit_cluster(chain, tx, "ClusterDeposited", OWNER, OPS, canonical)
+    for delta in range(1, 67):
+        stale = Cluster(canonical.validator_count, canonical.network_fee_index, canonical.index, True,
+                        canonical.balance + delta)
+        _emit_cluster(chain, tx, "ClusterDeposited", OWNER, OPS, stale)
+    chain.mine()
+    blk = chain.sealed
+    advance(w)
+    ev = evidence(w)
+    assert kinds(w) == [("warn", "open")]
+    assert ev["repair_tuple"] == _tup(canonical) and ev["repair_log_index"] == 0
+    assert len(views_calls(chain, blk)) == 3, "final tuple, repair tuple, the run's state check: no candidate scan"
+
+
+def test_m1_reorg_orphaning_the_clearing_run_reopens_the_surviving_revert(tmp_path):
+    """README §6.2 for every persisted key: a revert cleared on a deleted block is evaluated again."""
+    chain, w, ssv, path = inbox_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    _, stale, _ = poison(ssv)
+    advance(w)
+    tx = failed_tx(chain, path, "liquidate", OWNER, OPS, stale, LIQUIDATOR, INCORRECT_STATE)
+    advance(w)
+    advance(w)
+    saved = dict(ssv._get(OWNER, OPS)[1])
+    fork = chain.number
+    deposit(ssv, value=0)  # the repair clears the poisoning and the revert
+    advance(w)
+    assert incidents(w, "open") == [] and detections(w, "revert")[0]["cleared_block"] is not None
+    chain.reorg(fork)
+    ssv._get(OWNER, OPS)[1].update(saved)
+    chain.mine(2)
+    advance(w)
+    assert detections(w, "revert")[0]["cleared_block"] is None
+    assert len(incidents(w, "open")) == 1 and evidence(w)["reverts"] == [tx]
+
+
+@pytest.mark.parametrize("kind", ["ClusterDeposited", "ClusterWithdrawn", "ClusterLiquidated", "ClusterReactivated",
+                                  "ValidatorAdded", "ValidatorRemoved", "ClusterBalanceUpdated",
+                                  "ClusterMigratedToETH"])
+def test_m1_repair_tuple_tie_is_the_earliest_log_for_every_event_kind(tmp_path, kind):
+    """QA attempt 1 independent case: three logs carry the validating tuple, a stale one of any kind is last, and
+    the RPC delivers the logs in reverse: the repair is log 0."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    canonical = current_tuple(ssv)
+    stale = Cluster(canonical.validator_count, canonical.network_fee_index, canonical.index, canonical.active,
+                    canonical.balance + 17)
+    tx = chain.new_tx(OWNER)
+    for _ in range(3):
+        _emit_cluster(chain, tx, "ClusterDeposited", OWNER, OPS, canonical)
+    if kind == "ClusterBalanceUpdated":
+        chain.emit(tx, kind, [_topic_addr(OWNER), "0x" + u256(chain.number).hex()],
+                   _enc(["uint64[]", "uint32", "cluster"], [list(OPS), 32, stale]))
+    elif kind == "ClusterMigratedToETH":
+        chain.emit(tx, kind, [_topic_addr(OWNER)], _enc(["uint64[]", "uint256", "uint256", "uint32", "cluster"],
+                                                         [list(OPS), 0, 0, 32, stale]))
+    else:
+        _emit_cluster(chain, tx, kind, OWNER, OPS, stale)
+    chain.logs.reverse()
+    chain.mine()
+    advance(w)
+    assert kinds(w) == [("warn", "open")]
+    assert evidence(w)["repair_tuple"] == _tup(canonical) and evidence(w)["repair_log_index"] == 0

@@ -66,7 +66,6 @@
     "m1": {
       "interval_s": 600,
       "receipt_window_blocks": 1000,
-      "repair_candidates_max": 64,
       "our_senders": ["0x16A503C901615E6e21AA78cFcaFf11822fc2b617", "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0"],
       "inbox_functions": ["updateClusterBalance", "liquidate", "liquidateSSV"]
     },

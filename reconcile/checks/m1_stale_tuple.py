@@ -5,11 +5,16 @@ outer function emits its cached, older one last. Last-log-wins readers (oracle u
 web app) then hold a stale tuple and their calls revert with `IncorrectClusterState`.
 
 Detection (spec M1, plan §8 CP2d):
-  receipts   per block and cluster, the cluster's final event; when its transaction carries >= 2 events of the
-             cluster, `SSVNetworkViews.isLiquidated(owner, operatorIds, lastTuple)` at that block. A revert with
-             IncorrectClusterState is a poisoning; the earliest log of the same transaction whose tuple validates
-             is the repair tuple. A group superseded by a later transaction of the same block is not what readers
-             keep and is not validated (the later transaction passed storage's tuple, so its own tuple decides).
+  receipts   per block and cluster, the transactions touching the cluster in log order. The block's last one: when
+             it carries >= 2 events of the cluster (or the cluster has an unrepaired poisoning),
+             `SSVNetworkViews.isLiquidated(owner, operatorIds, lastTuple)` at that block. A revert with
+             IncorrectClusterState is a poisoning; the earliest log of the same transaction whose tuple equals the
+             stored cluster word (hashed locally against one storage read, every candidate, then confirmed with
+             isLiquidated) is the repair tuple. An earlier transaction of the block cannot be validated at block
+             granularity (a later one changed storage): one whose events all carry the same tuple wrote and
+             emitted that tuple, so it is a repair of an unrepaired poisoning (order kept, so a re-poisoning later
+             in the same block pages); one with differing tuples is superseded (not what readers keep), reported as
+             health when it could have been a repair.
   state      every run validates, at the run's block, the last stored log of every cluster M1 tracks (open
              incident, unrepaired poisoning, unresolved revert, reorg key); every `interval_s` (and in reorg, force
              and params runs) the shared inventory flags clusters whose last log does not validate or for which no
@@ -18,13 +23,16 @@ Detection (spec M1, plan §8 CP2d):
 Severity: warn; page while the cluster is re-poisoned (a poisoning after a recorded repair) or poisoned and
 liquidatable (`isLiquidatable`/`isLiquidatableSSV` of the canonical tuple at the run's block). A repair (the last
 log validates again) resolves the incident; a revert alone resolves at the first later run whose validation of
-the last log succeeds. An RPC error or an unexpected revert raises (never "clean").
+the last log succeeds. An RPC error or an unexpected revert raises (never "clean"). Off-chain input never proves
+recovery: a key with no stored log that the inventory does not list (an empty or partial SSV API answer) is
+clean only when storage holds no such cluster; otherwise its incident is kept (health), and a reorg run raises.
 
 Reorg rule (checks/README.md §6.2) for `m1_detections`: rows from blocks above the ancestor are deleted (the
-event cursor is rewound, so the reorg run re-detects them from the new chain's logs), except inbox-derived
-reverts, which follow their inbox row (`canonical = 0` drops them, in any run); `cleared_block` above the
-ancestor is reset. The reorg run then evaluates every open incident key, every persisted key and every
-`ctx.reorg_keys` entry at the new checkpoint; a key that needs the inventory when it is unavailable raises.
+event cursor is rewound, so the reorg run re-detects them from the new chain's logs), and so are state-sweep rows
+ingested above it (judged against storage of a deleted block), except inbox-derived reverts, which follow their
+inbox row (`canonical = 0` drops them, in any run); `cleared_block` above the ancestor is reset. The reorg run
+then evaluates every open incident key, every persisted key and every `ctx.reorg_keys` entry at the new
+checkpoint; a key it cannot evaluate (no stored log, the cluster in storage, no inventory tuple) raises.
 """
 
 from __future__ import annotations
@@ -48,7 +56,7 @@ from checks.m1_cluster_abi import (
 from checks.registry import register
 from db import DB
 from eb_events import CLUSTER_KINDS, Event
-from eb_storage import Cluster, cluster_id
+from eb_storage import Cluster, cluster_id, eth_cluster_slot, ssv_cluster_slot
 from rpc import RpcError
 
 SCHEMA = """
@@ -89,7 +97,6 @@ class M1StaleTuple(Check):
     defaults = {
         "interval_s": 600,
         "receipt_window_blocks": 1000,  # older groups (a backlog, a first start on full history): state sweep only
-        "repair_candidates_max": 64,  # distinct earlier tuples validated to find the repair tuple
         "our_senders": [],  # spec §5 (oracle updater, liquidator); required, see config.example.json
         "inbox_functions": ["updateClusterBalance", "liquidate", "liquidateSSV"],
     }
@@ -108,10 +115,11 @@ class M1StaleTuple(Check):
         unknown = set(config["inbox_functions"]) - set(FUNCTIONS)
         if unknown:
             raise SystemExit(f"checks.m1.inbox_functions: unknown {sorted(unknown)}; known: {sorted(FUNCTIONS)}")
-        for k in ("interval_s", "receipt_window_blocks", "repair_candidates_max"):
+        for k in ("interval_s", "receipt_window_blocks"):
             if not isinstance(config[k], int) or config[k] < (0 if k == "receipt_window_blocks" else 1):
                 raise SystemExit(f"checks.m1.{k}: a positive integer is required")
         self.views = views.lower()
+        self.proxy = settings["proxy"].lower()
         self.senders = frozenset(a.lower() for a in senders)
         self.functions = frozenset(config["inbox_functions"])
         self.explorer = settings.get("alerts", {}).get("explorer", "https://etherscan.io")
@@ -134,7 +142,7 @@ class M1StaleTuple(Check):
             if inv is not None:
                 flagged = {cid for cid, i in inv.clusters.items()
                            if i.version and (not i.valid or (i.tuple_source == "api" and "logs" in i.sources))}
-                keys |= flagged
+                keys |= flagged | (skipped - set(inv.clusters))
                 self.last_sweep = {"block": block, "clusters": len(inv.clusters), "flagged": len(flagged)}
             else:  # no inventory: validate the clusters of the groups the receipt window skipped one by one
                 keys |= skipped
@@ -149,7 +157,8 @@ class M1StaleTuple(Check):
     # ---------------------------------------------------------------- reorg
 
     def _rewind(self, db, ancestor: int) -> None:
-        db.conn.execute("DELETE FROM m1_detections WHERE block > ? AND kind != 'revert'", (ancestor,))
+        db.conn.execute("DELETE FROM m1_detections WHERE kind != 'revert' AND (block > ? OR (source = 'state' AND "
+                        "ingested_block > ?))", (ancestor, ancestor))
         db.conn.execute("UPDATE m1_detections SET cleared_block = NULL WHERE cleared_block > ?", (ancestor,))
 
     def _drop_orphaned_reverts(self, db) -> set[str]:
@@ -173,12 +182,16 @@ class M1StaleTuple(Check):
         horizon = block - self.config["receipt_window_blocks"]
         for b in sorted(by_block):
             evs = sorted(by_block[b], key=lambda e: e.log_index)
-            finals: dict[bytes, Event] = {}
+            txs: dict[bytes, dict[str, list[Event]]] = {}  # cluster -> transaction -> its events, both in log order
             for ev in evs:
-                finals[ev.cluster_id] = ev
-            for cid, final in sorted(finals.items(), key=lambda kv: kv[1].log_index):
+                txs.setdefault(ev.cluster_id, {}).setdefault(ev.tx_hash, []).append(ev)
+            for cid, groups in sorted(txs.items(), key=lambda kv: kv[1][next(reversed(kv[1]))][-1].log_index):
                 key = "0x" + cid.hex()
-                group = [e for e in evs if e.cluster_id == cid and e.tx_hash == final.tx_hash]
+                ordered = list(groups.values())
+                for group in ordered[:-1]:
+                    self._superseded(ctx, key, group, b, horizon, block, keys)
+                group = ordered[-1]
+                final = group[-1]
                 active = self._active_poison(ctx.db, key)
                 if len(group) < 2 and active is None:
                     continue  # one event: the function validated its input against storage and emitted its result
@@ -198,6 +211,26 @@ class M1StaleTuple(Check):
                 keys.add(key)
         return keys, skipped
 
+    def _superseded(self, ctx: Ctx, key: str, group: list[Event], b: int, horizon: int, block: int,
+                    keys: set[str]) -> None:
+        """A transaction followed by another one on the same cluster in block `b`: storage at `b` is the later one's,
+        so its tuple cannot be validated by a call. It only matters as a repair of an unrepaired poisoning (the
+        re-poison memory, including a re-poisoning later in the same block)."""
+        if b < horizon or self._active_poison(ctx.db, key) is None:
+            return
+        final = group[-1]
+        if all(e.cluster == final.cluster for e in group):
+            # every event carries one tuple: the transaction validated its input, wrote that tuple and emitted it
+            self._insert(ctx.db, key, "repair", final, block, source="receipt",
+                         detail={"events": len(group), "intra_block": True})
+            keys.add(key)
+            return
+        ctx.health("m1-intra-block", f"M1: cluster {key}: transaction {final.tx_hash} (block {b}) carries {len(group)} "
+                   f"events with differing tuples and is followed by another transaction on the cluster in the same "
+                   f"block; whether it repaired the open poisoning cannot be read at block granularity (re-poison "
+                   f"memory may be missing). {self.explorer}/tx/{final.tx_hash}",
+                   dedup=f"m1-intra-block:{final.tx_hash}")
+
     def _validate(self, ctx: Ctx, owner: str, operator_ids, cl: Cluster, block: int) -> bool:
         """True when storage holds this tuple at `block`; False on IncorrectClusterState; anything else raises."""
         try:
@@ -210,15 +243,25 @@ class M1StaleTuple(Check):
         return True
 
     def _repair_event(self, ctx: Ctx, earlier: list[Event], final: Event, block: int) -> Event | None:
-        """The earliest log of the transaction whose tuple validates at `block` (validating tuples are equal: storage
-        holds one hash), searching distinct tuples from the latest, bounded by `repair_candidates_max`."""
-        distinct: list[Cluster] = []
-        for e in reversed(earlier):
-            if e.cluster != final.cluster and e.cluster not in distinct:
-                distinct.append(e.cluster)
-        for cl in distinct[: self.config["repair_candidates_max"]]:
-            if self._validate(ctx, final.owner, final.operator_ids, cl, block):
-                return next(e for e in earlier if e.cluster == cl)
+        """The earliest log of the transaction whose tuple validates at `block`. Validating tuples are equal (storage
+        holds one hash): every candidate is hashed against the stored cluster word (one storage read, no cap), the
+        earliest match is confirmed with isLiquidated. Should Views disagree with the local hash, every distinct
+        candidate is validated by call, earliest first."""
+        cid = final.cluster_id
+        eth_word, ssv_word = ctx.rpc.storage(self.proxy, [eth_cluster_slot(cid), ssv_cluster_slot(cid)], block)
+        stored = (eth_word or ssv_word) if not (eth_word and ssv_word) else 0
+        cands = [e for e in earlier if e.cluster != final.cluster]
+        match = next((e for e in cands if stored and int.from_bytes(e.cluster.hash_data(), "big") == stored), None)
+        if match is None:
+            return None
+        if self._validate(ctx, final.owner, final.operator_ids, match.cluster, block):
+            return match
+        tried: list[Cluster] = [match.cluster]
+        for e in cands:
+            if e.cluster not in tried:
+                tried.append(e.cluster)
+                if self._validate(ctx, final.owner, final.operator_ids, e.cluster, block):
+                    return next(x for x in earlier if x.cluster == e.cluster)
         return None
 
     # ---------------------------------------------------------------- inbox
@@ -270,6 +313,11 @@ class M1StaleTuple(Check):
                        f"({type(exc).__name__}: {exc}). The full-state sweep is skipped; receipts and the clusters M1 "
                        f"tracks are still validated.", dedup=f"m1-inventory:{type(exc).__name__}", realert=True)
             return None
+
+    def _in_storage(self, ctx: Ctx, key: str, block: int) -> bool:
+        """Whether storage holds a cluster word (ETH or legacy slot) for `key` at `block`."""
+        cid = bytes.fromhex(key[2:])
+        return any(ctx.rpc.storage(self.proxy, [eth_cluster_slot(cid), ssv_cluster_slot(cid)], block))
 
     def _persisted_keys(self, db) -> set[str]:
         rows = db.conn.execute(
@@ -350,16 +398,24 @@ class M1StaleTuple(Check):
         info = inv.clusters.get(key) if inv is not None else None
         stale: bool | None = None
         unknown = None
+        absent = False
         if latest is not None:
             stale = not self._validate(ctx, latest.owner, latest.operator_ids, latest.cluster, block)
         elif info is not None:
-            stale = False
+            stale = False  # the inventory read both storage slots at `block`
+            absent = info.version is None
             if info.version and not info.valid:
                 unknown = "no stored log of this cluster, and the SSV API tuple does not validate against storage"
-        elif inv is not None:
-            stale = False  # no stored log left (e.g. every log was on reorganised blocks) and not listed by the API
+        elif not self._in_storage(ctx, key, block):
+            stale, absent = False, True  # no stored log left (e.g. every log was on reorganised blocks), no cluster
         elif reorg:
-            raise RuntimeError(f"M1 cannot re-evaluate {key} after the reorg: no stored log and no inventory")
+            raise RuntimeError(f"M1 cannot re-evaluate {key} after the reorg: no stored log, the cluster is in "
+                               f"storage, and the inventory {'gives no tuple for it' if inv else 'is unavailable'}")
+        elif inv is not None:
+            # An empty or partial SSV API answer is not evidence that the cluster recovered: keep what is open.
+            ctx.health("m1-inventory-missing", f"M1: cluster {key} is in storage at block {block} but has no stored "
+                       f"log and the inventory does not list it; its state is unknown and its incident is kept.",
+                       dedup=f"m1-inventory-missing:{key}", realert=True)
         reverts = self._active_reverts(db, key)
 
         poison = self._active_poison(db, key)
@@ -397,10 +453,10 @@ class M1StaleTuple(Check):
                 return None
             if latest is not None:
                 state = f"the last-log tuple from tx {latest.tx_hash} (block {latest.block}) validates against storage"
-            elif info is not None:
+            elif not absent:
                 state = "it has no stored log and the SSV API tuple validates against storage"
             else:
-                state = "no log of this cluster remains on the canonical chain and the inventory does not list it"
+                state = "no log of this cluster remains on the canonical chain and storage holds no such cluster"
             body = (f"Cluster {key}: at block {block} {state}; no unresolved IncorrectClusterState revert of our "
                     f"senders remains.")
             if dropped:

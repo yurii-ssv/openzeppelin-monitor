@@ -107,6 +107,26 @@ def decode_cluster_calldata(tx: dict) -> tuple[str, str, tuple[int, ...]] | None
     return name, owner, ops
 
 
+def decode_cluster_tuple(tx: dict) -> Cluster | None:
+    """The Cluster argument of a transaction calling one of FUNCTIONS: five static words right after the
+    operatorIds offset word. None for another function or calldata that does not decode."""
+    data = tx.get("input") or tx.get("data") or "0x"
+    name = FUNCTION_BY_SELECTOR.get(data[:10].lower())
+    if name is None:
+        return None
+    first = FUNCTIONS[name][2] + 1
+    try:
+        body = bytes.fromhex(data[10:])
+    except ValueError:
+        return None
+    if len(body) < 32 * (first + 5):
+        return None
+    w = [int.from_bytes(body[32 * i:32 * (i + 1)], "big") for i in range(first, first + 5)]
+    if w[0] >> 32 or w[1] >> 64 or w[2] >> 64 or w[3] > 1:
+        return None
+    return Cluster(w[0], w[1], w[2], bool(w[3]), w[4])
+
+
 def decode_uint_arg(revert_data: str | None) -> int | None:
     """The first argument word of an `Error(uint…)` revert (e.g. ExceedValidatorLimitWithData's operatorId)."""
     if not revert_data or len(revert_data) < 10 + 64:

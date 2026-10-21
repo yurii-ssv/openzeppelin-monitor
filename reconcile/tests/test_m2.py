@@ -435,3 +435,205 @@ def test_m2_unresolved_inbox_revert_is_health_not_clean(tmp_path):
     assert w.db.conn.execute("SELECT revert_source FROM inbox WHERE tx_hash=?", (tx,)).fetchone()[0] == "unresolved"
     assert outbox(w, "kind='health' AND check_id='m2' AND text LIKE '%could not be resolved%'")
     assert alerts(w) == []
+
+
+# ---------------------------------------------------------------- QA attempt 1 regressions (repair 1)
+
+
+def hard_keys(w):
+    """Open M2 keys other than early:<op> (on-chain counts only, not what these scenarios vary)."""
+    return [k for k in open_keys(w) if not k.startswith("early:")]
+
+
+def test_m2_empty_api_is_not_recovery_hard_kept_from_the_last_validated_tuple(tmp_path):
+    """QA F1 (M2): `clusters: []` cannot prove the legacy cluster migrated; its last validated tuple still matches
+    storage, so the hard condition is found again."""
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    assert hard_keys(w) == ["hard:1"]
+    rows.clear()
+    tick(w, chain)
+    tick(w, chain)
+    assert hard_keys(w) == ["hard:1"] and ("info", "resolved", "hard:1") not in alerts(w)
+    assert any(k.startswith("health:m2-inventory-empty") for k in health(w))
+
+
+def test_m2_empty_api_during_a_reorg_keeps_hard(tmp_path):
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    fork = chain.number
+    chain.mine(3)
+    tick(w, chain)
+    chain.reorg(fork)
+    chain.mine(2)
+    rows.clear()
+    advance(w)
+    assert hard_keys(w) == ["hard:1"] and w.db.meta("reorg:m2") is None
+
+
+def test_m2_restart_with_an_empty_api_keeps_hard(tmp_path):
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    _, w2 = make_worker(tmp_path, only=["m2"], chain=chain, views=VIEWS, clock=w.clock,
+                        checks={"m2": {"velocity_window_blocks": 20, "early_headroom": 1}},
+                        inventory={"api_url": "https://api.invalid", "api_refresh_s": 0},
+                        start_block=w.cfg.start_block, activation_block=w.cfg.activation_block)
+    w2.inventory.http_get = lambda url: {"clusters": [], "pagination": {"pages": 1}}
+    tick(w2, chain)
+    assert hard_keys(w2) == ["hard:1"] and ("info", "resolved", "hard:1") not in alerts(w2)
+
+
+def test_m2_empty_api_after_a_silent_migration_resolves_on_storage_proof(tmp_path):
+    """Twin: storage, not the API, proves the cluster is no longer legacy."""
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    cid, st = ssv._get(LEG, LEG_OPS)
+    st["version"] = "ETH"
+    ssv._persist(cid, st)  # the ETH slot is written, the legacy slot cleared (no log)
+    set_operator(chain, 1, eth=2_981, ssv=0, private=True)
+    rows.clear()
+    tick(w, chain)
+    assert hard_keys(w) == [] and ("info", "resolved", "hard:1") in alerts(w)
+
+
+@pytest.mark.parametrize("reorg", [False, True])
+def test_m2_unknown_tuple_with_an_empty_api_keeps_hard_and_a_reorg_run_raises(tmp_path, reorg):
+    """The legacy cluster changed in storage while the API is empty: its tuple is unknown and its validators could be
+    blocked (2,981 + 20 > 3,000): hard is kept (health); in the reorg run it raises and keeps the marker."""
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    fork = chain.number
+    cid, st = ssv._get(LEG, LEG_OPS)
+    saved = list(rows)
+    rows.clear()
+    st["balance"] += 1
+    ssv._persist(cid, st)
+    if reorg:
+        chain.mine(3)
+        tick(w, chain)
+        chain.reorg(fork)
+        st["balance"] += 1
+        ssv._persist(cid, st)
+        chain.mine(2)
+    tick(w, chain)
+    assert hard_keys(w) == ["hard:1"]
+    if reorg:
+        assert w.db.meta("reorg:m2") is not None
+        assert outbox(w, "kind='health' AND check_id='m2' AND text LIKE '%cannot re-evaluate%'")
+    else:
+        assert any(k.startswith("health:m2-hard-unknown") for k in health(w))
+    rows.extend(api_row(LEG, LEG_OPS, 20, st["nfi"], st["index"], True, st["balance"], migrated=False)
+                for _ in saved[:1])
+    tick(w, chain)
+    assert hard_keys(w) == ["hard:1"] and w.db.meta("reorg:m2") is None
+
+
+@pytest.mark.parametrize("eth,kept", [(2_985, True), (2_975, False)])
+def test_m2_partial_api_hard_resolves_only_when_the_on_chain_count_proves_no_block(tmp_path, eth, kept):
+    """A second legacy cluster (20 validators) the API never listed: after the listed one (30, blocked) migrates,
+    the on-chain legacy count still shows 20 validators in no known cluster; 2,985 + 20 > 3,000 keeps hard,
+    2,975 + 20 <= 3,000 resolves it."""
+    chain, w, ssv, rows = setup(tmp_path, eth=eth, private=True, count=30, m2={"early_headroom": 1})
+    ssv.legacy_ssv_cluster("0x" + "e5" * 20, LEG_OPS, 20)  # in storage, never listed, never logged
+    set_operator(chain, 1, eth=eth, ssv=50, private=True)
+    tick(w, chain)
+    assert hard_keys(w) == ["hard:1"]
+    ssv.migrate(LEG, LEG_OPS)
+    rows[0]["migrated"] = True
+    set_operator(chain, 1, eth=eth, ssv=20, private=True)
+    tick(w, chain)
+    assert hard_keys(w) == (["hard:1"] if kept else [])
+
+
+@pytest.mark.parametrize("confirmations", [0, 3])
+def test_m2_reorg_orphaning_the_settlement_reopens_the_surviving_revert(tmp_path, confirmations):
+    """QA F3: README §6.2 for every persisted key: a revert settled on a deleted block is evaluated again."""
+    chain, w, ssv, rows, path = inbox_setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1},
+                                            confirmations=confirmations)
+    advance(w)
+    cl = ssv._cluster(ssv._get(LEG, LEG_OPS)[1])
+    failed_tx(chain, path, "reactivate", LEG, LEG_OPS, cl, LEG, exceed_limit(1))
+    chain.mine(confirmations)
+    advance(w)
+    advance(w)
+    assert "revert:1" in hard_keys(w)
+    fork = chain.number
+    set_operator(chain, 1, eth=2_900, ssv=20, private=True)
+    chain.mine(confirmations)
+    tick(w, chain)
+    assert hard_keys(w) == [] and w.db.conn.execute("SELECT cleared_block FROM m2_reverts").fetchone()[0]
+    chain.reorg(fork)
+    chain.call_stubs = {k: [e for e in v if e[0] < fork] for k, v in chain.call_stubs.items()}  # stubs follow too
+    chain.mine(2 + confirmations)
+    advance(w)
+    assert "revert:1" in hard_keys(w) and "hard:1" in hard_keys(w)
+    assert w.db.conn.execute("SELECT cleared_block FROM m2_reverts").fetchone()[0] is None
+
+
+def test_m2_revert_does_not_settle_while_the_api_is_empty(tmp_path):
+    chain, w, ssv, rows, path = inbox_setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    cl = ssv._cluster(ssv._get(LEG, LEG_OPS)[1])
+    failed_tx(chain, path, "migrateClusterToETH", LEG, LEG_OPS, cl, LEG, exceed_limit(1))
+    advance(w)
+    advance(w)
+    assert "revert:1" in hard_keys(w)
+    saved = list(rows)
+    rows.clear()
+    set_operator(chain, 1, eth=2_900, ssv=20, private=True)
+    tick(w, chain)
+    assert hard_keys(w) == ["revert:1"], "hard resolves on proof; the revert cannot settle without API rows"
+    rows.extend(saved)
+    tick(w, chain)
+    assert hard_keys(w) == []
+
+
+def test_m2_revert_of_a_cluster_the_api_omits_is_settled_on_its_own_calldata_tuple(tmp_path):
+    """The reactivate revert of a liquidated legacy cluster the API does not list: its calldata tuple (validated
+    against storage) shows it is over the limit, so the revert stays until the operator has room."""
+    chain = ClusterChain()
+    rows: list = []
+    from fakechain import MiniSSV
+
+    ssv = MiniSSV(chain)
+    legacy(ssv, rows, count=20, active=False)
+    rows.clear()
+    legacy(ssv, rows, owner=ETH_OWNER, ops=(5, 6, 7, 8), count=1)  # the API answers, without the reverted cluster
+    for op in LEG_OPS:
+        set_operator(chain, op, eth=2_990, ssv=0, private=True)
+    for op in (5, 6, 7, 8):
+        set_operator(chain, op, eth=0, ssv=1, private=True)
+    chain.mine()
+    path = tmp_path / "failed-tx.jsonl"
+    path.write_text("")
+    chain, w, _, rows = make_m2(tmp_path, chain=chain, api_rows=rows, inbox={"path": str(path)},
+                                m2={"velocity_window_blocks": 20, "early_headroom": 1})
+    chain.mine(25)
+    advance(w)
+    cl = ssv._cluster(ssv._get(LEG, LEG_OPS)[1])
+    failed_tx(chain, path, "reactivate", LEG, LEG_OPS, cl, LEG, exceed_limit(1))
+    advance(w)
+    advance(w)
+    tick(w, chain)
+    assert hard_keys(w) == ["revert:1"], "2,990 + 20 > 3,000: not settled"
+    for op in LEG_OPS:
+        set_operator(chain, op, eth=2_950, ssv=0, private=True)
+    tick(w, chain)
+    assert hard_keys(w) == []
+
+
+def test_m2_inbox_transaction_lookup_returning_nothing_raises(tmp_path):
+    chain, w, ssv, rows, path = inbox_setup(tmp_path, eth=0)
+    advance(w)
+    cl = ssv._cluster(ssv._get(LEG, LEG_OPS)[1])
+    tx = failed_tx(chain, path, "migrateClusterToETH", LEG, LEG_OPS, cl, LEG, exceed_limit(1))
+    w.check_reorg()
+    w.scan()
+    w.poll_inbox()
+    assert w.db.conn.execute("SELECT revert_selector FROM inbox WHERE tx_hash=?", (tx,)).fetchone()[0]
+    del chain.txs[tx]
+    del chain.senders[tx]
+    with pytest.raises(RpcError, match="returned nothing"):
+        w.run_checks()
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m2_reverts").fetchone()[0] == 0
+    assert w.db.meta("cursor:inbox:m2", 0) == 0
