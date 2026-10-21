@@ -174,3 +174,11 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - CP1B: task `task_3a2ee3e27b00`, dispatch `ctx_98a50f4c4736`, terminal `term_b2097fa2-22c4-4943-9fc9-4645889b4598`, worktree `.../ms-cp1b`; claude/opus/high requested = effective. Owns V1B.1–V1B.11 (+f); V1B.10 needs anvil (NOT RUN allowed, CP3).
 - Placement: both receipts show worktree effect `created_child` under the monitor repo id `316cdd8d-…`; worktree HEADs equal the frozen base. Writes are disjoint (`deploy/**`+compose+scripts vs `reconcile/**`).
 - Next: wait for worker_done from both; per delivery inspect diff vs allowed writes, re-run cheapest V row, log, then Codex QA per lane on its lane-branch head.
+
+<a id="event-0013"></a>
+## Event 0013 — CP1A worker questions answered (RPC depth, --check exit code)
+
+- Observed UTC: 2026-10-21T11:25Z · Dispatch `ctx_42eae2d9dfb0`.
+- Q1 (`msg_ac909a682a6e`): publicnode serves eth_getLogs only ~10–20k blocks deep, so V1A.4/V1A.5 historical blocks fail. Coordinator probed archive getLogs at block 26177498: OK on eth.drpc.org, eth-pokt.nodies.app, eth-mainnet.public.blastapi.io, rpc.mevblocker.io; not usable: publicnode (recent only), eth.merkle.io (rate limit). Told CP1A (and CP1B for information) to use an archive endpoint for those rows and record which endpoint served each row. OG2 stays satisfied; no row weakened.
+- Q2 (`msg_16fd23ce2f04`): `openzeppelin-monitor --check` always exits 0 (src/main.rs:205-209), so V1A.1 "exit 0" is vacuous and V1A.1f cannot hold for the raw binary. **Deviation accepted (reading A):** deploy/render.sh gates on the success line plus zero ERROR lines; V1A.1/V1A.1f are credited against that gate, with the raw exit code shown as non-gating; extra falsifier for a dangling trigger reference. QA must be told this deviation. Owner note for Marco: the plan's V1A.1 oracle is amended by this event; Rust core stays out of scope.
+- Finding (CP1A, for Marco): the live `config/` has duplicate trigger display names (telegram/discord "DAO Safe Failed Alert", "Oracle Dissent Alert"), which `--check` reports as a load failure; templates renamed the Discord pair. Live `config/` untouched.
