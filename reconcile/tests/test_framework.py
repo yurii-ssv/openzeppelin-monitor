@@ -9,28 +9,19 @@ import sqlite3
 import urllib.request
 
 import pytest
-from fakechain import PROXY, FakeChain, FakeClock, FakeRpc, MiniSSV, keys
+from fakechain import PROXY, FakeChain, FakeClock, MiniSSV, keys
+from harness import VIEWS, Capture, advance, api_row, make_worker, outbox, stub_params
 
 import checks as registry
 from alerts import incident_key
 from checks.base import Check, Every, Finding, NearSetEveryBlock, OnEvents, OnInbox
-from eb_reconcile import DB, DEFAULTS, Config, Worker
-from eb_storage import EB_LATEST_COMMITTED, cluster_id, eth_cluster_slot, keccak, u256
+from eb_reconcile import DB
+from eb_storage import cluster_id, eth_cluster_slot, keccak, u256
 from inbox import ERRORS, decode_revert
 from notify import RecordOnly, Router
 
-VIEWS = "0xafe830b6ee262ba11cce5f32fdcd760ffe6a66e4"
 OWNER = "0x" + "aa" * 20
 OPS = (11, 12, 13, 14)
-
-
-class Capture:
-    def __init__(self):
-        self.sent: list[tuple[str, str, str, str]] = []
-
-    def send(self, severity, text, key, route=None):
-        self.sent.append((severity, key, text, route))
-        return "captured"
 
 
 class Stub(Check):
@@ -60,38 +51,9 @@ class Stub(Check):
         return self.emit(ctx, block)
 
 
-def fwmake(tmp_path, stubs, chain=None, clock=None, notifier=None, **over):
-    chain = chain or FakeChain()
-    raw = {
-        "chain_id": 1, "proxy": PROXY, "activation_block": chain.sealed, "start_block": chain.sealed,
-        "rpc_url_env": "UNUSED", "confirmations": 0, "max_log_range": 10_000, "db_path": str(tmp_path / "w.sqlite"),
-        "alerts": {"mode": "record", "label": "test", "digest_interval_s": 0},
-        "inventory": {"api_url": None},
-    }
-    raw.update(over)
-    cfg = Config({**DEFAULTS, **raw})
-    w = Worker(cfg, FakeRpc(chain), DB(cfg.db_path), notifier or Capture(), clock=clock or FakeClock(),
-               checks=stubs)
-    w.bootstrap()
-    return chain, w
-
-
-def advance(w):
-    w.check_reorg()
-    w.scan()
-    w.poll_inbox()
-    w.run_checks()
-    w.housekeeping()
-    w.deliver()
-
-
 def finding(check="stub", key="k1", severity="page", **kw):
     return Finding(check=check, key=key, severity=severity, title=kw.pop("title", f"{check} {key}"),
                    body=kw.pop("body", "body"), **kw)
-
-
-def outbox(w, where="1=1"):
-    return [dict(r) for r in w.db.conn.execute(f"SELECT * FROM outbox WHERE {where} ORDER BY created_at, rowid")]
 
 
 # ---------------------------------------------------------------- V1B.3 scheduler
@@ -118,7 +80,7 @@ def test_scheduler_dispatches_registered_check(tmp_path, registered_stub):
     clock = FakeClock()
     chain = FakeChain()
     chain.mine()
-    _, w = fwmake(tmp_path, None, chain=chain, clock=clock,
+    _, w = make_worker(tmp_path, None, chain=chain, clock=clock,
                   checks={"m5": {"enabled": False}, "stub_registered": {"threshold": 7}})
     stub = w.checks["stub_registered"]
     assert list(w.checks) == ["stub_registered"] and stub.config == {"threshold": 7}
@@ -158,7 +120,7 @@ def test_scheduler_near_set_runs_every_new_block(tmp_path):
     stub = Stub(schedule=(Every(3600), NearSetEveryBlock()))
     chain = FakeChain()
     chain.mine()
-    _, w = fwmake(tmp_path, [stub], chain=chain, clock=clock)
+    _, w = make_worker(tmp_path, [stub], chain=chain, clock=clock)
     advance(w)
     assert len(stub.runs) == 1
     chain.mine()
@@ -181,7 +143,7 @@ def test_scheduler_isolates_a_failing_check(tmp_path):
     good = Stub(emit=lambda ctx, b: [finding(check="good")], check_id="good")
     chain = FakeChain()
     chain.mine()
-    _, w = fwmake(tmp_path, [bad, good], chain=chain)
+    _, w = make_worker(tmp_path, [bad, good], chain=chain)
     w.step()
     assert len(good.runs) == 1 and w.alerts.open_incident("good", "k1") is not None
     assert any(r["key"].startswith("health:check-error") for r in outbox(w))
@@ -191,9 +153,9 @@ def test_scheduler_isolates_a_failing_check(tmp_path):
 
 def test_config_rejects_unknown_check_ids_and_keys(tmp_path, registered_stub):
     with pytest.raises(SystemExit, match="unknown check id"):
-        fwmake(tmp_path, None, checks={"m99": {}})
+        make_worker(tmp_path, None, checks={"m99": {}})
     with pytest.raises(SystemExit, match="unknown key"):
-        fwmake(tmp_path, None, checks={"stub_registered": {"treshold": 1}})
+        make_worker(tmp_path, None, checks={"stub_registered": {"treshold": 1}})
 
 
 def test_finding_validates_severity_and_json():
@@ -211,14 +173,14 @@ def test_restart_idempotent_single_outbox_row(tmp_path):
     chain.mine()
     clock = FakeClock()
     emit = lambda ctx, b: [finding(key="0xc1", severity="page")]  # noqa: E731
-    _, w = fwmake(tmp_path, [Stub(emit=emit)], chain=chain, clock=clock)
+    _, w = make_worker(tmp_path, [Stub(emit=emit)], chain=chain, clock=clock)
     w.step(force=True)
     assert len(outbox(w)) == 1
 
     # simulated restart: a new process on the same database re-finds the same open incident
     clock.advance(600)
     chain.mine()
-    _, w2 = fwmake(tmp_path, [Stub(emit=emit)], chain=chain, clock=clock, start_block=w.cfg.start_block,
+    _, w2 = make_worker(tmp_path, [Stub(emit=emit)], chain=chain, clock=clock, start_block=w.cfg.start_block,
                    activation_block=w.cfg.activation_block)
     w2.step(force=True)
     w2.step(force=True)
@@ -233,7 +195,7 @@ def test_restart_idempotent_two_checks_same_key(tmp_path):
     chain.mine()
     a = Stub(emit=lambda ctx, b: [finding(check="ca", key="0xsame")], check_id="ca")
     b = Stub(emit=lambda ctx, b: [finding(check="cb", key="0xsame")], check_id="cb")
-    _, w = fwmake(tmp_path, [a, b], chain=chain)
+    _, w = make_worker(tmp_path, [a, b], chain=chain)
     w.step(force=True)
     w.step(force=True)
     inc = w.db.conn.execute("SELECT check_id, ikey FROM incidents ORDER BY check_id").fetchall()
@@ -245,7 +207,7 @@ def test_incident_escalation_revision_resolution_same_id(tmp_path):
     chain = FakeChain()
     chain.mine()
     script = {"f": [finding(key="w1", severity="info")]}
-    _, w = fwmake(tmp_path, [Stub(emit=lambda ctx, b: script["f"])], chain=chain)
+    _, w = make_worker(tmp_path, [Stub(emit=lambda ctx, b: script["f"])], chain=chain)
     w.step(force=True)
     script["f"] = [finding(key="w1", severity="warn")]
     w.step(force=True)  # escalates
@@ -276,7 +238,7 @@ def test_silent_findings_and_absence(tmp_path):
     chain.mine()
     script = {"f": [finding(key="a", severity="info", notify=False), finding(key="b", severity="warn")]}
     stub = Stub(emit=lambda ctx, b: script["f"], resolve_on_absence=True)
-    _, w = fwmake(tmp_path, [stub], chain=chain)
+    _, w = make_worker(tmp_path, [stub], chain=chain)
     w.step(force=True)
     assert [r["kind"] for r in outbox(w)] == ["open"]  # only b is sent
     script["f"] = [finding(key="a", severity="info", notify=False)]
@@ -289,7 +251,7 @@ def test_absence_never_resolves_by_default(tmp_path):
     chain = FakeChain()
     chain.mine()
     script = {"f": [finding(key="b", severity="warn")]}
-    _, w = fwmake(tmp_path, [Stub(emit=lambda ctx, b: script["f"])], chain=chain)
+    _, w = make_worker(tmp_path, [Stub(emit=lambda ctx, b: script["f"])], chain=chain)
     w.step(force=True)
     script["f"] = []
     w.step(force=True)
@@ -302,7 +264,7 @@ def test_realert_cadence_page_6h_warn_24h_info_once(tmp_path):
     clock = FakeClock()
     emit = lambda ctx, b: [finding(key="p", severity="page"), finding(key="w", severity="warn"),  # noqa: E731
                            finding(key="i", severity="info")]
-    _, w = fwmake(tmp_path, [Stub(emit=emit)], chain=chain, clock=clock)
+    _, w = make_worker(tmp_path, [Stub(emit=emit)], chain=chain, clock=clock)
     w.step(force=True)
     assert len(outbox(w)) == 3
     clock.advance(6 * 3600 - 1)
@@ -325,7 +287,7 @@ def test_routing_page_telegram_info_discord(tmp_path):
     chain.mine()
     emit = lambda ctx, b: [finding(key="p", severity="page"), finding(key="w", severity="warn"),  # noqa: E731
                            finding(key="i", severity="info")]
-    _, w = fwmake(tmp_path, [Stub(emit=emit)], chain=chain,
+    _, w = make_worker(tmp_path, [Stub(emit=emit)], chain=chain,
                   alerts={"mode": "record", "label": "test", "digest_interval_s": 1})
     w.step(force=True)
     with w.db.tx():
@@ -341,7 +303,7 @@ def test_routing_record_mode_writes_json_lines(tmp_path):
     chain.mine()
     path = tmp_path / "alerts.jsonl"
     emit = lambda ctx, b: [finding(key="p", severity="page"), finding(key="i", severity="info")]  # noqa: E731
-    _, w = fwmake(tmp_path, [Stub(emit=emit)], chain=chain, notifier=RecordOnly(str(path)))
+    _, w = make_worker(tmp_path, [Stub(emit=emit)], chain=chain, notifier=RecordOnly(str(path)))
     w.step(force=True)
     lines = [json.loads(x) for x in path.read_text().splitlines()]
     assert [(x["severity"], x["route"]) for x in lines] == [("page", "telegram"), ("info", "discord")]
@@ -407,7 +369,7 @@ def inbox_setup(tmp_path, checks=(), **over):
     chain = FakeChain()
     path = tmp_path / "failed-tx.jsonl"
     chain.mine()
-    _, w = fwmake(tmp_path, list(checks), chain=chain, inbox={"path": str(path)}, **over)
+    _, w = make_worker(tmp_path, list(checks), chain=chain, inbox={"path": str(path)}, **over)
     return chain, w, path
 
 
@@ -423,7 +385,7 @@ def test_inbox_parses_fixture_persists_offset_rereads_on_shrink(tmp_path):
     assert offset == len(inbox_line(tx=tx).encode())
 
     # a restart resumes from the persisted offset: nothing is re-ingested
-    _, w2 = fwmake(tmp_path, [], chain=chain, inbox={"path": str(path)}, start_block=w.cfg.start_block,
+    _, w2 = make_worker(tmp_path, [], chain=chain, inbox={"path": str(path)}, start_block=w.cfg.start_block,
                    activation_block=w.cfg.activation_block)
     w2.poll_inbox()
     assert w2.db.conn.execute("SELECT COUNT(*) FROM inbox").fetchone()[0] == 1
@@ -477,7 +439,7 @@ def test_inbox_blockscout_fallback_and_unresolved(tmp_path):
         seen.append(url)
         return {"revert_reason": {"raw": "0x95a0cf33"}}
 
-    _, w = fwmake(tmp_path, [], chain=chain, inbox={"path": str(path), "blockscout": "https://bs.invalid"})
+    _, w = make_worker(tmp_path, [], chain=chain, inbox={"path": str(path), "blockscout": "https://bs.invalid"})
     w.inbox.http_get = http_get
     tx = chain.add_tx("0x" + "11" * 20, PROXY, "0x12345678")
     chain.stub_call(PROXY, "0x12345678", result=b"")  # does not revert at block - 1 (state changed in-block)
@@ -527,7 +489,7 @@ def test_metrics_endpoint_exposes_required_series(tmp_path):
 
     chain = FakeChain()
     chain.mine()
-    _, w = fwmake(tmp_path, [Stub(emit=lambda ctx, b: [finding(key="p", severity="page")])], chain=chain)
+    _, w = make_worker(tmp_path, [Stub(emit=lambda ctx, b: [finding(key="p", severity="page")])], chain=chain)
     w.step(force=True)
     srv = MetricsServer(w.cfg.db_path, list(w.checks), "127.0.0.1", 0).start()
     try:
@@ -544,31 +506,12 @@ def test_metrics_endpoint_exposes_required_series(tmp_path):
 # ---------------------------------------------------------------- live parameters
 
 
-def stub_params(chain, **over):
-    from params import GET_ORACLE, GETTERS, selector
-
-    values = {"network_fee": 3_366_600_000, "network_fee_ssv": 1, "liquidation_threshold_period": 42_960,
-              "liquidation_threshold_period_ssv": 100_240, "minimum_liquidation_collateral": 325_000_000_000_000,
-              "minimum_liquidation_collateral_ssv": 1, "operator_fee_increase_limit": 1000,
-              "maximum_operator_fee": 1, "minimum_operator_eth_fee": 1, "validators_per_operator_limit": 3000,
-              "quorum_bps": 7500, "cooldown_duration": 1}
-    values.update(over)
-    for name, sig in GETTERS.items():
-        if name == "active_oracle_ids":
-            chain.stub_call(VIEWS, selector(sig), b"".join(u256(i) for i in (1, 2, 3, 4)))
-        else:
-            chain.stub_call(VIEWS, selector(sig), u256(values[name]))
-    for i in (1, 2, 3, 4):
-        chain.stub_call(VIEWS, selector(GET_ORACLE) + u256(i), u256(0xC0 + i))
-    chain.write(EB_LATEST_COMMITTED, 0)
-
-
 def test_params_reload_on_parameter_event_calls_prepare(tmp_path):
     chain = FakeChain()
     stub_params(chain)
     chain.mine()
     stub = Stub(schedule=Every(3600))
-    _, w = fwmake(tmp_path, [stub], chain=chain, views=VIEWS)
+    _, w = make_worker(tmp_path, [stub], chain=chain, views=VIEWS)
     advance(w)
     assert stub.prepared[-1]["liquidation_threshold_period"] == 42_960
     assert stub.prepared[-1]["oracles"] == {i: "0x%040x" % (0xC0 + i) for i in (1, 2, 3, 4)}
@@ -589,19 +532,12 @@ def test_params_read_failure_is_a_health_message_not_a_crash(tmp_path):
     chain = FakeChain()
     chain.mine()  # no stubs: every getter reverts
     stub = Stub(schedule=Every(60))
-    _, w = fwmake(tmp_path, [stub], chain=chain, views=VIEWS)
+    _, w = make_worker(tmp_path, [stub], chain=chain, views=VIEWS)
     w.step()
     assert len(stub.runs) == 1 and any(r["key"].startswith("health:params") for r in outbox(w))
 
 
 # ---------------------------------------------------------------- inventory
-
-
-def api_row(owner, ops, count, nfi, index, active, balance, migrated=True):
-    return {"clusterId": "0x" + cluster_id(owner, ops).hex(), "ownerAddress": owner, "operators": list(ops),
-            "validatorCount": count, "networkFeeIndex": str(nfi), "index": str(index), "active": active,
-            "ethBalance": str(balance) if migrated else "0", "balance": "0" if migrated else str(balance),
-            "migrated": migrated, "isLiquidated": not active}
 
 
 def test_inventory_validates_tuples_against_storage(tmp_path):
@@ -610,7 +546,7 @@ def test_inventory_validates_tuples_against_storage(tmp_path):
     owner2, owner3 = "0x" + "bb" * 20, "0x" + "cc" * 20
     seen = []
     stub = Stub(schedule=Every(60), emit=lambda ctx, b: seen.append(ctx.inventory()) or [], check_id="inv")
-    _, w = fwmake(tmp_path, [stub], chain=chain, inventory={"api_url": "https://api.invalid/api/v4/mainnet"})
+    _, w = make_worker(tmp_path, [stub], chain=chain, inventory={"api_url": "https://api.invalid/api/v4/mainnet"})
     ssv.register(OWNER, OPS, keys(2, 1))  # logs + storage
     ssv.legacy_ssv_cluster(owner2, OPS, 3)  # storage only (pre-activation legacy cluster)
     chain.mine()
@@ -652,7 +588,7 @@ def test_chain_counts_calls_per_run(tmp_path):
         ctx.rpc.balances(["0x" + "01" * 20, "0x" + "02" * 20])
         return []
 
-    _, w = fwmake(tmp_path, [Stub(emit=emit)], chain=chain)
+    _, w = make_worker(tmp_path, [Stub(emit=emit)], chain=chain)
     w.step(force=True)
     assert w.db.meta("run:stub")["rpc_calls"] == {"eth_getBalance": 2}
 
@@ -745,7 +681,7 @@ def test_scheduler_reorg_resets_event_cursor(tmp_path):
     chain = FakeChain()
     chain.mine()
     stub = Stub(schedule=OnEvents({"NetworkFeeUpdated"}))
-    _, w = fwmake(tmp_path, [stub], chain=chain)
+    _, w = make_worker(tmp_path, [stub], chain=chain)
     chain.mine()
     advance(w)  # records a block hash below the fork point
     fork_point = chain.number
@@ -773,3 +709,8 @@ def test_config_example_loads_and_builds_every_check(tmp_path):
     m5 = next(c for c in built if c.id == "m5")
     assert m5.guards_from == (25037749, 218) and m5.config["layout"]["implementation"].startswith("0xa72a")
     assert cfg.alerts["mode"] == "record" and cfg.rpc_url_env == "MAINNET_RPC_URL"
+
+
+def test_harness_only_builds_the_named_registered_checks(tmp_path, registered_stub):
+    _, w = make_worker(tmp_path, only=["stub_registered"], checks={"stub_registered": {"threshold": 9}})
+    assert list(w.checks) == ["stub_registered"] and w.checks["stub_registered"].config == {"threshold": 9}
