@@ -5,7 +5,7 @@ and reports, through the episode book (`m9_episodes`):
 
 | Trigger (spec) | Key | Severity | Rule here |
 |---|---|---|---|
-| proposed, no `RootCommitted` within 30 min | `round:<blockNum>` | page | no commit of that `blockNum` by first vote + `round_timeout_s` (in blocks); healed by a late commit or a superseding commit |
+| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no commit of that `blockNum` by first vote + `round_timeout_s` (in blocks); consecutive failed rounds are one incident re-sent per failed round (`revision`); healed by a late commit or a superseding commit |
 | no `RootCommitted` for > 9 h | `cadence` | page | clock-driven (`Every`): worker clock − estimated time of the last commit block (persisted at first sight) > `max_commit_gap_s`; healed by the next commit. A gap that opened and closed while the worker was not evaluating is reported once from block distances |
 | two roots for one `blockNum` | `dissent:<slot>` | warn | per settled round, a slot whose vote is not the reference root (committed root; for an uncommitted round the unique plurality root); re-sent per new dissenting round (`revision`); healed when the slot votes the reference root again |
 | three dissenting rounds in a row from one slot | `dissent:<slot>` | page | the same incident escalates at `dissent_streak` consecutive dissents (rounds the slot did not vote in neither count nor reset) |
@@ -129,7 +129,9 @@ class M9OracleQuorum(Check):
         return out
 
     def failed_rounds(self, hist: History, block: int, timeout: int) -> list[Episode]:
-        out = []
+        """Failed rounds grouped into runs that end at the same commit (a late commit of the run's round or a
+        superseding one): one incident per run, re-sent for every further failed round (`revision`)."""
+        runs: dict[tuple | None, list] = {}
         for ref, rnd in sorted(hist.rounds.items()):
             if not rnd.votes or ref < self.complete_from:
                 continue
@@ -137,24 +139,35 @@ class M9OracleQuorum(Check):
             if block < deadline or (rnd.commit is not None and rnd.commit.block <= deadline):
                 continue
             close = hist.closing_event(rnd)
+            runs.setdefault(close.pos if close is not None else None, []).append((rnd, deadline, close))
+        out = []
+        for members in runs.values():
+            first, last = members[0], members[-1]
+            close = last[2]
             if close is None:
                 resolution = ""
-            elif close is rnd.commit:
-                resolution = f"Round {ref} committed late at block {close.block} (tx {close.tx_hash})."
+            elif close is last[0].commit:
+                resolution = f"Round {last[0].ref} committed late at block {close.block} (tx {close.tx_hash})."
             else:
-                resolution = (f"Round {ref} can no longer commit: round {close.ref_block} committed at block "
-                              f"{close.block} (tx {close.tx_hash}); the oracle has recovered.")
+                resolution = (f"Round(s) {', '.join(str(m[0].ref) for m in members)} can no longer commit: round "
+                              f"{close.ref_block} committed at block {close.block} (tx {close.tx_hash}); the oracle "
+                              f"has recovered.")
+            rnd, deadline = last[0], last[1]
             votes = "; ".join(f"slot {v.slot} {short(v.oracle)} root {v.root[:10]} (block {v.block})" for v in rnd.votes)
             roots = len({v.root for v in rnd.votes})
+            refs = [m[0].ref for m in members]
             out.append(Episode(
-                key=f"round:{ref}", episode=f"round:{ref}", active=close is None, evidence_block=deadline,
-                severity="page", title=f"Oracle round {ref} not committed within "
-                f"{self.config['round_timeout_s'] // 60} min",
-                body=(f"WeightedRootProposed for blockNum {ref} (first vote at block {rnd.first_vote.block}) and no "
-                      f"RootCommitted by block {deadline}. Votes: {votes}. {roots} distinct root(s). The oracle has "
-                      f"no retry: the next target waits for the next round. Check every slot's build (#93157)."),
-                subject={"ref_block": ref},
-                evidence={"votes": [vote_json(v) for v in rnd.votes], "deadline_block": deadline,
+                key="failed-round", episode=f"failed-round:{first[0].ref}", active=close is None,
+                evidence_block=first[1], severity="page",
+                title=(f"Oracle round {rnd.ref} not committed within {self.config['round_timeout_s'] // 60} min"
+                       + (f" ({len(refs)} failed rounds in a row)" if len(refs) > 1 else "")),
+                body=(f"WeightedRootProposed for blockNum {rnd.ref} (first vote at block {rnd.first_vote.block}) and "
+                      f"no RootCommitted by block {deadline}. Votes: {votes}. {roots} distinct root(s)."
+                      + (f" Failed rounds since the last commit: {', '.join(map(str, refs))}." if len(refs) > 1 else "")
+                      + " The oracle has no retry: the next target waits for the next round. Check every slot's "
+                      "build (#93157)."),
+                subject={"ref_block": rnd.ref}, revision=str(rnd.ref),
+                evidence={"failed_rounds": refs, "votes": [vote_json(v) for v in rnd.votes], "deadline_block": deadline,
                           "distinct_roots": roots},
                 resolution=resolution))
         return out

@@ -4,6 +4,7 @@ first sweep after start, catch-up after downtime, and inputs that must never rea
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -56,8 +57,8 @@ def test_failed_round_pages_after_the_timeout(tmp_path):
     tick(w, oc, TIMEOUT_BLOCKS - 10)  # still inside the 30 min: votes may arrive
     assert open_keys(w, "m9") == {}
     tick(w, oc, 20)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page"}
-    assert pages_warns(w) == [(f"round:{ref}", "page", "open")]
+    assert open_keys(w, "m9") == {"failed-round": "page"}
+    assert pages_warns(w) == [("failed-round", "page", "open")]
     tick(w, oc, 5)
     assert len(sent(w, "m9")) == 1  # no duplicate while it stays open
 
@@ -75,7 +76,7 @@ def test_failed_round_resolves_when_superseded_or_committed_late(tmp_path):
     oc, w = oracle_worker(tmp_path)
     tick(w)
     ref = failed_round(oc, w)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page"}
+    assert open_keys(w, "m9") == {"failed-round": "page"}
     oc.vote(ref, 3)  # the third vote arrives late: RootCommitted after the timeout
     tick(w, oc, 1)
     assert open_keys(w, "m9") == {}
@@ -87,7 +88,8 @@ def test_failed_round_resolves_when_superseded_or_committed_late(tmp_path):
     tick(w, oc, 1)
     assert open_keys(w, "m9") == {}
     assert "can no longer commit" in sent(w, "m9", "kind='resolved'")[-1]["text"]
-    assert [k for k, s, kind in pages_warns(w)] == [f"round:{ref}", f"round:{ref2}"]
+    assert pages_warns(w) == [("failed-round", "page", "open")] * 2  # two runs, two incidents
+    assert str(ref2) in incidents(w, "m9")[-1]["title"]
 
 
 # ---------------------------------------------------------------- V2x.1 + V2b.7: cadence, from the clock (page)
@@ -192,7 +194,7 @@ def test_dissent_in_a_failed_round_uses_the_plurality_root(tmp_path):
     oc.vote(ref, 4)
     oc.vote(ref, 3, variant=1)
     tick(w, oc, TIMEOUT_BLOCKS + 5)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page", "dissent:3": "warn"}
+    assert open_keys(w, "m9") == {"failed-round": "page", "dissent:3": "warn"}
 
 
 def test_tied_roots_without_reference_warn_unattributed(tmp_path):
@@ -202,7 +204,7 @@ def test_tied_roots_without_reference_warn_unattributed(tmp_path):
     oc.vote(ref, 1)
     oc.vote(ref, 3, variant=1)
     tick(w, oc, TIMEOUT_BLOCKS + 5)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page", "split": "warn"}
+    assert open_keys(w, "m9") == {"failed-round": "page", "split": "warn"}
     oc.round()
     tick(w, oc, 1)
     assert open_keys(w, "m9") == {}
@@ -349,13 +351,13 @@ def test_thresholds_from_chain_rotated_slot_address_is_a_slot_for_reverts(tmp_pa
 def test_restart_does_not_duplicate_open_incidents(tmp_path):
     oc, w = oracle_worker(tmp_path)
     tick(w)
-    ref = failed_round(oc, w)
+    failed_round(oc, w)
     oc.round(variants={3: 1})
     tick(w, oc, 1)
     tick(w, seconds=10 * HOUR)
     before = sent(w, "m9")
     assert open_keys(w, "m9") == {"dissent:3": "warn", "cadence": "page"}
-    assert f"round:{ref}" in {k for k, *_ in pages_warns(w)}
+    assert "failed-round" in {k for k, *_ in pages_warns(w)}
     w2 = restart(tmp_path, w, oc)
     tick(w2)
     tick(w2, oc, 3, seconds=60)
@@ -409,7 +411,7 @@ def test_reorg_depth_1_removing_the_late_commit_reopens_the_failed_round(tmp_pat
     oc.reorg(fork, latest=0)  # the block carrying the RootCommitted is replaced; nothing in it on the new chain
     oc.voted.discard((ref, oc.root(ref), 3))
     tick(w, oc, 2)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page"}
+    assert open_keys(w, "m9") == {"failed-round": "page"}
     ids = [r["id"] for r in incidents(w, "m9")]
     assert len(ids) == 2 and ids[0] != ids[1]  # a new incident: the condition is back on the canonical chain
 
@@ -423,7 +425,7 @@ def test_reorg_depth_n_removing_the_votes_resolves_with_the_reorg_text(tmp_path,
     oc.vote(ref, 1)
     oc.vote(ref, 2, variant=1)
     tick(w, oc, TIMEOUT_BLOCKS + 10 + confirmations)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page", "split": "warn"}
+    assert open_keys(w, "m9") == {"failed-round": "page", "split": "warn"}
     depth = oc.c.number - first
     assert depth > confirmations + 100
     oc.reorg(first, latest=0, refs={ref})  # depth N: both votes leave the canonical chain
@@ -441,13 +443,13 @@ def test_reorg_depth_n_removing_the_votes_resolves_with_the_reorg_text(tmp_path,
 def test_reorg_keeps_a_condition_that_survives_on_the_new_chain(tmp_path):
     oc, w = oracle_worker(tmp_path)
     tick(w)
-    ref = failed_round(oc, w)
+    failed_round(oc, w)
     fork = oc.c.number
     oc.c.mine(3)
     tick(w, oc, 1)
     oc.reorg(fork, latest=0)  # blocks after the deadline replaced; the votes (and the failure) survive
     tick(w, oc, 2)
-    assert open_keys(w, "m9") == {f"round:{ref}": "page"}
+    assert open_keys(w, "m9") == {"failed-round": "page"}
     assert sent(w, "m9", "kind='resolved'") == [] and len(pages_warns(w)) == 1
 
 
@@ -490,7 +492,7 @@ def test_first_sweep_after_start_reports_ongoing_conditions_not_healed_history(t
     oc, w = oracle_worker(tmp_path, oc=oc, start_block=start, activation_block=start)
     tick(w)
     assert open_keys(w, "m9") == {"dissent:3": "warn"}
-    assert f"round:{ref}" not in {k for k, *_ in pages_warns(w)}
+    assert "failed-round" not in {k for k, *_ in pages_warns(w)}
 
 
 def test_catch_up_after_downtime_reports_a_healed_failed_round_once(tmp_path):
@@ -502,7 +504,7 @@ def test_catch_up_after_downtime_reports_a_healed_failed_round_once(tmp_path):
     oc.c.mine(TIMEOUT_BLOCKS + 5)
     oc.round()  # the worker was down for the failure and the recovery
     tick(w, oc, 1)
-    assert pages_warns(w) == [(f"round:{ref}", "page", "open")]
+    assert pages_warns(w) == [("failed-round", "page", "open")]
     assert [r["kind"] for r in sent(w, "m9", "kind='resolved'")] == ["resolved"]
     tick(w, oc, 3, seconds=60)
     w2 = restart(tmp_path, w, oc)
@@ -548,3 +550,35 @@ def test_missing_views_setting_is_a_startup_error(tmp_path):
 
     with pytest.raises(SystemExit, match="views"):
         make_worker(tmp_path, only=["m9"])
+
+
+# ---------------------------------------------------------------- recorded mainnet replay (2026-08 outage)
+
+
+def test_replay_mainnet_2026_08_outage(tmp_path):
+    """The spec's record (triage scan2, 2026-09-08): slot 3 dissenting in every round, then 8 failed rounds
+    25,706,485 .. 25,723,213 (slots 1 + 4 agree, slot 3 differs, slot 2 absent; one round with 3 roots) and a 72 h
+    gap between the commits of 25,704,098 and 25,725,603."""
+    from fixtures_oracle import replay_mainnet
+
+    failed = [25706485, 25708863, 25711251, 25713643, 25716040, 25718430, 25720821, 25723213]
+    oc, w = replay_mainnet(tmp_path)
+    opened = {r["key"]: r for r in incidents(w, "m9")}
+    fr = opened["failed-round"]  # one incident for the run of failed rounds, re-sent per failed round
+    assert fr["severity"] == "page" and fr["state"] == "resolved"
+    assert f'"failed_rounds": {json.dumps(failed)}' in fr["evidence"]
+    assert [r["kind"] for r in sent(w, "m9", "kind IN ('open','update')") if r["ikey"] == "failed-round"] == (
+        ["open"] + ["update"] * 7)
+    assert "can no longer commit: round 25725603" in sent(w, "m9", "kind='resolved'")[0]["text"]
+    assert opened["cadence"]["severity"] == "page" and opened["cadence"]["state"] == "resolved"
+    assert opened["split"]["severity"] == "warn" and "25718430" in opened["split"]["body"]
+    assert opened["dissent:3"]["severity"] == "page" and opened["dissent:3"]["state"] == "open"
+    escalation = sent(w, "m9", "kind='escalate'")
+    assert [r["ikey"] for r in escalation] == ["dissent:3"]
+    # spec M9 "a slot that has not voted for the committed root in any of the last 6 rounds": slot 3 voted another
+    # root in every committed round, so it is also absent from the committed root from the 6th one (25,692,127)
+    assert opened["absent:3"]["severity"] == "warn"
+    assert w.db.conn.execute("SELECT closed FROM m9_episodes WHERE episode='absent:3:25692127'").fetchone()[0] == 0
+    assert set(opened) == {"failed-round", "cadence", "split", "dissent:3", "absent:3"}
+    cadence_open = sent(w, "m9", "kind='open'")
+    assert [r["ikey"] for r in cadence_open if r["ikey"] == "cadence"] == ["cadence"]
