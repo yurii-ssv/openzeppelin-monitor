@@ -8,9 +8,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from fixtures_oracle import SLOTS, UpdaterWorld, incidents, open_keys, restart, sent, tick
-
-from rpc import RpcError
+from fixtures_oracle import SLOTS, UpdaterWorld, incidents, open_keys, sent, tick
 
 pytestmark = pytest.mark.m11
 
@@ -409,7 +407,6 @@ def test_a_transaction_the_rpc_cannot_return_fails_the_run(tmp_path):
     run = u.w.db.meta("run:m11")
     assert run["errors"] >= 1 and "returned no transaction" in run["last_error"]
     assert open_keys(u.w, "m11") == {}  # nothing concluded from a missing input
-    assert isinstance(RpcError("x"), Exception)
 
 
 def test_missing_updater_source_is_a_startup_error(tmp_path):
@@ -417,10 +414,6 @@ def test_missing_updater_source_is_a_startup_error(tmp_path):
 
     with pytest.raises(SystemExit, match="checks.m11"):
         make_worker(tmp_path, only=["m11"])
-
-
-def test_restart_helper_is_the_shared_one():
-    assert restart.__module__ == "fixtures_oracle"
 
 
 def test_empty_get_effective_balance_answer_fails_the_run(tmp_path):
