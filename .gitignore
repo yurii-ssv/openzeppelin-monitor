@@ -19,6 +19,7 @@ target/
 # Ignore data files
 data/**/*.txt
 data/**/*.json
+data/**/*.sqlite*
 
 # Ignore actual config files but not examples
 !examples/config/**/*.json
@@ -53,3 +54,7 @@ node_modules
 
 # Ignore logs dir
 logs/
+
+# Local secrets and dry-run state (user-owned, never tracked)
+config.zip
+.local-dry/
