@@ -335,3 +335,48 @@ def test_an_earlier_duplicate_of_the_same_address_healed_between_sweeps_is_sent_
     rows = [(r["kind"], f"at block {first}" in r["text"], f"at block {second}" in r["text"]) for r in sent(w, "m10")]
     assert rows == [("open", True, False), ("update", False, True)]
     assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"}
+
+
+# ---------------------------------------------------------------- repair 1: state-table rows (worker record)
+
+
+def test_reorg_orphaning_the_commit_that_closed_a_rotation_round_reopens_the_page(tmp_path):
+    """Class 2: the rotation page was resolved by the round's commit; a reorg removes that commit only."""
+    oc, w = setup(tmp_path)
+    ref = open_round(oc)
+    oc.replace(3, NEW)
+    tick(w, oc, 1)
+    commit_block = oc.c.number
+    oc.vote(ref, 4)
+    tick(w, oc, 1)
+    assert open_keys(w, "m10") == {}
+    oc.c.reorg(commit_block)
+    oc.latest = 0
+    oc.voted.discard((ref, oc.root(ref), 4))
+    oc.acc[(ref, oc.root(ref))] -= (4 * 10**24) // 4
+    oc.stub()
+    tick(w, oc, 2)
+    ((key, sev),) = open_keys(w, "m10").items()
+    assert key.startswith("rotation:") and sev == "page"
+    assert len([r for r in sent(w, "m10") if r["kind"] == "open"]) == 2
+
+
+def test_reorg_below_the_checks_first_run_lowers_its_baseline(tmp_path):
+    """M10 enabled on a worker that already ran (its first run is later than the recorded blocks); a reorg below that
+    first run puts a transient duplicate on the new chain: reported, not taken for history before the first run."""
+    oc, w = oracle_worker(tmp_path, ids=("m9",))
+    tick(w, oc, 3)
+    fork = oc.c.number
+    tick(w, oc, 5)
+    w2 = restart(tmp_path, w, oc, ids=("m9", "m10"))
+    tick(w2)
+    base = w2.db.meta("check:m10:baseline")
+    assert base > fork
+    oc.c.reorg(fork)
+    oc.stub()
+    oc.replace(2, SLOTS[1], mine=False)
+    oc.replace(2, NEW, mine=False)
+    oc.c.mine()
+    assert oc.c.sealed < base
+    tick(w2, oc, 12)
+    assert [(r["ikey"].split(":")[0], r["kind"]) for r in sent(w2, "m10")] == [("dup", "open"), ("dup", "resolved")]

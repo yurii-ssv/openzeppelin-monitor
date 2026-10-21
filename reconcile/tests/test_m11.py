@@ -8,7 +8,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from fixtures_oracle import SLOTS, UpdaterWorld, incidents, open_keys, sent, tick
+from fixtures_oracle import SLOTS, UpdaterWorld, incidents, open_keys, restart, sent, tick
 
 pytestmark = pytest.mark.m11
 
@@ -739,3 +739,124 @@ def test_follow_ups_of_a_persisting_mismatch_do_not_restart_the_weekly_compariso
         assert u.api.calls == calls + 1
     assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
     assert len(sent(u.w, "m11")) == 1  # the same clusters: no re-send per round
+
+
+# ---------------------------------------------------------------- repair 1: state-table rows (worker record)
+
+
+def test_first_sweep_reports_an_ongoing_zero_round_not_a_healed_one(tmp_path):
+    u = UpdaterWorld(tmp_path)  # bootstrapped, the check has not run yet: everything below is before its first run
+    u.round(updates=())
+    u.c.elapse(310)
+    u.round(updates=(0,))
+    u.c.elapse(310)  # a zero round healed by the next one: history
+    u.round(updates=())
+    u.c.elapse(310)  # an ongoing zero round
+    w2 = restart(tmp_path, u.w, u.oc, ids=("m11",), checks={"m11": u.cfg})
+    w2.checks["m11"].http_get = u.api.get
+    tick(w2)
+    assert open_keys(w2, "m11") == {"liveness": "warn"}
+    assert [r["kind"] for r in sent(w2, "m11")] == ["open"]
+
+
+def test_reorg_orphaning_the_updates_that_resolved_a_zero_round_reopens_it(tmp_path):
+    u = world(tmp_path)
+    u.round(updates=())
+    u.close()
+    ref2 = u.commit()
+    fork = u.c.number
+    u.update(0)
+    u.close()
+    assert open_keys(u.w, "m11") == {}
+    u.c.reorg(fork)  # the update that ended the zero run leaves the chain; the commit stays
+    u.ssv.clusters[bytes.fromhex(u.cids[0][2:])]["root"] = 0
+    u.oc.stub()
+    u.close(2)
+    assert u.ssv.latest_root == ref2
+    assert open_keys(u.w, "m11") == {"liveness": "page"}  # two zero rounds on the new chain
+    assert [r["kind"] for r in sent(u.w, "m11") if r["kind"] == "open"] == ["open", "open"]
+
+
+def test_a_revert_after_the_window_does_not_count(tmp_path):
+    u = world(tmp_path)
+    ref = u.round(updates=(0,))
+    u.c.elapse(305)
+    u.fail("MustUseLatestRoot", ref, i=1)  # 61 min after the commit
+    u.close()
+    assert pw(u.w) == []
+
+
+def test_an_empty_updater_slot_fails_the_run_loudly(tmp_path):
+    from eb_storage import u256
+
+    u = world(tmp_path)
+    u.oc.slots[4] = "0x" + "00" * 20
+    u.oc.stub()
+    u.c.emit_event("QuorumUpdated", [], u256(7500))
+    tick(u.w, u.oc, 1)
+    health = u.w.db.conn.execute("SELECT text FROM outbox WHERE key LIKE 'health:check-error:%' AND check_id='m11'"
+                                 ).fetchone()
+    assert health and "oracle slot 4 is empty" in health[0]
+    assert u.w.db.meta("run:m11")["errors"] >= 1
+
+
+def test_unreadable_parameters_keep_the_liveness_incident(tmp_path):
+    from fixtures_oracle import VIEWS
+
+    from eb_storage import u256
+    from params import GETTERS, selector
+
+    u = world(tmp_path)
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+    u.c.stub_call(VIEWS, selector(GETTERS["quorum_bps"]), revert="0x")
+    u.c.emit_event("QuorumUpdated", [], u256(7500))
+    u.round(updates=(0,))  # would heal it, but the parameters cannot be read
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+    u.oc.stub()
+    u.c.emit_event("QuorumUpdated", [], u256(7500))
+    tick(u.w, u.oc, 1)
+    assert open_keys(u.w, "m11") == {}
+
+
+def test_proof_api_answer_shapes(monkeypatch):
+    """http_get_json: a JSON error body (404 cluster not found) is an answer; anything else is ProofApiError."""
+    import io
+    import urllib.error
+    import urllib.request
+
+    from checks.m11_updater_liveness import ProofApiError, http_get_json
+
+    def raising(body, code=404):
+        def urlopen(req, timeout):
+            raise urllib.error.HTTPError(req.full_url, code, "x", {}, io.BytesIO(body))
+        return urlopen
+
+    monkeypatch.setattr(urllib.request, "urlopen", raising(b'{"error": "cluster not found"}'))
+    assert http_get_json("https://x.invalid/proof/1", 1) == {"error": "cluster not found"}
+    for body in (b"<html>bad gateway</html>", b"[1, 2]"):
+        monkeypatch.setattr(urllib.request, "urlopen", raising(body, 502))
+        with pytest.raises(ProofApiError, match="HTTP 502"):
+            http_get_json("https://x.invalid/proof/1", 1)
+
+    def refused(req, timeout):
+        raise urllib.error.URLError("refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    with pytest.raises(ProofApiError, match="URLError"):
+        http_get_json("https://x.invalid/proof/1", 1)
+
+
+def test_weekly_tracking_survives_a_restart(tmp_path):
+    u = world(tmp_path)
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[2]: 48})
+    u.close()
+    u.w = u.restart()
+    calls = u.api.calls
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[2]: 48})
+    u.close()
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"} and u.api.calls == calls + 1

@@ -912,3 +912,65 @@ def test_a_failed_round_added_and_healed_between_two_sweeps_is_still_sent(tmp_pa
     kinds = [(r["kind"], f"blockNum {b}" in r["text"] or f", {b}" in r["text"]) for r in sent(w, "m9")
              if r["ikey"] == "failed-round"]
     assert kinds == [("open", False), ("update", True), ("resolved", True)]
+
+
+# ---------------------------------------------------------------- repair 1: state-table rows (worker record)
+
+
+def test_inbox_unavailable_keeps_the_commit_root_revert_incident(tmp_path):
+    oc, w = oracle_worker(tmp_path, inbox=True)
+    tick(w)
+    failed_commit_root(oc, tmp_path / "failed-tx.jsonl", SLOTS[3], "AlreadyVoted")
+    tick(w, oc, 1)
+    key = f"revert:{SLOTS[3]}"
+    assert open_keys(w, "m9") == {key: "warn"}
+    (tmp_path / "failed-tx.jsonl").unlink()  # the Monitor's file is gone: reverts cannot be read
+    tick(w, oc, 1)
+    oc.round(voters=(3, 1, 2))  # would heal it, but the input is unknown
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {key: "warn"}
+    (tmp_path / "failed-tx.jsonl").write_text("")
+    tick(w, oc, 1)
+    tick(w, oc, 1, seconds=60)
+    assert open_keys(w, "m9") == {}
+
+
+def test_reorg_orphaning_a_commit_root_revert_resolves_it_with_the_reorg_text(tmp_path):
+    oc, w = oracle_worker(tmp_path, inbox=True)
+    tick(w, oc, 2)
+    fork = oc.c.number
+    failed_commit_root(oc, tmp_path / "failed-tx.jsonl", SLOTS[3], "AlreadyVoted")
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {f"revert:{SLOTS[3]}": "warn"}
+    oc.c.reorg(fork)  # the reverted transaction's block is replaced: the inbox entry is orphaned
+    oc.stub()
+    tick(w, oc, 3)
+    assert open_keys(w, "m9") == {}
+    (res,) = sent(w, "m9", "kind='resolved'")
+    assert REORG_TEXT in res["text"]
+    assert w.db.conn.execute("SELECT canonical FROM inbox").fetchone()[0] == 0
+
+
+def test_reorg_replacing_a_vote_block_rereads_its_timestamp(tmp_path):
+    """m9_block_times: the cached timestamp of a replaced block is dropped in the reorg run; the deadline follows the
+    new block's time (here 10 min later on the new chain)."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w, oc, 2)
+    ref = oc.c.number - 1
+    vote_block = oc.c.number
+    oc.vote(ref, 1)
+    tick(w)
+    t_old = oc.c.ts(vote_block)
+    assert w.db.conn.execute("SELECT ts FROM m9_block_times WHERE block=?", (vote_block,)).fetchone()[0] == t_old
+    oc.c.reorg(vote_block)
+    oc.voted.clear()
+    oc.acc.clear()
+    oc.stub()
+    oc.c.replaced[vote_block] = t_old + 600
+    oc.vote(ref, 1)  # the same vote, in a block 10 min later on the new chain
+    tick(w)
+    w.clock.now = t_old + 1900
+    tick(w)  # past the old deadline, before the new one
+    assert open_keys(w, "m9") == {}
+    tick(w, seconds=600)
+    assert open_keys(w, "m9") == {"failed-round": "page"}
