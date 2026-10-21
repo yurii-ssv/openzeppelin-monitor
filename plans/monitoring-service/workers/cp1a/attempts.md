@@ -68,3 +68,52 @@ Same entry shape as execution-log.md events, worker-side. Append only. Measured 
   8. `max_past_blocks` 3600 (≈ 12 h, one full oracle cadence) is a sizing choice recorded in the template; larger gaps skip blocks (Monitor logs `skipped N blocks`).
 - Resulting head: `9de75ec` (+ the commit holding this record and the status line)
 - Next action: completion handoff, status line, commit, worker_done.
+
+
+<a id="repair-1"></a>
+## Repair 1 — fixes for CP1A QA attempt 1 (F1, F2, F3, F4, F8; F5/F6/F7 recorded, not touched)
+
+- Observed UTC: 2026-10-21T12:42Z (end of repair); work 2026-10-21 from about 12:10Z
+- Task / Dispatch: `task_2888efd1d913` / `ctx_01667b707874` (fresh implementer, Claude Sonnet 5.5 high); coordinator terminal `term_89e2fa6f-482b-4551-995f-1f0e41c726a2`, worker terminal `term_e62ecf44-ace4-4dfc-9a21-d8708d3208e4`
+- Frozen start head: `3f9bf7ade84fd963dd5fc6956c46c8a9c7731147` (`git rev-parse HEAD` confirmed before any write; porcelain clean). Input: [qa/cp1a-attempt-1.md](../../qa/cp1a-attempt-1.md) §1–§4 and the harness in `/tmp/ms-qa-cp1a/` (read; rebuilt as committed scripts below, not reused).
+- Implementation head: `10c7a8f9dddde10a42ede04a1a86528030ee07a1` (+ a docs-only record commit with this entry and the status line). Not touched: `src/`, `qa/**`, `execution-log.md`, `.gitignore`, `config/`, `config.zip`, `.env`.
+
+### What changed (one line per finding)
+
+| Finding | Change | Regression |
+|---|---|---|
+| F1 HIGH (M13 row 3) | New monitor `ssv_attacker_interaction_monitor` + trigger `telegram_attacker_interaction` (page, existing `TELEGRAM_TOKEN`/`TELEGRAM_CHAT_ID`, no new variable). Addresses: proxy, Views, SSV token, cSSV, DAO Safe, our wallets `0x16A5…`, `0x0431…` and both attacker addresses. One `transactions` condition, `status: Any`, no `value` predicate: `((from == A1 OR from == A2) AND (to == <contracts> OR to == <wallets>)) OR ((to == A1 OR to == A2) AND (from == <wallets>))`. Zero-value and reverted interactions page; an attacker transfer to an unrelated address does not (spec row 3 is literal: SSV contracts or our wallets). Attackers were removed from the value monitor. | `deploy/tests/m13-fork-regression.sh` (anvil fork, local transactions only): 15 cases, 8 attacker/wallet cases incl. QA's `commitRoot` zero-value revert; red on the old tree, green on the new |
+| F4 MEDIUM | `ssv_retired_addresses_monitor`: addresses = the two retired keys only; expression `(to == 0x3A98… OR to == 0x4BC6…) AND value > 0` (incoming only). `to` is an empty string for contract creations; measured 0 ERROR lines at block 26240350 (374 txs, 1 creation). Old slot-4 `commitRoot`/`updateClusterBalance` attempts stay in `ssv_retired_updater_attempt_monitor` (unchanged, status Any). | Real block 26169289 (QA's outgoing transfer): old 1 match → new 0; 25991146 (incoming): 1; fork cases in/out |
+| F3 MEDIUM | `ssv_dao_success_monitor` (Telegram) drops every M15/M10 event (the 16 spec names + `ModuleUpgraded`) and the governance functions that emit them (`replaceOracle`, `upgradeTo`, `upgradeToAndCall`, all `update*`). The Discord twin keeps all 25 events/functions. `deploy/check-m15-coverage.sh` now checks coverage on the Discord monitor and fails if any non-Failure monitor routed to a Telegram trigger carries those events/functions unconditionally. Any M10 page decision stays with the stateful worker. | Real `OracleReplaced` block 26169066 on `https://eth.drpc.org`: old Telegram monitor 1 match → new 0; Discord monitor 1; `selftest.sh` re-adds the event/function to a copy and expects red |
+| F2 HIGH | `deploy/check-templates.sh`: S0 input validation (missing/empty `--config-dir`, missing `--root` or `deploy/`, missing option value), grep exit codes handled (0 found = fail, 1 clean, >1 = "secret scan failed"), jq failures not swallowed, monitors must have `networks` and a `match_conditions` with a non-empty list, counts come from the checked directory (`find`, no `ls`), S7 calls the ABI check. | `selftest.sh` (12 F2 cases) and the QA's three exact commands: old exit 0 / `checker: OK` → new exit 1 |
+| F8 HIGH | New `deploy/check-abi.sh --config-dir <dir>` (A1–A7: non-empty conditions, ABI present, every event/function signature canonical-matches an ABI entry incl. tuples, expression parameter names exist on that event/function, tx expression fields known, no `&&`/`\|\|`). `render.sh` runs it on the rendered config before the Monitor `--check` (skipped with `--no-check`, like the Monitor check) and exits 1 on failure; `check-templates.sh` runs it as S7. The render gate semantics are unchanged (event-0013: success line + zero ERROR lines); the Rust `--check` boundary is untouched. | Tracked-template mutation `Nonexistent(uint256)` in `ssv_seed_stake_monitor.json`: render.sh exit 1, restored by `git checkout`, exit 0, porcelain empty (rows in `evidence/repair-1/vrows-run.log`) |
+
+### Deviations, decisions and notes for the coordinator
+
+1. **F3 scope decision (judgment call):** I removed the *functions* that emit the M15 events from the Telegram DAO monitor as well as the events, otherwise a successful `replaceOracle` call would still reach Telegram unconditionally. Consequence: Telegram no longer gets governance *Success* function pings for `update*`/`upgradeTo*`/`replaceOracle`; Failure pages (`ssv_dao_failure_monitor`) are unchanged. The non-M15 extras stay on Telegram (events `OwnershipTransferStarted`, `OwnershipTransferred`, `AdminChanged`, `BeaconUpgraded`, `Initialized`, `SSVNetworkUpgradeBlock`, `NetworkEarningsWithdrawn`, `ERC20Rescued`; functions `acceptOwnership`, `initialize*`, `renounceOwnership`, `rescueERC20`, `transferOwnership`, `withdrawNetworkSSVEarnings`): the spec does not classify them; coordinator/Marco decide. The Discord twin still posts to the legacy variable `DISCORD_WEBHOOK_DAO_SUCCESS`, not `DISCORD_WEBHOOK_INFO` (F5, CP3).
+2. **F1 target set** is my reading of "SSV contracts or our wallets": spec §4/§6 addresses (proxy, Views, SSV token, cSSV, DAO Safe) and the two M12 wallets. Calls that reach the proxy through another contract (internal calls) are invisible to a transaction-level rule. Attackers no longer page on a plain value transfer with an unrelated counterparty (previously `value > 0` in either direction); say so if the spec intends that.
+3. `check-abi.sh` A5 (expression parameter names) is a regex heuristic on `NAME <operator>`; A1–A4 are exact. It accepts the 32 tracked monitors; a future expression form it cannot parse would be reported by its operator-less identifiers only if they precede a comparison.
+4. `render.sh --no-check` (used by `scripts/local-dry-run.sh --prepare`) skips both the ABI and the Monitor check, as before.
+5. Not repaired, per the brief: F5 legacy Discord variable names (CP3; the coordinator asks Marco), F6 Rust `status: Success` mislabel (unchanged; `ssv_dao_success_monitor` and the other `*_success` monitors still also match reverts), F7 `.gitignore` for `data/**/*.jsonl` (CP3).
+6. Archive endpoints: replays on `https://eth.drpc.org` (nonempty blocks/logs); `https://ethereum-rpc.publicnode.com` only as `MAINNET_RPC_URL` for the render/`--check` rows. The drpc free tier rejected `eth_getLogs` ranges of 1000+ blocks ("ranges over 10000 blocks are not supported on free plan"); the OracleReplaced block 26169066 was found with the Blockscout v1 `module=logs&action=getLogs` API (read-only GET) and confirmed by the one-shot itself (1 match on the Discord monitor).
+
+### Measurements on the repaired head (`evidence/repair-1/vrows-run.log`, produced by `evidence/repair-1/vrows.sh`; every row has exit code and counts)
+
+| Row | Result |
+|---|---|
+| V1A.1 | render exit 0, abi-check OK, success line, 0 ERROR, 32 active monitors / 1 network (publicnode); raw `--check` exit 0 + success line + 0 ERROR |
+| V1A.1f | raw `--check` after removing the closing brace of a rendered monitor: exit 0, no success line, 2 ERROR (the accepted deviation: the raw exit code is not a gate); render.sh with the same brace removed in the template: exit 1 (now first caught by `check-abi.sh` ABI-1 unparseable); render.sh with a dangling trigger (valid JSON, ABI-clean): exit 1 with abi-check OK, 3 ERROR lines, no success line, i.e. the event-0013 Monitor-log gate still trips on its own; restored: exit 0, porcelain empty |
+| V1A.1 ABI falsifier (F8) | mutation shown with `git diff --stat` (1 file, 1+/1-); render.sh exit **1** (`A3 event Nonexistent(uint256) is not an event in the ABI`), `check-templates.sh` exit 1 (S7); restored by `git checkout`: render exit 0, porcelain empty |
+| V1A.2 | 0 plain values; `git grep` secret shapes exit 1 / 0 rows; checker `OK (32 monitors, 30 triggers, 1 network)` |
+| F2 | absent / empty `--config-dir` and missing `--root`: exit 1 each with an S0 message; monitor without `networks` / `match_conditions`: exit 1; restored exit 0, porcelain empty |
+| V1A.3 | 26239237 (reverted `liquidate`): 1 match, inbox +1, 11 keys, 0 ERROR; 26239259 control: 0 / +0; 26239255 (implementer block): 1 / +1 |
+| V1A.4 / V1A.4f | 26177496: 1 match; 26239694 own sender: 0; sender predicate removed 1; restored 0; all 0 ERROR |
+| V1A.5 | 25991146: 1 match; F4 26169289 outgoing: 0; old-key attempt 26167892: 1; other-sender control 26239655: 0 |
+| V1A.6 | 26240350: `== 0` 0 → `> 0` 1 → restored 0, porcelain empty |
+| V1A.7 | all 16 M15 names on the Discord DAO monitor (9 extras listed); no M15/M10 info routed to Telegram |
+| V1A.8 | `docker compose config` exit 0, `/app/data` → worktree `data`; `max_past_blocks` 3600, `recovery_config` present, 1 RPC |
+| selftest / fork | `deploy/tests/selftest.sh`: 31 passed, 0 failed, 0 skipped; `deploy/tests/m13-fork-regression.sh` (fork of `https://eth.drpc.org` @ 26240350, anvil, local txs only): 15 cases, 0 failures; the same script on `3f9bf7a` templates: 15/15 failures (`evidence/repair-1/red-baseline-3f9bf7a.log`, also old F3/F4 1 match each and old checker exit 0 on the QA's missing-input commands) |
+
+- Falsifiers: all red then restored; `git status --porcelain` after the run shows only the evidence log written by the run.
+- Resulting head: see the status line in plan.md (docs-only commit after `10c7a8f`).
+- Next action: fresh Codex QA; I clear no finding.

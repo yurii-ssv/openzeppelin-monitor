@@ -18,6 +18,7 @@ Task contract: [plan.md §8 CP1A](../../plan.md) · Attempt log: [attempts.md](a
 | S4 dry-run + compose + .env.example | DONE | `58240a5` | — |
 | S5 V rows + falsifiers | DONE | attempt 2 (all V1A rows run; none NOT RUN) | — |
 | S6 handoff | DONE | this block, plan.md status line | Codex QA |
+| R1 repair 1 (F1, F2, F3, F4, F8) | DONE — AWAITING FRESH QA | [repair 1](attempts.md#repair-1), code head `10c7a8f`, runner `evidence/repair-1/vrows.sh` | fresh Codex QA decides; F5/F6/F7 recorded, not touched |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -38,3 +39,17 @@ Next owner: Codex QA on the lane branch head.
 Local-only: .local-dry/, target/ (ignored).
 ```
 
+
+## Repair 1 handoff (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / live dispatch: task_2888efd1d913 / ctx_01667b707874
+Assignment outcome: F1, F2, F3, F4, F8 repaired; V1A.1-V1A.8 + falsifiers re-run, none NOT RUN. Completed work != acceptance; fresh QA decides.
+Base -> head: 3f9bf7a -> docs commit after code head 10c7a8f (branch mtabasco/ms-cp1a)
+Changed paths: deploy/{check-abi.sh(new),check-templates.sh,check-m15-coverage.sh,render.sh}; deploy/config: monitors ssv_attacker_interaction (new), ssv_retired_addresses, ssv_dao_success; trigger telegram_attacker_interaction (new), telegram_retired_addresses; deploy/tests/{selftest.sh,m13-fork-regression.sh}; workers/cp1a/**.
+Evidence: evidence/repair-1/vrows-run.log (every row exit+counts), red-baseline-3f9bf7a.log. selftest 31/0; anvil fork regression 15/0 (old tree 15/15 red); F8 Nonexistent(uint256): render exit 1, restored 0, tree clean. Endpoint eth.drpc.org (archive), publicnode for render.
+Decisions for coordinator: Telegram DAO monitor lost the M15 events AND their functions; non-M15 extras (ownership/upgrade-admin/initialize/rescue) still on Telegram; attacker rule is tx-level (internal calls invisible); attacker plain transfers to unrelated addresses no longer page.
+Not touched: F5 (CP3), F6, F7.
+Pending human input: none.
+Next owner: fresh Codex QA.
+```

@@ -1,0 +1,58 @@
+HEAD 10c7a8f9dddde10a42ede04a1a86528030ee07a1
+pre-status: ?? plans/monitoring-service/workers/cp1a/evidence/repair-1/vrows-run.log
+### V1A.1 render gate + raw check
+ROW | V1A.1 render | exit 0 | Found 32 active monitor | 0 ERROR | 1 abi-check OK
+ROW | V1A.1 raw --check | exit 0 | success-line 1 | 0 ERROR | Found 32 active monitor
+### V1A.1f falsifier: brace removed from a rendered monitor (raw exit 0 + ERROR; gate = render of a mutated template)
+ROW | V1A.1f raw --check, brace removed | exit 0 | success-line 0 | 2 ERROR
+ROW | V1A.1f render.sh, template brace removed | exit 1 | FAIL: ABI-1 monitors/ssv_seed_stake_monitor.json: not parseable by jq: jq: parse error: Unfinished JSON term at EOF at line 3304, column 0
+ROW | V1A.1f restored render.sh | exit 0 | porcelain '?? plans/monitoring-service/workers/cp1a/evidence/repair-1/vrows-run.log'
+ROW | V1A.1f render.sh, dangling trigger (abi-check passes, Monitor ERROR trips the gate) | exit 1 | abi-check OK 1 | 3 ERROR line(s) | success-line 0
+### V1A.1 ABI falsifier (F8): one-field mutation Nonexistent(uint256) in the TRACKED template, restored by git checkout
+ROW | F8 mutation diff |  1 file changed, 1 insertion(+), 1 deletion(-)
+ROW | F8 render.sh mutated (must be non-zero) | exit 1 | FAIL: monitors/ssv_seed_stake_monitor.json A3 event Nonexistent(uint256) is not an event in the ABI
+ROW | F8 check-templates.sh mutated | exit 1 | S7 FAIL: monitors/ssv_seed_stake_monitor.json A3 event Nonexistent(uint256) is not an event in the ABI
+ROW | F8 render.sh restored | exit 0 | Found 32 active monitor | porcelain '?? plans/monitoring-service/workers/cp1a/evidence/repair-1/vrows-run.log'
+### V1A.2
+ROW | V1A.2 plain values 0 | secret-shape grep exit 1 (0 rows)
+ROW | V1A.2 checker | exit 0 | checker: OK (32 monitors, 30 triggers, 1 network)
+### F2 the QA's three exact missing-input commands (must be non-zero) + monitor-field deletions
+ROW | F2 absent --config-dir | exit 1 | FAIL: S0 --config-dir /tmp/vrows-absent is not a directory
+ROW | F2 empty --config-dir | exit 1 | FAIL: S0 /tmp/vrows-empty/monitors is missing
+ROW | F2 missing --root | exit 1 | FAIL: S0 --root /tmp/vrows-missing-root is not a directory
+ROW | F2 monitor without networks | exit 1 | FAIL: S6 deploy/config/monitors/ssv_seed_stake_monitor.json has no networks
+ROW | F2 monitor without match_conditions | exit 1 | FAIL: S6 deploy/config/monitors/ssv_seed_stake_monitor.json has no match_conditions with a non-empty events/fu
+ROW | F2 restored | exit 0 | checker: OK (32 monitors, 30 triggers, 1 network) | porcelain ''
+### V1A.3 inbox
+ROW | V1A.3 reverted liquidate | endpoint https://eth.drpc.org | ssv_failed_tx_inbox @ 26239237 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +1 | 0 ERROR
+ROW | V1A.3 control (successful liquidate) | endpoint https://eth.drpc.org | ssv_failed_tx_inbox @ 26239259 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+ROW | V1A.3 implementer block | endpoint https://eth.drpc.org | ssv_failed_tx_inbox @ 26239255 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +1 | 0 ERROR
+ROW | V1A.3 last inbox line key count (expect 11): 11
+### V1A.4 / V1A.4f other-sender
+ROW | V1A.4 other sender 0x28bE update | endpoint https://eth.drpc.org | ssv_updater_other_sender_monitor @ 26177496 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +0 | 0 ERROR
+ROW | V1A.4f own-sender block | endpoint https://eth.drpc.org | ssv_updater_other_sender_monitor @ 26239694 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+ROW | V1A.4f sender predicate removed (control must go red) | endpoint https://eth.drpc.org | ssv_updater_other_sender_monitor @ 26239694 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +0 | 0 ERROR
+ROW | V1A.4f restored | endpoint https://eth.drpc.org | ssv_updater_other_sender_monitor @ 26239694 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+### V1A.5 retired addresses (A) + F4 outgoing
+ROW | V1A.5 incoming to retired slot 4 (4192795588647 wei) | endpoint https://eth.drpc.org | ssv_retired_addresses_monitor @ 25991146 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +0 | 0 ERROR
+ROW | F4 outgoing from retired slot 4 (must be 0) | endpoint https://eth.drpc.org | ssv_retired_addresses_monitor @ 26169289 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+ROW | M13 old slot-4 key commitRoot attempt | endpoint https://eth.drpc.org | ssv_retired_updater_attempt_monitor @ 26167892 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +0 | 0 ERROR
+ROW | M13 attempt monitor control (other senders) | endpoint https://eth.drpc.org | ssv_retired_updater_attempt_monitor @ 26239655 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+### V1A.6 M8 FeesSynced pipeline proof
+ROW | V1A.6 baseline (== 0) | endpoint https://eth.drpc.org | ssv_seed_stake_monitor @ 26240350 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+ROW | V1A.6 mutated (> 0, expect 1) | endpoint https://eth.drpc.org | ssv_seed_stake_monitor @ 26240350 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +0 | 0 ERROR
+ROW | V1A.6 restored (== 0) | endpoint https://eth.drpc.org | ssv_seed_stake_monitor @ 26240350 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+ROW | V1A.6 porcelain after | '?? plans/monitoring-service/workers/cp1a/evidence/repair-1/vrows-run.log'
+### V1A.7 / F3
+ROW | V1A.7 check-m15-coverage | exit 0 | 9 extras | all M15 events present;no M15/M10 info event or governance-update function is routed to Telegram;
+ROW | F3 real OracleReplaced block, Telegram DAO monitor (must be 0) | endpoint https://eth.drpc.org | ssv_dao_success_monitor @ 26169066 | exit 0 | 0 match(es) | matches.jsonl +0 | inbox +0 | 0 ERROR
+ROW | F3 real OracleReplaced block, Discord DAO monitor (must be 1) | endpoint https://eth.drpc.org | ssv_dao_discord_success_monitor @ 26169066 | exit 0 | 1 match(es) | matches.jsonl +1 | inbox +0 | 0 ERROR
+### V1A.8 compose
+ROW | V1A.8 docker compose config | exit 0 | volumes ["/Users/marco/orca/workspaces/ssv-network-monitor/ms-cp1a/data"]
+ROW | V1A.8 rendered network: {"max_past_blocks":3600,"recovery_config":{"enabled":true,"cron_schedule":"0 */5 * * * *","max_blocks_per_run":100,"max_block_age":7200,"max_retries":3,"retry_delay_ms":1000},"rpc_urls":1}
+### selftest + fork regression
+ROW | selftest: ok    tracked deploy/ tree unchanged by the self-test
+ROW | selftest: selftest: 31 passed, 0 failed, 0 skipped
+ROW | fork regression: m13-fork-regression: 15 cases, 0 failure(s), fork https://eth.drpc.org @ 26240350
+post-status: ?? plans/monitoring-service/workers/cp1a/evidence/repair-1/vrows-run.log
+done
