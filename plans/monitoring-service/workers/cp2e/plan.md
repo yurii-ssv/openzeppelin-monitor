@@ -9,6 +9,7 @@ Task contract: [plan.md §8 CP2e](../../plan.md) · Attempt log: [attempts.md](a
 - Observable completion and owned verification IDs: A7; V2x.1–V2x.6 (§7 "CP2 lanes", V2x.4 `rpc_budget` applies) and V2e.7 (legacy inventory from API `migrated=false` agrees with the log-derived set at one block). Optional subgraph cross-check: needs `SSV_SUBGRAPH_API_KEY` — **DEFERRED** (absent on this host; owner Marco).
 - Dependencies and sources: plan §1, §2 (D2, D6, D8, D9), §6; `reconcile/checks/README.md` (all of it, esp. §5.1, §6.1, §6.2); spec M6, M7, §4, §5; `ssv-network-triage/evidences/#91046/{ssv-solvency-snapshot,sum-ssv-cluster-balances,ssv-liquidation-timeline,ssv-phantom-projection}.mjs`; pinned source `ssv-network-triage/ssv-network@f7ac487` (`SSVViews.sol`, `ClusterLib.sol`, `SSVStaking.sol`, `SSVStorage.sol`).
 - Commit capability checked: yes (`git config user.name` = Marco Tabasco; WIP commits `9cf8c96`, `3fc207d`).
+- M7 completeness guard: table `m7_legacy` (ids only; not rewound on a reorg — a legacy cluster cannot be created after the activation; every run re-checks each id in storage).
 
 ## Design (for QA)
 
@@ -34,9 +35,25 @@ Reorg rules: M6 `m6_clusters` — on a reorg run, `last_clear_block > A` → NUL
 |---|---|---|---|
 | S1 read inputs, rulings | DONE | [attempt 1](attempts.md#attempt-1) | — |
 | S2 implement M6, M7, fixtures, tests | DONE | [attempt 2](attempts.md#attempt-2) | — |
-| S3 LIVE V2e.7 + LIVE M6/M7 evaluation | see attempts | [attempt 3](attempts.md#attempt-3) | — |
-| S4 V-rows, falsifiers, self-review | see attempts | [attempt 4](attempts.md#attempt-4) | — |
+| S3 LIVE V2e.7 + LIVE M6/M7 evaluation | DONE (V2e.7 log side NOT RUN: endpoint limits) | [attempt 3](attempts.md#attempt-3) | CP3/Marco: rerun `live_legacy.py` with an archive getLogs endpoint |
+| S4 V-rows, falsifiers, self-review | DONE | [attempt 4](attempts.md#attempt-4) | Codex QA |
 
 ## Completion handoff (≤ 250 words, also sent as the `worker_done` summary)
 
-(filled at completion)
+```text
+Task / live dispatch: task_78dba27a67d8 / ctx_146d942c81b2 (CP2e, Claude Opus high)
+Assignment outcome: M6 and M7 implemented on the CP1B framework; unit rows green; V2e.7 partly LIVE.
+Base -> resulting commit: cbe0d03 -> lane head in the CP2e status line of plan.md (code tested at b4f6c9e)
+Actual changed paths: reconcile/checks/{m6_legacy_coverage,m7_ssv_solvency}.py, checks/__init__.py (1 line),
+  config.example.json (checks.m6, checks.m7), tests/{test_m6,test_m7,fixtures_legacy}.py, workers/cp2e/**,
+  plan.md CP2e status line; merge of plan/monitoring-service (docs). No deletions; venv untracked/ignored.
+Verification: V2x.1 31+26 passed; V2x.2 3; V2x.3 3; V2x.4 2 (M6 <=3x350, M7 <=3+2352+350); reorg 12;
+  V2x.6 297 passed, ruff clean; V2e.7 API side PASS (1026/1026 migrated=false legacy in storage, 0
+  contradictions), log side NOT RUN (public getLogs limits/429, exact errors in attempt 3).
+Falsifiers: F6a-c, F7a-d red then green; porcelain 0 after each.
+Log anchor: workers/cp2e/attempts.md#attempt-3, #attempt-4; evidence/live-run{7,9}*.json.
+New finding: LIVE M7 surplus = exactly 1 SSV at 26,242,622; 422 inert zero-balance legacy clusters (Q2 A).
+Pending human input: ask msg_efdf8c0c88e7 (log source for V2e.7); subgraph cross-check DEFERRED (no key).
+Next owner and exact action: Codex QA on the lane head.
+Preservation: all committed; scratch LIVE logs local only.
+```
