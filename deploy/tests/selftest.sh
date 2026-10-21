@@ -177,6 +177,82 @@ else
 fi
 expect "mutation sweep: every kind x every contract_spec entry of every monitor is red, exactly one A9 per mutated entry" zero 'abi-mutation-sweep: [0-9]+ checker runs, 0 failure' -- bash "$ROOT/deploy/tests/abi-mutation-sweep.sh"
 
+echo "== F9: every one of the 17 M15 events is individually required (spec names + ModuleUpgraded)"
+# Independent of the utility: the same 17 names read straight from the spec text.
+m15names=$( { awk '/^### M15 /{on=1; next} /^### M16 /{on=0} on' "$ROOT/docs/ssv-specs/monitoring-service-spec.md" | grep -o '`[A-Z][A-Za-z0-9]*`' | tr -d '`'; echo ModuleUpgraded; } | sort -u)
+[ "$(printf '%s\n' "$m15names" | wc -l | tr -d ' ')" = 17 ] && ok "spec M15 names plus ModuleUpgraded are 17" || bad "expected 17 M15 names, got: $(printf '%s ' $m15names)"
+for ev in $m15names; do
+  sig=$(jq -r --arg e "$ev" '.match_conditions.events[] | select(.signature | split("(")[0] == $e) | .signature' "$m/ssv_dao_discord_success_monitor.json" | head -1)
+  if [ -z "$sig" ]; then bad "M15 event $ev is missing from the tracked Discord DAO monitor"; continue; fi
+  r=$(fresh "m15del-$ev")
+  mutate "$r/deploy/config/monitors/ssv_dao_discord_success_monitor.json" ".match_conditions.events |= map(select(.signature != \"$sig\"))"
+  expect "deleting $sig from the Discord DAO monitor is red" nonzero "missing: $ev\\(" -- bash "$r/deploy/check-m15-coverage.sh"
+  rm -rf "$r"
+done
+r=$(fresh m15types)
+mutate "$r/deploy/config/monitors/ssv_dao_discord_success_monitor.json" '(.match_conditions.events[] | select(.signature == "QuorumUpdated(uint16)") | .signature) = "QuorumUpdated(uint32)"'
+expect "an M15 event under the wrong types (QuorumUpdated(uint32)) is red" nonzero 'missing: QuorumUpdated\(uint16\)' -- bash "$r/deploy/check-m15-coverage.sh"
+echo "== D2: the Telegram DAO monitor carries no unconditional M15 info event"
+n=$(jq --argjson names "$(printf '%s\n' $m15names | jq -R . | jq -s -c .)" '[.match_conditions.events[]? | select(.expression == null) | select((.signature | split("(")[0]) as $e | $names | index($e))] | length' "$m/ssv_dao_success_monitor.json")
+[ "$n" = 0 ] && ok "tracked Telegram DAO success monitor has 0 unconditional M15 events" || bad "tracked Telegram DAO success monitor has $n unconditional M15 events"
+for ev in $m15names; do
+  sig=$(jq -r --arg e "$ev" '.match_conditions.events[] | select(.signature | split("(")[0] == $e) | .signature' "$m/ssv_dao_discord_success_monitor.json" | head -1)
+  [ -n "$sig" ] || continue
+  r=$(fresh "m15tg-$ev")
+  mutate "$r/deploy/config/monitors/ssv_dao_success_monitor.json" ".match_conditions.events += [{\"signature\":\"$sig\",\"expression\":null}]"
+  expect "adding $sig to the Telegram DAO monitor is red" nonzero "M15/M10 info on a Telegram route" -- bash "$r/deploy/check-m15-coverage.sh"
+  rm -rf "$r"
+done
+
+echo "== D11: the six *_SUCCESS Discord triggers use DISCORD_WEBHOOK_INFO; the nine others keep their own variable"
+T=$ROOT/deploy/config/triggers
+SIX="cluster dao liquidation operator oracle validator"
+for n in $SIX; do
+  v=$(jq -r ".discord_${n}_success.config.discord_url.value" "$T/discord_${n}_success.json")
+  [ "$v" = DISCORD_WEBHOOK_INFO ] && ok "discord_${n}_success -> DISCORD_WEBHOOK_INFO" || bad "discord_${n}_success uses $v"
+done
+own=$(jq -r 'to_entries[] | select(.value.trigger_type == "discord" and (.key | test("_success$|_other_sender$") | not)) | .value.config.discord_url.value' "$T"/*.json | sort)
+[ "$(printf '%s\n' "$own" | wc -l | tr -d ' ')" = 9 ] && [ "$(printf '%s\n' "$own" | uniq -d | wc -l | tr -d ' ')" = 0 ] && ! grep -qx DISCORD_WEBHOOK_INFO <<<"$own" \
+  && ok "nine other Discord triggers: nine distinct own variables, none is the info one" || bad "other Discord trigger variables: $(printf '%s ' $own)"
+n=$(jq -r 'to_entries[] | select(.value.trigger_type == "discord") | .value.name' "$T"/*.json | sort | uniq -d | wc -l | tr -d ' ')
+[ "$n" = 0 ] && ok "Discord trigger display names stay unique" || bad "duplicate Discord trigger names"
+gone="DISCORD_WEBHOOK_(CLUSTER|DAO|LIQUIDATION|OPERATOR|ORACLE|VALIDATOR)_SUCCESS"
+if grep -rEn "$gone" "$ROOT/deploy" "$ROOT/.env.example" "$ROOT/docker-compose.yaml" "$ROOT/docker-compose.local.yaml" "$ROOT/scripts" >/dev/null 2>&1; then
+  bad "a removed *_SUCCESS webhook variable name still appears in deploy/, .env.example, docker-compose*.yaml or scripts/"
+else ok "no removed *_SUCCESS webhook variable name anywhere in deploy/, .env.example, docker-compose*.yaml, scripts/"; fi
+for n in $SIX; do
+  r=$(fresh "d11del-$n")
+  mutate "$r/deploy/config/triggers/discord_${n}_success.json" "del(.discord_${n}_success.config.discord_url)"
+  expect "discord_${n}_success without discord_url is red" nonzero "discord_${n}_success: config.discord_url must be" -- bash "$r/deploy/check-templates.sh"
+  r=$(fresh "d11plain-$n")
+  mutate "$r/deploy/config/triggers/discord_${n}_success.json" ".discord_${n}_success.config.discord_url = {\"type\":\"plain\",\"value\":\"x\"}"
+  expect "discord_${n}_success with a plain discord_url is red" nonzero "discord_${n}_success: config.discord_url must be" -- bash "$r/deploy/check-templates.sh"
+  r=$(fresh "d11own-$n")
+  mutate "$r/deploy/config/triggers/discord_${n}_success.json" ".discord_${n}_success.config.discord_url.value = \"DISCORD_WEBHOOK_$(printf '%s' "$n" | tr a-z A-Z)_SUCCESS\""
+  expect "discord_${n}_success back on its own variable is red (D11)" nonzero "info trigger must use DISCORD_WEBHOOK_INFO" -- bash "$r/deploy/check-templates.sh"
+done
+r=$(fresh d11fail)
+mutate "$r/deploy/config/triggers/discord_cluster_failed.json" '.discord_cluster_failed.config.discord_url.value = "DISCORD_WEBHOOK_INFO"'
+expect "a *_FAILED trigger on the info variable is red (D11)" nonzero "only info triggers" -- bash "$r/deploy/check-templates.sh"
+envfile=$(jq -r '.. | objects | select(.type? == "environment") | .value' "$T"/*.json "$ROOT"/deploy/config/networks/*.json | sort -u)
+zero=0
+strict_env() { # strict_env <skip-var>: every referenced variable with a shape-valid value, except <skip-var>
+  local v; for v in $envfile; do [ "$v" = "${1:-}" ] && continue
+    case "$v" in *RPC_URL*) echo "$v=https://rpc.invalid.example" ;; *WEBHOOK*) echo "$v=https://discord.com/api/webhooks/${zero}/placeholder" ;; *TOKEN*) echo "$v=0000000000:$(printf 'x%.0s' {1..35})" ;; *) echo "$v=placeholder" ;; esac
+  done; echo "TELEGRAM_CHAT_ID=-100123"; }
+for v in $envfile; do
+  grep -qE "^      $v:\$" "$ROOT/docker-compose.yaml" || bad "docker-compose.yaml has no passthrough for $v"
+  grep -qE "^$v=" "$ROOT/.env.example" || bad "\.env.example does not list $v"
+done
+extra=$(grep -E '^      (MAINNET|TELEGRAM|DISCORD)[A-Z_0-9]*:$' "$ROOT/docker-compose.yaml" | tr -d ' :' | grep -vxF "$envfile" || true)
+[ -z "$extra" ] && ok "docker-compose.yaml passes through exactly the $(printf '%s\n' "$envfile" | wc -l | tr -d ' ') referenced variables (and .env.example lists each)" || bad "docker-compose.yaml passes through unreferenced variable(s): $extra"
+if [ -x "$BIN" ]; then
+  expect "render --strict with DISCORD_WEBHOOK_INFO unset is red" nonzero 'unset environment variables: DISCORD_WEBHOOK_INFO$' -- env -i PATH="$PATH" MONITOR_BIN="$BIN" $(strict_env DISCORD_WEBHOOK_INFO) bash "$ROOT/deploy/render.sh" --out "$TMP/d11-strict-red/config" --strict
+  expect "render --strict with exactly the listed variables set is green (no removed variable is required)" zero '--check passed$' -- env -i PATH="$PATH" MONITOR_BIN="$BIN" $(strict_env) bash "$ROOT/deploy/render.sh" --out "$TMP/d11-strict-ok/config" --strict
+else
+  skipped=$((skipped + 2)); echo "SKIP  render --strict D11 cases (no binary at $BIN)"
+fi
+
 after=$(cd "$ROOT" && find deploy -type f -exec shasum {} + | sort | shasum)
 [ "$before" = "$after" ] && ok "tracked deploy/ tree unchanged by the self-test" || bad "tracked deploy/ tree changed during the self-test"
 

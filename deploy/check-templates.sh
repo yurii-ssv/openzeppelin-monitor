@@ -10,7 +10,9 @@
 #   S3  V0.3: no webhook URL or bot-token shaped string anywhere under deploy/ (secret scan)
 #   S4  triggers: unique keys and names; per type the required credential / destination fields
 #         telegram  token = {type:environment, value: NAME}; chat_id = "${TELEGRAM_CHAT_ID}"; message title+body
-#         discord   discord_url = {type:environment, value: NAME}; message title+body
+#         discord   discord_url = {type:environment, value: NAME}; message title+body; D11: a trigger
+#                   whose key ends _success or _other_sender (info) uses DISCORD_WEBHOOK_INFO, every
+#                   other Discord trigger (failed, dissent, safe, large transfer) its own variable
 #         script    language, script_path to an existing file under triggers/scripts, timeout_ms > 0
 #   S5  networks: every RPC is an environment reference; the first (weight 100) is MAINNET_RPC_URL;
 #       max_past_blocks > 0; recovery_config complete
@@ -101,6 +103,8 @@ for f in "$CFG"/triggers/*.json; do
          (if ($t.config.message.title | nonempty | not) or ($t.config.message.body | nonempty | not) then "\($k): config.message.title/body missing" else empty end)
        elif $t.trigger_type == "discord" then
          (if ($t.config.discord_url | env_ref | not) then "\($k): config.discord_url must be {type:environment,value:NAME}" else empty end),
+         (if ($k | test("_success$|_other_sender$")) and ($t.config.discord_url.value != "DISCORD_WEBHOOK_INFO") then "\($k): info trigger must use DISCORD_WEBHOOK_INFO (D11), not \($t.config.discord_url.value)" else empty end),
+         (if ($k | test("_success$|_other_sender$") | not) and ($t.config.discord_url.value == "DISCORD_WEBHOOK_INFO") then "\($k): only info triggers (_success, _other_sender) may use DISCORD_WEBHOOK_INFO (D11)" else empty end),
          (if ($t.config.message.title | nonempty | not) or ($t.config.message.body | nonempty | not) then "\($k): config.message.title/body missing" else empty end)
        elif $t.trigger_type == "script" then
          (if ($t.config.language | nonempty | not) then "\($k): config.language missing" else empty end),

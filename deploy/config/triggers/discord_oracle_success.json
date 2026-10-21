@@ -5,7 +5,7 @@
     "config": {
       "discord_url": {
         "type": "environment",
-        "value": "DISCORD_WEBHOOK_ORACLE_SUCCESS"
+        "value": "DISCORD_WEBHOOK_INFO"
       },
       "message": {
         "title": "Oracle Action",
