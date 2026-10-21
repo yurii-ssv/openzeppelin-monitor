@@ -81,7 +81,8 @@ def test_scheduler_dispatches_registered_check(tmp_path, registered_stub):
     chain = FakeChain()
     chain.mine()
     _, w = make_worker(tmp_path, None, chain=chain, clock=clock,
-                  checks={"m5": {"enabled": False}, "stub_registered": {"threshold": 7}})
+                  checks={**{cid: {"enabled": False} for cid in registry.REGISTRY if cid != "stub_registered"},
+                         "stub_registered": {"threshold": 7}})
     stub = w.checks["stub_registered"]
     assert list(w.checks) == ["stub_registered"] and stub.config == {"threshold": 7}
 

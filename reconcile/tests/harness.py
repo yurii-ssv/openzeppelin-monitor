@@ -44,6 +44,8 @@ def make_worker(tmp_path, stubs=None, *, only=None, chain=None, clock=None, noti
         "inventory": {"api_url": None},
     }
     raw.update(over)
+    if only is None and stubs is None and "checks" not in over:
+        only = ("m5",)
     if only is not None:
         checks_cfg = {cid: dict(c) for cid, c in raw.get("checks", {}).items()}
         for cid in registry.REGISTRY:

@@ -51,6 +51,9 @@ def make(tmp_path, chain=None, notifier=None, **over):
         "max_log_range": 10_000, "db_path": str(tmp_path / "eb.sqlite"), "layout": {},
         "alerts": {"mode": "record", "label": "test", "digest_interval_s": 0},
     }
+    from checks import registry as _registry
+
+    raw.setdefault("checks", {cid: {"enabled": False} for cid in _registry.REGISTRY if cid != "m5"})
     raw.update(over)
     from eb_reconcile import DEFAULTS
 
