@@ -20,7 +20,8 @@ Task contract: [plan.md §8 CP1A](../../plan.md) · Attempt log: [attempts.md](a
 | S6 handoff | DONE | this block, plan.md status line | Codex QA |
 | R1 repair 1 (F1, F2, F3, F4, F8) | DONE — QA attempt 2 FAILED (F1b, F8b) | [repair 1](attempts.md#repair-1), code head `10c7a8f`, runner `evidence/repair-1/vrows.sh` | superseded by R2 |
 | R2 repair 2 (F8b fixed, F1b documented) | DONE — QA attempt 3 FAILED (F1b, F9) | [repair 2](attempts.md#repair-2), code head `f04c79e`, runner `evidence/repair-2/vrows.sh` | superseded by R3 |
-| R3 repair 3 (F9 fixed, F1b closed by D10, D11 routing) | DONE — AWAITING FRESH QA | [repair 3](attempts.md#repair-3), code head `e981687`, runner `evidence/repair-3/vrows.sh` | fresh Codex QA decides; F6/F7 untouched |
+| R3 repair 3 (F9 fixed, F1b closed by D10, D11 routing) | DONE — QA attempt 4 FAILED (F10) | [repair 3](attempts.md#repair-3), code head `e981687`, runner `evidence/repair-3/vrows.sh` | superseded by R4s; F6/F7 untouched |
+| R4 repair 4 (F10 fail-open class: every gate fails closed) | DONE — AWAITING FRESH QA | [repair 4](attempts.md#repair-4), code head `f4eef81`, runner `evidence/repair-4/vrows.sh` | fresh Codex QA decides |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -84,6 +85,22 @@ D11: six *_SUCCESS triggers on DISCORD_WEBHOOK_INFO; nine keep own variables; na
 F1b: README row-by-row Monitor / CP2c watch / accepted gap, cites D10.
 Evidence: evidence/repair-3/vrows-run.log; selftest 119/0/0 (baseline 51); sweep 510/0; fork suite 15/0; live rows on eth.drpc.org, render on publicnode.
 Open: D10/D11 rows absent from this lane's plan.md §2 (exist on CP2 branches); F6/F7 untouched; removed names persist only in append-only records.
+Pending human input: none.
+Next owner: fresh Codex QA.
+```
+
+
+## Repair 4 handoff (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / live dispatch: task_1e49252c142c / ctx_8a8217f82c12
+Assignment outcome: F10 fixed and the whole fail-open class audited; V1A rows + falsifiers re-run, none NOT RUN. Completed work != acceptance; fresh QA decides.
+Base -> head: 72029c0 -> docs commit after code head f4eef81 (branch mtabasco/ms-cp1a)
+Changed paths: deploy/{shape.jq(new),check-templates.sh,check-abi.sh,check-m15-coverage.sh,render.sh,README.md,abi/derive.sh,tests/{selftest.sh,abi-mutation-sweep.sh,m13-fork-regression.sh},config/triggers/scripts/inbox_append.sh}; scripts/local-dry-run.sh; workers/cp1a/**.
+F10: QA reproducer (config string/array) now exit 1 (S1b), was exit 0 OK on 72029c0. Every jq/grep/find status is checked; shape gate (S1b/A0); empty/unreadable/binary/loop/dangling files, stray files, missing or stub jq ("jq is required") red; secret scan reads binary, refuses symlinks.
+Also fail-open and fixed: check-abi skipped non-regular/empty monitors and printed OK on a failed count; M15 gate (required set shrinks if spec truncated; later file hid a Telegram route; D2 scan skipped failing files); sweep skipped failing monitors; local-dry-run rewrites (&& mv) left production secret refs, first-trigger-decides; render coerced rpc_urls. Full table: attempts.md#repair-4.
+Evidence: selftest 289/0/0 (119 + 170); F10 section 125 RED on 72029c0, 174/0 green; sweep 510/0; fork 15/0; evidence/repair-4/.
+Not touched: F6, F7, src/, qa/**.
 Pending human input: none.
 Next owner: fresh Codex QA.
 ```

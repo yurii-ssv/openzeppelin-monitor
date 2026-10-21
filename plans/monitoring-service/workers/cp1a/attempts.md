@@ -218,3 +218,143 @@ The six `*_SUCCESS` triggers (cluster, dao, liquidation, operator, oracle, valid
 
 - Resulting head: see the status line in plan.md (docs-only commit after `e981687`).
 - Next action: fresh Codex QA.
+
+
+
+## Repair 4 — F10: the structural checker (and its siblings) failed open
+
+- Observed UTC: 2026-10-21; Task / Dispatch: `task_1e49252c142c` / `ctx_8a8217f82c12` (fresh implementer, Claude Sonnet 5.5 high).
+- Frozen start head (`git rev-parse HEAD` before any write; porcelain clean): `72029c05a0e08feff67f9ed585638f98c459f7c8` (`git rev-parse HEAD` at start; QA evidence commit over `45fe9403`). Code head after repair: `f4eef81fb4b98260f908c6626e80d82280d6c087` (docs-only record commits follow). QA report: [cp1a-attempt-4](../../qa/cp1a-attempt-4.md) §1 F10.
+
+## Root cause and the class
+
+F10: S4 ran `msgs=$(jq ... "$f")` and fed `emit`; jq's exit status was never read, so a jq runtime error (`Cannot index string with string "discord_url"`) left `msgs` empty, which `emit` reads as "no violations", and the script printed `checker: OK`, exit 0. The same shape (a command substitution or a `for x in $(jq ...)` whose status is dropped, so an empty capture means "clean") occurred at many sites; the audit below lists every one. Fix, in three layers:
+
+1. **Status**: every jq in the gates goes through `jqo` (check-templates) or an explicit `|| FAIL` / `|| exit`; a failing jq is a FAIL line with jq's own message, never an empty result.
+2. **Shape**: new `deploy/shape.jq` (`monitor_shape`, `trigger_file_shape`, `network_shape`) turns a wrong type (config a string/array/number/null/true, events an object, addresses a string, ...) into one named FAIL line (S1b in check-templates, A0 in check-abi, `file_ok` in check-m15-coverage). It never raises.
+3. **Inputs**: empty, unreadable, binary, looping or dangling files, and stray non-JSON files in `monitors/ triggers/ networks/`, are failures; jq missing or non-working (`jq -n 1+1` must print 2) exits non-zero with "jq is required".
+
+## Audit: every site, its disposition, its regression
+
+Legend: RED = the new regression fails on the frozen head `72029c0` (evidence/repair-4/red-frozen-72029c0.log: 49 ok / 125 FAIL, the 49 ok are the closed controls and the three baseline cases); CLOSED = already failed closed on the frozen head (by luck or `set -e`), kept and pinned by a regression anyway.
+
+### deploy/check-templates.sh
+| Site | Frozen behaviour | Disposition |
+|---|---|---|
+| S0 `find -print -quit` non-empty test; glob vs find mismatch (`.hidden.json`) | find error read as "no .json files" (CLOSED, wrong message); hidden file passed S0 but glob skipped it | listing status checked; every entry classified (readable regular `.json`, `.gitkeep`, `triggers/scripts`, else FAIL); count of regular files must be > 0. RED (empty/binary/stray/unreadable/loop/dangling x3 dirs) |
+| S1 `jq -e . f >/dev/null 2>&1` | passes `5`, `"s"`, `[]`; message hides jq error; empty/`null` only red through `-e` | empty → "is empty"; exactly one JSON value; jq message shown. RED (empty, binary) |
+| (new) S1b shape | wrong-typed config/trigger/monitor/network passed (string/array/number/true config OK, exit 0; triggers=string, networks=string, name=5, trigger_conditions=string, max_past_blocks="3600", rpc_urls[0]=5 all OK) | shape gate. RED (trigger config x5, entry x6, file x5, message, discord_url, 14 monitor shapes x2 gates, 4 monitor-file types, 7 network shapes) |
+| S2 `plain=$(jq ...) \|\| fail`; `[ -z "$plain" ]` | status checked (CLOSED) but an EMPTY plain value printed an empty line → passed | counts `type=="plain"` objects with `-s length`. RED (empty plain), CLOSED (injection) |
+| S3 `grep -rElI` | `-I` skipped binary files; `grep -r` does not follow symlinks (secret behind a symlink unscanned); `find`/grep error text handled | `-a` (binary scanned as text, LC_ALL=C), `find -H ! -type f ! -type d` symlink/special files are FAIL, grep rc 0/1/other kept. RED (binary with webhook, symlink) |
+| S4 `trigger_keys=$(jq keys[] \| sort)`, `dup`, `dupname` | statuses never read; keys injection exited 1 only because S6 then found every trigger reference undefined (CLOSED by luck); `dupname` RED | `jqo`; "no trigger defined" FAIL added. CLOSED (keys), RED (names) |
+| S4 per-file required-field jq (**F10**) | status never read → OK | `jqo`. RED (30 calls injected, exit 0 on frozen) |
+| S4 script paths `for p in $(jq ...)` | status dropped, word-splitting, `basename` of a `-x` path | `jqo` + `while read`, `${p##*/}`. RED |
+| S5 networks `msgs=$(jq ...)` | status never read | `jqo`. RED |
+| S6 slugs / monitor names `$(jq ... \| sort)` | status dropped | `jqo`. RED (names), CLOSED-by-luck (slugs: `null` row) |
+| S6 `[ "$(jq '.addresses \| length')" -gt 0 ]` (addresses, networks, triggers length) | jq error → `[: integer expression expected` → rc 2 → FAIL with an ugly message | `jqo` + numeric test. CLOSED, message fixed |
+| S6 `for t in $(jq -r '.triggers[]?')`, `.networks[]?`, `.trigger_conditions[]?.script_path` | **fail open**: `?` swallows type errors and a failing jq leaves an empty loop, so `triggers: "x"` / `networks: "x"` passed unchecked | `jqo` + shape gate. RED |
+| S6 `printf keys \| grep -qx "$t"` | regex (`.` matches any char: `telegram.seed.stake` passed against `telegram_seed_stake`), `-`-prefixed names are options, SIGPIPE under pipefail | `grep -qxF --` on a here-string. RED (literal-match case) |
+| S6 match_conditions `jq -e` | CLOSED | `jqo` + `= true`. CLOSED |
+| S7 `$(check-abi.sh) \|\| fail` | CLOSED | unchanged |
+| OK line `count()` find/wc | cosmetic | array lengths |
+| jq absence | `command -v jq` only (a stub that exits 0 would turn every scan into a pass) | `command -v jq` **and** `jq -n '1+1' == 2`. RED for a non-working jq; no-jq CLOSED |
+
+### deploy/check-abi.sh
+| Site | Frozen behaviour | Disposition |
+|---|---|---|
+| `for f in monitors/*.json; do [ -f "$f" ] \|\| continue` | **fail open**: a symlink loop, dangling link, directory or unreadable file was silently skipped (not counted, not failed) | non-regular / unreadable → FAIL; stray entries FAIL. RED (loop, dangling, unreadable) |
+| empty monitor file | **fail open**: jq prints nothing for empty input, exit 0 → file passed | `[ -s ]` → "is empty". RED |
+| wrong types (`.events[]?`, `.addresses[]?`) | mostly red by jq error or A2; `addresses=[5]`, `contract_spec="x"` red by accident; events as object depended on `+` erroring | A0 shape lines. RED (message) |
+| `compared=$(jq -s ...)` then prints `OK (... $compared ...)` | **fail open**: jq failure printed OK with an empty count | status checked → exit 1. RED (injection exit 0 on frozen) |
+| reference-validity jq, per-monitor jq | CLOSED | unchanged, pinned by injection |
+| jq absence | as check-templates | as check-templates |
+
+### deploy/check-m15-coverage.sh
+| Site | Frozen behaviour | Disposition |
+|---|---|---|
+| `spec=$( { grep -o ...; echo ModuleUpgraded; } \| sort -u)`; `[ -n "$spec" ]` | **fail open**: `ModuleUpgraded` makes the set never empty, so a truncated/edited M15 section silently shrank the required set to 2 and the gate passed | named-event count must equal 16 (plan pin; +ModuleUpgraded = 17), else exit 2. RED |
+| `names_json=$(... \| jq -R . \| jq -s -c .)` unchecked | CLOSED by luck (later error) | checked. CLOSED |
+| `req=$(jq ... 2>/dev/null \| sort -u)` | stderr discarded; a mid-stream failure could leave a partial list | checked, stderr kept, count must equal the required-name count |
+| `have=$(jq ... \| sort -u)` | failure → empty → "all missing" (CLOSED, but wrong reason); `events` as an object iterated its values and passed | status + shape. RED (events object) |
+| `comm -23 <(...) <(...)` | process-substitution statuses unchecked | replaced by `grep -qxF` loops |
+| `tg=$(jq -s 'add \| ...')` | **fail open**: `add` merged by key, so a later file redefining `telegram_dao_success` as Discord hid the Telegram route → the whole D2 check passed | per-file `to_entries`, shape-checked. RED |
+| `bad=$(for f in monitors/*.json; do jq ... "$f"; done)` | **fail open**: a monitor on which jq failed (malformed, `triggers` a string, binary) was silently skipped from the D2 routing check | each file shape-checked and its jq status checked → FAIL. RED (triggers string, binary, injection) |
+| SPEC missing | `awk` error → "no longer mentions module updates" (CLOSED, wrong message) | explicit check |
+| jq absence | none (message was "cannot read the proxy ABI") | RED |
+
+### deploy/render.sh
+| Site | Disposition |
+|---|---|
+| `rewrite()` `jq > tmp && mv` | CLOSED by `set -e` (the function's status trips it) but left `*.tmp` and no message → explicit check, tmp removed, message |
+| `.rpc_urls \|= map(...)` | **coerced** a malformed `rpc_urls` object `{}` into `[]` and rendered green (exit 0 on frozen) → now errors unless it is an array. RED |
+| Telegram `map_values` on a non-object file | now an explicit error. CLOSED→pinned |
+| `refs=$(jq ... \| sort -u)` | CLOSED by set -e/pipefail, silent → message |
+| `printf \| grep 'Found N' \| sed` at the end | CLOSED (silent exit 1) → explicit message, and the "Found N active monitor(s)" count must equal the number of unpaused rendered monitors (a file the binary silently skipped is not a pass). New |
+| binary `--check` | unchanged: exit 0 is no gate; success line + 0 ERROR decide |
+| jq absence | message kept; non-working jq now caught |
+
+### deploy/abi/derive.sh
+`derived=$(jq ...)` CLOSED by `set -e`; `--check`'s `$(jq . "$OUT")` failure compared an empty string (CLOSED, wrong message). Added: jq-required check, explicit read failure, non-empty `derived`. jq-required RED.
+
+### deploy/tests/abi-mutation-sweep.sh
+`specced=$(jq ...)` unchecked then `[ "" -gt 0 ] \|\| continue` — **a monitor whose jq failed was skipped silently** (RED: one-monitor injection exit 0 on frozen); `n=$(jq ...)` unchecked, `[ "$a9" -ne "" ]` errors inside `if A \|\| B` read as false → the cell passed (RED); mutated-file jq status; `[ -f ] \|\| continue` on non-regular entries; `mktemp -d`; `cp`. All now counted failures.
+
+### deploy/tests/selftest.sh (the harness)
+`mutate` swallowed a failing jq (the "mutated" file stayed pristine and the case was judged on something else) → now a FAIL; `fresh` ignored `cp` failures → harness-failed flag; the D11 "removed names absent" grep read exit 2 (error) as "none" → only exit 1 passes.
+
+### deploy/tests/m13-fork-regression.sh
+`matches()` (empty count ≠ expected, CLOSED), receipts (no receipt = FAIL, CLOSED). `anvil_impersonateAccount` / `anvil_setBalance` statuses were ignored (a failed impersonation shows up later as "no receipt", CLOSED) → now abort with exit 2.
+
+### deploy/config/triggers/scripts/inbox_append.sh (runtime)
+CLOSED by `set -eu` for jq failure and `error("incomplete match")`; a jq that exits 0 without output appended an **empty line** (RED) → `[ -n "$line" ]` guard. Pinned: empty stdin, `{}`, garbage, stub jq, no jq → exit non-zero, 0 bytes.
+
+### scripts/local-dry-run.sh
+| Site | Frozen behaviour | Disposition |
+|---|---|---|
+| `jq ... > tmp && mv` (TEST_RPC_URL network rewrite) | **fail open**: `set -e` ignores a failing first command of `&&`; the production RPC reference stayed (RED) | `rewrite()` aborts |
+| `jq ... > tmp && mv` (Discord / Telegram trigger rewrite to TEST_*) | **fail open**: a failed rewrite left the rendered trigger on the production webhook / token variable, so a configured `DISCORD_WEBHOOK_*` would receive real deliveries (RED) | `rewrite()` aborts |
+| `to_entries[0].value.trigger_type` decides the whole file | **fail open**: a file whose first trigger was the inbox script kept every other trigger untouched, including a production Discord one (RED) | decided per trigger; empty files removed |
+| monitors' `.triggers` rewrite `&& mv` | fail open (RED) | `rewrite()` |
+| `available=$(jq -s ...)` | CLOSED (set -e, silent) | message |
+| (new) post-condition | none | refuses to run if any rewritten trigger still references a non-`TEST_*` variable |
+| jq absence | `command -v` only | + working check |
+
+### Not changed (out of scope, no gate): scripts/docker_compose.sh, scripts/validate_network_config.sh, scripts/rust_docs.sh, scripts/linux/* — not part of the deploy gates. `docker-compose.yaml`, `.env.example`: no scripts.
+
+## New regressions (selftest 119 → 289)
+
+Section F10 of `deploy/tests/selftest.sh` (`SELFTEST_ONLY=f10` runs it alone): trigger config string / array / number / null / true; trigger entry and file wrong types; message/discord_url wrong types; empty plain value; 14 wrong-typed monitor fields through check-templates and check-abi; monitor files `[]`/`"x"`/5/null; M15 events-as-object / triggers-string / bad trigger file; 8 network shapes; render rejects config x5, `rpc_urls` object, trigger file array; empty / binary / symlink-loop / dangling / unreadable / stray-binary file in each of the three config dirs; check-abi empty, loop, dangling, unreadable; M15 empty and binary monitor; secret scan binary + symlink; jq absent and jq stub for six scripts plus render and local-dry-run; a jq failure injected at 41 sites (shim `jq` fails calls containing a marker; the case is vacuous-red if the marker never hit); sweep one-monitor injections and loop; M15 truncated spec, missing spec, duplicate trigger key; literal reference matching; local-dry-run (baseline, test channels, multi-trigger file, other script, five injections); inbox bridge x6.
+
+RED/GREEN: `evidence/repair-4/red-frozen-72029c0.log` (the same section run against `git archive 72029c0`: 49 ok / 125 FAIL, `SELFTEST_ONLY=f10`); `evidence/repair-4/f10-section-green.log` (174 ok / 0 FAIL on the repaired tree); full selftest `evidence/repair-4/selftest-full.log`.
+
+### Measurements on `f4eef81` (`evidence/repair-4/vrows.sh` → `vrows-run.log`, run on committed head `6f01879`, a docs-only commit over `f4eef81`; endpoints per live row in the log)
+
+| Row | Result |
+|---|---|
+| V1A.1 | render exit 0 (`https://ethereum-rpc.publicnode.com`), abi-check OK (3356 entries), 32 active monitors (now cross-checked against the 32 unpaused templates), 0 ERROR; raw `--check` exit 0, success line, 0 ERROR |
+| V1A.1f | brace removed: raw exit 0, no success line, 2 ERROR; render.sh exit 1 (ABI-1); dangling trigger: render exit 1, abi-check OK, 3 ERROR; restored 0 |
+| F8 / F8b falsifiers | `Nonexistent(uint256)`: render 1, check-templates 1, restored 0; six F8b mutations red, restored 0; sweep **510 runs, 0 failures** |
+| V1A.2 | 0 plain values; secret-shape `git grep` exit 1 (0 rows); checker OK (32 / 30 / 1) |
+| F2 | absent/empty `--config-dir`, missing `--root`, no `networks`, no `match_conditions`: exit 1 each; restored 0 |
+| V1A.3 (`eth.drpc.org`) | 26239237: 1 match, inbox +1, 11 keys; control 26239259: 0/+0; 26239255: 1/+1; 0 ERROR |
+| V1A.4 / V1A.4f (`eth.drpc.org`) | 26177496: 1; own sender 26239694: 0; predicate removed 1; restored 0 |
+| V1A.5 (`eth.drpc.org`) | 25991146 incoming: 1; 26169289 outgoing: 0; 26167892 old-key attempt: 1; 26239655 control: 0 |
+| V1A.6 (`eth.drpc.org`) | 26240350: `== 0` 0 → `> 0` 1 → restored 0 |
+| V1A.7 | 17 required events present (8 extras); no M15/M10 info routed to Telegram; 17 deletions each exit 1; old-gate baseline (204d528) exit 0; real OracleReplaced 26169066 (`eth.drpc.org`): Telegram 0 / Discord 1 |
+| D11 | six on INFO, nine own variables, 0 duplicate names, 0 removed names outside plans/; falsifier exit 1; restored render 0 |
+| V1A.8 | `docker compose config` exit 0, `/app/data` → worktree `data`; `max_past_blocks` 3600, recovery config, 1 RPC |
+| **F10** | QA reproducer, config `"qa_invalid_config"` and `[]`: checker exit **1** (`S1b ... config must be an object, got string/array`), render.sh exit 1; restored 0. Same reproducer on `git archive 72029c0`: exit **0**, `checker: OK` (the defect, red baseline) |
+| selftest (`evidence/repair-4/selftest-full.log`) | **289 passed, 0 failed, 0 skipped** (baseline 119; +170 in section F10) |
+| F10 section RED/GREEN | frozen `72029c0` + new selftest, `SELFTEST_ONLY=f10`: 49 ok / **125 FAIL** (`red-frozen-72029c0.log`; the 49 ok are the sites that already failed closed and the baseline); repaired tree: 174 ok / 0 FAIL (`f10-section-green.log`) |
+| fork suite | `m13-fork-regression.sh`: 15 cases, 0 failures (anvil fork of `https://eth.drpc.org` @ 26240350, local txs only) |
+
+### Notes
+
+1. `local-dry-run.sh --prepare` renders byte-identical `.local-dry/config` on the frozen and repaired trees with and without TEST_* channels, except the intended `inbox_append.sh` guard (diffed).
+2. Behaviour changes a reviewer should know: S0 now rejects stray non-JSON files in `monitors/ triggers/ networks/` (the Monitor ignores them, a binary blob there is not configuration); the M15 gate exits 2 if the spec's M15 section names other than 16 events (revisit the required set; same spirit as the existing "module updates" guard); render.sh additionally requires the Monitor's active-monitor count to equal the unpaused templates.
+3. Not touched: F5 (resolved per D11 in repair 3), F6, F7, `src/`, `qa/**`, `execution-log.md`. `scripts/docker_compose.sh`, `validate_network_config.sh`, `rust_docs.sh`, `scripts/linux/*` are not deploy gates and were not audited.
+4. Process note: bash reads a running script incrementally; I edited `selftest.sh` during one run and it died with a syntax error. That run was discarded and re-run from a stable tree; no result in this record comes from it.
+5. I clear no finding; fresh QA decides.
+
+- Resulting head: see the status line in plan.md (docs-only commit after `f4eef81`).
+- Next action: fresh Codex QA.
