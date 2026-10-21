@@ -110,3 +110,15 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - Finding (worker, to be re-measured by QA): `cargo test --locked --test integration -- filters::evm::filter` is flaky: intermittent red in `test_handle_match_with_duplicate_event_signatures` / `test_handle_match_with_key_collision` (`MockTriggerExecutionService::new(?, ?): No matching expectation found`, mockall static-context race). Pristine `main@86a17db` (git archive) flakes the same way (1/60). `--test-threads=1` green; the target test `test_failure_monitor_only_fetches_receipts_for_monitored_transactions` passed in every run.
 - Decision: commit the Rust diff as its own commit; V0.8 recorded as GREEN WITH KNOWN FLAKE (pre-existing), all run counts kept, the serial variant as a separately named row, flake signature and baseline control recorded. New finding for CP3 (integrator): de-flake the mockall static expectations. Reported to Marco.
 - Next: CP0 continues.
+
+
+<a id="event-0008"></a>
+## Event 0008 — CP0 independent QA: PASS WITH NOTES
+
+- Observed UTC: 2026-10-21T10:43Z.
+- Actor: Codex QA, requested gpt-6.1-sol / high; task `task_16bd4412f92a`, dispatch `ctx_4bd11bbdbf4e`, terminal `term_c15d7008-960a-44ee-b4ec-0165463a90d5`.
+- Frozen head and placement: `9772b2da2acd427aeaf6687c27656ee89bd895d8`, QA branch `mtabasco/ms-qa-cp0`; initial porcelain empty, 367 GiB available. No implementation or user-owned ignored path touched; no installs, push, transactions, or alerts.
+- Outcome: [qa/cp0-attempt-1.md](qa/cp0-attempt-1.md) begins PASS WITH NOTES; CP0 status set VERIFIED. All V0.1–V0.12 and V0.3f have explicit outcomes. Build exit 0; first sandboxed Rust row exit 101 (16 passed / 2 failed: known mockall race and RPC connection fault), environment-cleared exact row exit 0 (18 passed), separate serial row exit 0 (18 passed); existing event-0007 flake exception preserved. Exact child-venv row unavailable (127); coordinator-authorized existing interpreter passed 30 tests, with all imports proved from the QA worktree.
+- Falsifiers: tracked runtime token detected and restored clean; one-token Rust guard mutation caused the real receipt test to fail 3 receipts versus 1, restored green; current credential/reference checks green, deleted token demonstrated V0.6's missing-field blind spot; M5 prior-open-incident corruption and oracle missing-input/repeated-run controls passed. All mutations in external scratch; restoration porcelain empty.
+- Notes and owners: CP3 retains the known static-mock race; CP1A should pair V0.6 with required-field/schema checks; coordinator should use `.local-dry/` in fresh-child ignore probes. No blocking implementation finding; historical intermediate uncommitted state, live-config identity and implementer statistical run counts remain unconfirmed, explicitly separated from QA measurements.
+- Preservation and next owner: local QA evidence commit only; coordinator may integrate the evidence and proceed to CP1A/CP1B under the plan. Detailed commands, counts, exceptions, scripts and repository proof are in the report.
