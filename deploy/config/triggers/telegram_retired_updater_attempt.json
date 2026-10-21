@@ -1,0 +1,18 @@
+{
+  "telegram_retired_updater_attempt": {
+    "name": "Retired Slot-4 Key Used",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "Retired Slot-4 Key Used",
+        "body": "M13 PAGE: the leaked old slot-4 key called the SSV proxy.\nFunction: ${functions.0.signature}\nCalled by: ${transaction.from}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}

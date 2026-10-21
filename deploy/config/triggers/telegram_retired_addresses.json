@@ -1,0 +1,18 @@
+{
+  "telegram_retired_addresses": {
+    "name": "Retired Address Alert",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "Retired Address Alert",
+        "body": "M13 PAGE: value movement on a compromised or retired address.\nValue: ${transaction.value} wei\nFrom: ${transaction.from}\nTo: ${transaction.to}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 {
   "discord_dao_safe_failed": {
-    "name": "DAO Safe Failed Alert",
+    "name": "Discord DAO Safe Failed Alert",
     "trigger_type": "discord",
     "config": {
       "discord_url": {

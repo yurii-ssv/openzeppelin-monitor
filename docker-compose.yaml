@@ -1,5 +1,12 @@
 ---
 # Ports `8081` for metrics server.
+#
+# Config: render the tracked templates first, `deploy/render.sh --out config`
+# (CP3 adds the runbook); `./config` is mounted read-only. Secrets and RPC endpoints are never in the
+# files: the rendered config refers to the environment variables passed through below, which come
+# from the shell or an untracked `.env` (names listed in `.env.example`).
+# Data: `./data` (override with MONITOR_DATA_DIR) is persistent: the Monitor's last processed block
+# and the failed-tx inbox (`data/inbox/failed-tx.jsonl`, read by the worker) live there.
 
 services:
   monitor:
@@ -20,13 +27,33 @@ services:
       # Default: 1GB (1073741824 bytes)
       LOG_MAX_SIZE: ${LOG_MAX_SIZE:-1073741824}
       IN_DOCKER: 'true'
+      # Pass-through (no value): defined only when set in the shell or `.env`.
+      MAINNET_RPC_URL:
+      MAINNET_RPC_URL_2:
+      TELEGRAM_TOKEN:
+      DISCORD_WEBHOOK_INFO:
+      DISCORD_WEBHOOK_CLUSTER_FAILED:
+      DISCORD_WEBHOOK_CLUSTER_SUCCESS:
+      DISCORD_WEBHOOK_DAO_FAILED:
+      DISCORD_WEBHOOK_DAO_SAFE_FAILED:
+      DISCORD_WEBHOOK_DAO_SUCCESS:
+      DISCORD_WEBHOOK_LARGE_ETH_TRANSFER:
+      DISCORD_WEBHOOK_LIQUIDATION_FAILED:
+      DISCORD_WEBHOOK_LIQUIDATION_SUCCESS:
+      DISCORD_WEBHOOK_OPERATOR_FAILED:
+      DISCORD_WEBHOOK_OPERATOR_SUCCESS:
+      DISCORD_WEBHOOK_ORACLE_DISSENT:
+      DISCORD_WEBHOOK_ORACLE_FAILED:
+      DISCORD_WEBHOOK_ORACLE_SUCCESS:
+      DISCORD_WEBHOOK_VALIDATOR_FAILED:
+      DISCORD_WEBHOOK_VALIDATOR_SUCCESS:
     restart: on-failure:5
     mem_swappiness: 0
     security_opt:
       - no-new-privileges
     volumes:
       - ./config:/app/config/:ro
-      - ${MONITOR_DATA_DIR:-/dev/null}:/app/data
+      - ${MONITOR_DATA_DIR:-./data}:/app/data
       - ${LOG_DATA_DIR:-./logs}:/app/logs
     networks:
       - monitor-network

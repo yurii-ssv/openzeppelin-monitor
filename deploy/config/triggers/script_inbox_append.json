@@ -1,0 +1,11 @@
+{
+  "inbox_append": {
+    "name": "Failed Tx Inbox Append",
+    "trigger_type": "script",
+    "config": {
+      "language": "Bash",
+      "script_path": "./config/triggers/scripts/inbox_append.sh",
+      "timeout_ms": 5000
+    }
+  }
+}

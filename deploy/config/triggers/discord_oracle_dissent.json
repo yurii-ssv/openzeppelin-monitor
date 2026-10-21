@@ -1,6 +1,6 @@
 {
   "discord_oracle_dissent": {
-    "name": "Oracle Dissent Alert",
+    "name": "Discord Oracle Dissent Alert",
     "trigger_type": "discord",
     "config": {
       "discord_url": {
