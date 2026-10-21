@@ -442,8 +442,8 @@ The real safety net is M3 (liquidatable for > N blocks), not the keeper winning 
 
 ## 6. Open questions
 
-- **M8:** which address holds the governance seed stake, and how much is it? (UPGRADE_PLAYBOOK "Initial SSV stake".)
-- **M9 / M11:** who gets paged for the oracle (ssv-oracle owner) and for the liquidator (Nir)? Slot 3 belongs to Ethernodes; do we alert them directly?
-- **M12:** the rotation doc says 0.15 ETH and an earlier note said 0.05 ETH for the low-balance alert. This spec uses 0.15 plus runway-based alerts. Confirm.
-- **M6, M7, M8, M10, M14, M15, M16** are recommendations from analyses, not call decisions. Confirm which ones to build.
-- **M3:** confirm N = 50 blocks for the fallback-lag warning.
+- **M8:** which address holds the governance seed stake, and how much is it? (UPGRADE_PLAYBOOK "Initial SSV stake".) **DECIDED 2026-10-21 (D3):** the seed holder is the DAO Safe `0xb35096b074fdb9bBac63E3AdaE0Bbde512B2E6b6`. The supply floor is 2 × its cSSV balance measured at worker start and re-measured daily.
+- **M9 / M11:** who gets paged for the oracle (ssv-oracle owner) and for the liquidator (Nir)? Slot 3 belongs to Ethernodes; do we alert them directly? **DECIDED 2026-10-21 (D2):** `page` and `warn` for all monitors go to one Telegram group ("yes all pages for now"); `info` and digests go to Discord. Dev and QA use `TEST_*` channels only.
+- **M12:** the rotation doc says 0.15 ETH and an earlier note said 0.05 ETH for the low-balance alert. This spec uses 0.15 plus runway-based alerts. Confirm. **DECIDED 2026-10-21 (D4):** page when the oracle wallet balance is below 0.15 ETH; the runway alerts stay as specified.
+- **M6, M7, M8, M10, M14, M15, M16** are recommendations from analyses, not call decisions. Confirm which ones to build. **DECIDED 2026-10-21 (D6):** build M6, M7, M8, M10, M14 and M15; M16 (liquidator keeper health) stays in the liquidator repo, outside this one.
+- **M3:** confirm N = 50 blocks for the fallback-lag warning. **DECIDED 2026-10-21 (D5):** N = 50 blocks for the fallback-lag warning and N2 = 7,200 blocks for the page; both are config-overridable and never hard-coded in a check.
