@@ -19,7 +19,8 @@ Task contract: [plan.md §8 CP1A](../../plan.md) · Attempt log: [attempts.md](a
 | S5 V rows + falsifiers | DONE | attempt 2 (all V1A rows run; none NOT RUN) | — |
 | S6 handoff | DONE | this block, plan.md status line | Codex QA |
 | R1 repair 1 (F1, F2, F3, F4, F8) | DONE — QA attempt 2 FAILED (F1b, F8b) | [repair 1](attempts.md#repair-1), code head `10c7a8f`, runner `evidence/repair-1/vrows.sh` | superseded by R2 |
-| R2 repair 2 (F8b fixed, F1b documented) | DONE — AWAITING FRESH QA | [repair 2](attempts.md#repair-2), code head `f04c79e`, runner `evidence/repair-2/vrows.sh` | fresh Codex QA decides; F5/F6/F7 recorded, not touched |
+| R2 repair 2 (F8b fixed, F1b documented) | DONE — QA attempt 3 FAILED (F1b, F9) | [repair 2](attempts.md#repair-2), code head `f04c79e`, runner `evidence/repair-2/vrows.sh` | superseded by R3 |
+| R3 repair 3 (F9 fixed, F1b closed by D10, D11 routing) | DONE — AWAITING FRESH QA | [repair 3](attempts.md#repair-3), code head `e981687`, runner `evidence/repair-3/vrows.sh` | fresh Codex QA decides; F6/F7 untouched |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -67,5 +68,22 @@ F8b: A8/A9 compare every contract_spec event/function (3356 entries, 30 monitors
 F1b: README "M13 coverage boundary" lists covered vs uncovered (internal CALLs, constructors, selfdestruct) with QA reproducers; no scope change.
 Not touched: F5, F6, F7.
 Pending human input: none (Marco decides worker balance-delta watching).
+Next owner: fresh Codex QA.
+```
+
+
+## Repair 3 handoff (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / live dispatch: task_a4c6f85f4579 / ctx_b8fbc82c69b7
+Assignment outcome: F9 fixed; F1b closed by D10 (README only); D11 routing applied. V1A rows + falsifiers re-run, none NOT RUN. Completed work != acceptance; fresh QA decides.
+Base -> head: 204d528 -> docs commit after code head e981687 (branch mtabasco/ms-cp1a)
+Changed paths: deploy/{check-m15-coverage.sh,check-templates.sh,README.md,tests/selftest.sh}; six deploy/config/triggers/discord_*_success.json; .env.example; docker-compose.yaml; workers/cp1a/**.
+F9: required set = spec M15 names + ModuleUpgraded (17), full signatures from the reference ABI; old gate accepted the ModuleUpgraded deletion (exit 0), new gate red for each of 17 deletions on the tracked template, restored green; Telegram DAO monitor has 0 unconditional M15 events (17 additions red).
+D11: six *_SUCCESS triggers on DISCORD_WEBHOOK_INFO; nine keep own variables; names unique; grep of removed names outside plans/: 0; S4 asserts the split, missing discord_url still red.
+F1b: README row-by-row Monitor / CP2c watch / accepted gap, cites D10.
+Evidence: evidence/repair-3/vrows-run.log; selftest 119/0/0 (baseline 51); sweep 510/0; fork suite 15/0; live rows on eth.drpc.org, render on publicnode.
+Open: D10/D11 rows absent from this lane's plan.md §2 (exist on CP2 branches); F6/F7 untouched; removed names persist only in append-only records.
+Pending human input: none.
 Next owner: fresh Codex QA.
 ```

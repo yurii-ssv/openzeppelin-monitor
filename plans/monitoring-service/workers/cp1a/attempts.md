@@ -168,3 +168,53 @@ Mutations proven red then restored green (tracked template mutated, `git checkou
 
 - Resulting head: see the status line in plan.md (docs-only commit after `f04c79e`).
 - Next action: fresh Codex QA.
+
+
+<a id="repair-3"></a>
+## Repair 3 — F9 fixed; F1b closed by owner decision D10 (documented); D11 Discord routing (F5 resolved for the collapsed six)
+
+- Observed UTC: 2026-10-21 (evening); Task / Dispatch: `task_a4c6f85f4579` / `ctx_b8fbc82c69b7` (fresh implementer, Claude Sonnet 5.5 high); worker terminal `term_41c7f252-6a26-459c-afc0-c2ca4adcbfb3`.
+- Frozen start head: `204d52822b35af4bd8eec1e6b1ce59e5103d878e` (`git rev-parse HEAD` confirmed before any write; porcelain clean). Input: [qa/cp1a-attempt-3.md](../../qa/cp1a-attempt-3.md) §1 F1b, F9, §2; D10 and D11 as recorded in plan.md §2 on the CP2 lane branches (the lane's own plan.md §2 has no D10/D11 rows yet; I may write only the status line, so the coordinator carries them).
+- Implementation head: `e981687df50b5e0efc72bcf76372636a155c78d7` (+ a docs-only record commit with this entry, the evidence log and the status line). Not touched: `src/`, `qa/**`, `execution-log.md`, `.gitignore`, `config/`, `config.zip`, `.env`, monitor templates (no monitor template changed, only six trigger templates).
+
+### F9 (MEDIUM) — fixed
+
+`deploy/check-m15-coverage.sh` required only the 16 backticked spec names; `ModuleUpgraded` (spec "module updates") was added only to the Telegram check, so deleting it from the Discord monitor exited 0. Now the required set is the spec's backticked M15 names plus `ModuleUpgraded` (17), each resolved to its full `name(types)` through the committed reference ABI (`deploy/abi/reference.json`, proxy entry; the run fails with exit 2 if a name is not exactly one event there or if M15 stops saying "module updates"). A monitor must carry every one of the 17 signatures, so deleting any one, or changing its types, is red. The Telegram check (no unconditional M15 event or governance-update function on a Telegram route, D2) uses the same 17 names.
+
+Proof (rows in `evidence/repair-3/vrows-run.log`, `selftest.sh` F9/D2 sections): the old gate (`204d528`) on a Discord monitor without `ModuleUpgraded`: exit **0** (the defect, red baseline); the new gate on each of the 17 individual deletions from the tracked template: exit 1 each with the `missing:` line, restored exit 0, porcelain clean; selftest repeats all 17 deletions (scratch copies), a wrong-type case (`QuorumUpdated(uint32)`), and all 17 additions to the Telegram DAO monitor (each red); the tracked Telegram DAO monitor has 0 unconditional M15 events.
+
+### F1b — closed by owner decision D10; README only
+
+`deploy/README.md` "M13 coverage boundary" now cites D10 and gives, row by row (retired slot 4, retired liquidator, attackers), what the Monitor covers, what CP2c's worker per-block balance-delta watch will cover (retired keys only, not delivered here), and the ACCEPTED gap (within-block net-zero on the retired keys; attacker internal/constructor/SELFDESTRUCT/third-party interactions and internal value into our wallets). The measured direct cases and the reproduced misses (QA attempts 2 and 3 blocks) are kept. No template, expression or rule changed for F1b; the fork suite is unchanged.
+
+### D11 — Discord routing (F5 resolved for the collapsed six)
+
+The six `*_SUCCESS` triggers (cluster, dao, liquidation, operator, oracle, validator) now read `DISCORD_WEBHOOK_INFO`; the nine others keep their own variable (six `*_FAILED`, `ORACLE_DISSENT`, `DAO_SAFE_FAILED`, `LARGE_ETH_TRANSFER`); display names stay unique. Edited: the six trigger templates, `.env.example` (six names removed, comments), `docker-compose.yaml` passthrough (six removed). `render.sh` has no variable list of its own: it derives the required variables from the rendered config, so `--strict` now needs `DISCORD_WEBHOOK_INFO` and no longer the six names (selftest: strict with INFO unset red, strict with exactly the referenced set green). `check-templates.sh` S4 gains D11 assertions (info triggers `_success`/`_other_sender` must use INFO, no other Discord trigger may, every `discord_url` stays an environment reference). Selftest: 51 → 119 cases (17 + 17 + 2 F9/D2 cases, 6 × 3 + 1 + 9 D11 template cases, 2 render --strict cases, a compose/`.env.example` passthrough case). `git grep` of the six removed names outside `plans/` and `qa/`: exit 1, 0 rows; the only remaining mentions are the append-only history in this file (`attempts.md`) and the QA records, which this lane may not edit.
+
+### Measurements on `e981687` (`evidence/repair-3/vrows.sh` → `vrows-run.log`; endpoints per live row in the log)
+
+| Row | Result |
+|---|---|
+| V1A.1 | render exit 0 (`https://ethereum-rpc.publicnode.com`), abi-check OK (3356 entries equal the reference), 32 active monitors, 0 ERROR; raw `--check` exit 0, success line, 0 ERROR |
+| V1A.1f | brace removed: raw exit 0, no success line, 2 ERROR; render.sh exit 1 (ABI-1); dangling trigger: render exit 1, abi-check OK, 3 ERROR, no success line; restored 0 |
+| V1A.1 falsifiers | F8 `Nonexistent(uint256)`: render 1, check-templates 1, restored 0; six F8b mutations red/restored; sweep 510 runs 0 failures (exit 0) |
+| V1A.2 | 0 plain values; secret-shape `git grep` exit 1 (0 rows); checker OK (32 monitors / 30 triggers / 1 network) |
+| F2 | absent/empty `--config-dir`, missing `--root`, monitor without `networks`/`match_conditions`: exit 1 each; restored 0 |
+| V1A.3 (`eth.drpc.org`) | 26239237: 1 match, inbox +1, 11 keys; control 26239259: 0/+0; 26239255: 1/+1; 0 ERROR |
+| V1A.4 / V1A.4f (`eth.drpc.org`) | 26177496: 1; own sender 26239694: 0; predicate removed 1; restored 0 |
+| V1A.5 (`eth.drpc.org`) | 25991146 incoming: 1; 26169289 outgoing: 0; 26167892 old-key attempt: 1; 26239655 control: 0 |
+| V1A.6 (`eth.drpc.org`) | 26240350: `== 0` 0 → `> 0` 1 → restored 0 |
+| V1A.7 | 17 required events all present (8 extras); no M15/M10 info routed to Telegram; 17 deletions red; old-gate baseline exit 0; real OracleReplaced 26169066 (`eth.drpc.org`): Telegram 0 / Discord 1 |
+| D11 | six on INFO, nine own variables, 0 duplicate names, 0 removed names outside plans/; missing `discord_url` falsifier exit 1; restored render 0 |
+| V1A.8 | `docker compose config` exit 0, `/app/data` → worktree `data`; `max_past_blocks` 3600, recovery config present, 1 RPC |
+| selftest | 119 passed, 0 failed, 0 skipped (baseline 51) |
+| fork suite | `deploy/tests/m13-fork-regression.sh`: 15 cases, 0 failures (anvil fork of `https://eth.drpc.org` @ 26240350, local txs only) |
+
+### Notes
+
+1. Not touched: F6 (inherited `Success` label), F7 (inbox `.gitignore`), the nine kept Discord names (intentional).
+2. D10/D11 rows are missing from this lane's plan.md §2; they exist on the CP2 lane branches. Reconcile at integration.
+3. I clear no finding; fresh QA decides.
+
+- Resulting head: see the status line in plan.md (docs-only commit after `e981687`).
+- Next action: fresh Codex QA.
