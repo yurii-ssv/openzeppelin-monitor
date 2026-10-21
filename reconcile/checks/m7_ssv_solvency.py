@@ -60,6 +60,11 @@ UNSTAKE_EVENTS = {
 TOPIC = {k: "0x" + keccak(v.encode()).hex() for k, v in UNSTAKE_EVENTS.items()}
 
 
+# ledger entries in SSV wei (strings in findings: they exceed 2**53)
+WEI = {"proxy_ssv", "cssv_supply", "outstanding_unstake", "unstake_requested", "unstake_withdrawn",
+       "legacy_cluster_balances", "operator_earnings", "network_earnings", "claims", "surplus"}
+
+
 def _amount(data_hex: str) -> int:
     data = bytes.fromhex(data_hex[2:])
     return word(data, "unstake event data")
@@ -91,7 +96,7 @@ class M7SsvSolvency(Check):
         opened = open_incidents(ctx)
         floor = int(self.config["surplus_floor_wei"])
         surplus = ledger["surplus"]
-        evidence = {k: str(v) if isinstance(v, int) and not isinstance(v, bool) else v for k, v in ledger.items()}
+        evidence = {k: str(v) if k in WEI else v for k, v in ledger.items()}
         findings: list[Finding] = []
         if surplus < floor:
             bound = " at most" if unknown else ""
