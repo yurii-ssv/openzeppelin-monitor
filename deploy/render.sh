@@ -12,7 +12,9 @@
 #   Message bodies contain ${transaction.hash}-style tokens that are left untouched;
 # - unless --no-check, runs `openzeppelin-monitor --check` against the rendered config, with
 #   placeholder values for any environment variable the config references that is unset in this
-#   shell (--check only validates shape; real values are read at run time);
+#   shell (--check only validates shape; real values are read at run time). The binary's own exit
+#   code is not a gate (it exits 0 even when validation fails), so render.sh requires its
+#   "Configuration validation completed successfully" line and zero ERROR lines;
 # - --strict (production deploy): fail instead of warn when TELEGRAM_CHAT_ID or any environment
 #   variable referenced by the rendered config is unset, and never use placeholders for --check.
 #
@@ -31,7 +33,7 @@ while [ $# -gt 0 ]; do
     --out) OUT=${2:?--out needs a directory}; shift 2 ;;
     --strict) STRICT=true; shift ;;
     --no-check) CHECK=false; shift ;;
-    -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,/^set -/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
