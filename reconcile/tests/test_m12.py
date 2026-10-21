@@ -39,7 +39,8 @@ def setup(tmp_path, balance=eth(0.3454), liquidator=eth(1), checks=None, page_si
     hashes = spend_history(chain, **history)
     chain.set_balance(ORACLE, balance)
     chain.mine()
-    chain, w = wallet_worker(tmp_path, ["m12"], chain=chain, checks={"m12": checks or {}}, **(worker or {}))
+    checks = {"unknown_grace_s": 0, **(checks or {})}  # health at the first UNKNOWN (grace: its own test)
+    chain, w = wallet_worker(tmp_path, ["m12"], chain=chain, checks={"m12": checks}, **(worker or {}))
     w.bs.page_size = page_size
     return chain, w, hashes
 
@@ -297,6 +298,26 @@ def test_m12_blockscout_down_is_unknown_not_clean_and_balance_still_alerts(tmp_p
     w.bs.down = None
     tick(w, chain)
     assert alerts(w)[-1] == ("page", f"{ORACLE}:runway", "open")
+
+
+def test_m12_unknown_health_waits_for_the_grace_period(tmp_path):
+    """An indexer lag of one run stays quiet; an UNKNOWN that lasts unknown_grace_s is reported (and the state
+    clears when the spend is measurable again)."""
+    chain, w, _ = setup(tmp_path, checks={"unknown_grace_s": 900})
+    w.bs.down = OSError("lag")
+    advance(w)
+    tick(w, chain)
+    tick(w, chain)
+    assert health(w) == []
+    tick(w, chain)
+    assert len(health(w)) == 1 and "since 903 s" in health(w)[0]["text"]
+    w.bs.down = None
+    tick(w, chain)
+    assert w.db.meta(f"check:m12:unknown_since:{ORACLE}") is None
+    w.bs.down = OSError("lag again")
+    chain.send(ORACLE, PROXY)
+    tick(w, chain)
+    assert len(health(w)) == 1
 
 
 def test_m12_unknown_keeps_an_open_runway_incident_open(tmp_path):

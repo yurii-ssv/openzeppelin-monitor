@@ -23,8 +23,8 @@ which is untrusted: each candidate is verified on chain (transaction by hash: se
 sender, block, `gasUsed`, `effectiveGasPrice`; the block hash is the canonical one; block ≤ checkpoint), and the
 set is complete only if the verified nonces are contiguous up to `eth_getTransactionCount(w, checkpoint)` (the
 first backfill also proves the nonce just before the window, or nonce 0). An API failure, a page budget overrun or
-a nonce gap makes the spend **UNKNOWN**: a `m12-spend` health message, the runway and daily-spend keys are not
-evaluated (their open incidents stay as they are; balance keys still are), nothing is advanced, retried at the next
+a nonce gap makes the spend **UNKNOWN**: the runway and daily-spend keys are not evaluated (a `m12-spend` health
+message once it has lasted `unknown_grace_s`, so a Blockscout indexing lag of a few blocks stays quiet) (their open incidents stay as they are; balance keys still are), nothing is advanced, retried at the next
 run; in a reorg run that must re-report such a key, the run raises (README §6.2). Never "no spend".
 
 **State and reorgs** (README §6.1/§6.2). `m12_tx` (verified transactions in the window) and `m12_sync`
@@ -185,6 +185,7 @@ class M12WalletBurn(Check):
         "blockscout_url": "https://eth.blockscout.com",
         "max_pages": 40,  # Blockscout pages per wallet per run (50 items each); beyond: UNKNOWN, retried
         "http_timeout_s": 20,
+        "unknown_grace_s": 900,  # an UNKNOWN spend lasting this long sends the m12-spend health message
     }
     schema = SCHEMA
 
@@ -231,12 +232,19 @@ class M12WalletBurn(Check):
                 keys = {f"{w.address}:runway", f"{w.address}:daily-spend"} & ctx.reorg_keys
                 if keys:  # the reorg run must re-report these keys (README §6.2 item 4)
                     raise RuntimeError(f"m12 cannot re-evaluate {sorted(keys)} after the reorg: {exc}") from exc
-                ctx.health("m12-spend", f"M12 cannot measure the spend of the {w.label} {w.address} at block "
-                           f"{block}: {exc}. Runway and daily-spend alerts are not evaluated until it can "
-                           f"(retried every run); balance alerts still are.", dedup=f"m12-spend:{w.address}",
-                           realert=True)
+                since = ctx.state(f"unknown_since:{w.address}")
+                if since is None:
+                    since = ctx.clock()
+                    ctx.set_state(f"unknown_since:{w.address}", since)
+                if ctx.clock() - since >= self.config["unknown_grace_s"]:  # a transient indexer lag stays quiet
+                    ctx.health("m12-spend", f"M12 cannot measure the spend of the {w.label} {w.address} at block "
+                               f"{block} (since {int(ctx.clock() - since)} s): {exc}. Runway and daily-spend "
+                               f"alerts are not evaluated until it can (retried every run); balance alerts still "
+                               f"are.", dedup=f"m12-spend:{w.address}", realert=True)
                 self.last[w.address]["spend"] = f"UNKNOWN ({exc})"
                 continue
+            if ctx.state(f"unknown_since:{w.address}") is not None:
+                ctx.set_state(f"unknown_since:{w.address}", None)
             self.last[w.address].update(m)
             findings += self.spend_findings(w, m, block)
         return findings
