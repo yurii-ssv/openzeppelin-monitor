@@ -63,7 +63,7 @@ def _columns(conn, table: str) -> set[str]:
 
 
 def migrate(conn: sqlite3.Connection) -> int:
-    """Bring the schema to SCHEMA_VERSION; returns the version found before migrating (0 = pre-framework)."""
+    """Bring the schema to SCHEMA_VERSION; returns the version found before migrating (0 = new or pre-framework)."""
     conn.execute("BEGIN IMMEDIATE")
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
