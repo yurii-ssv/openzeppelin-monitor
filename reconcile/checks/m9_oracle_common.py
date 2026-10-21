@@ -18,7 +18,7 @@ id, `active` (the condition holds at the checkpoint) and `evidence_block` (where
 | Episode state at this run | Finding(s) |
 |---|---|
 | active | its finding (opens / keeps / escalates / re-sends on a new `revision`) |
-| healed, reported and still open in the book | `resolve=True` with the episode's resolution text |
+| healed, reported and still open in the book | `resolve=True` with the episode's resolution text; preceded by its finding when it changed (new `revision`) since it was reported, so a change that appeared and healed between two sweeps is still sent |
 | healed, never reported, `evidence_block` > baseline | its finding then `resolve=True` (reported once, e.g. after downtime); not for a clean evaluation (`occurred=False`) |
 | healed, never reported, at or below the baseline | nothing (history before the check's first run) |
 | unknown (an input is unavailable) | the last reported finding again, unchanged (stays open; nothing sent) |
@@ -338,6 +338,8 @@ class EpisodeBook:
                 r = rows.get(e.episode)
                 if r is not None and not r["closed"]:
                     if not resolved:
+                        if e.occurred and e.revision != json.loads(r["finding"])["revision"]:
+                            out.append(self._finding(e))  # grew and healed between two sweeps: send what it became
                         out.append(self._finding(e, resolve=True))
                         resolved = True
                     self._store(e, ctx.block, closed=True)

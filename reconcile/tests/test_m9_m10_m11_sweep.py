@@ -247,8 +247,8 @@ class Sweep:
 
     def act(self):
         oc, rng = self.oc, self.rng
-        kind = rng.choice(["ok", "ok", "dissent", "dissent", "skip", "fail", "late", "tie", "split", "rotate_open",
-                           "rotate_between", "dup_transient", "dup_persist", "stall", "downtime"])
+        kind = rng.choice(["ok", "ok", "dissent", "dissent", "dissent", "skip", "skip", "fail", "late", "tie", "split",
+                           "rotate_open", "rotate_between", "dup_transient", "dup_persist", "stall", "downtime"])
         self.log.append(("act", kind))
         self.min_fork = oc.c.number  # no reorg below the round being voted (its blockNum would be in the future)
         ref = oc.c.number - 1
@@ -337,7 +337,7 @@ class Sweep:
 @pytest.mark.parametrize("confirmations", [0, 3])
 @pytest.mark.parametrize("seed", range(12))
 def test_sweep_m9_m10(tmp_path, seed, confirmations):
-    Sweep(tmp_path, seed, confirmations).run(14)
+    Sweep(tmp_path, seed, confirmations).run(20)
 
 
 # ---------------------------------------------------------------- the M11 sweep
@@ -413,6 +413,10 @@ class UpdaterSweep:
                     + 3600 and t["sender"] == t["updater"]]
             zero = 0 if mine else zero + 1
             mismatch_seen = r["bad_seen"] if zero == 1 else mismatch_seen or r["bad_seen"]
+        if zero and not partial and u.api.ref == closed[-1]["ref"]:  # the API serves that root and answers all:
+            # nothing stays UNKNOWN (retried, not kept)
+            res = (u.w.db.meta("check:m11:zero_proof") or {}).get("result")
+            assert res is None or not res["unknown"], self.trace(f"unknown kept with the API complete: {res}")
         if zero:
             assert "liveness" in got, self.trace(f"zero round not open: {got}")
             if zero >= 2:

@@ -895,3 +895,19 @@ def test_a_round_superseded_within_its_30_minutes_is_not_failed_and_one_supersed
     texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"]
     assert len(texts) == 2 and str(b) in texts[0] and "can no longer commit" in texts[1]
     assert all(f"blockNum {c}" not in t for t in texts) and open_keys(w, "m9") == {}
+
+
+def test_a_failed_round_added_and_healed_between_two_sweeps_is_still_sent(tmp_path):
+    """Found by the adversarial sweep (class 5): the open failed-round incident gains a second failed round and the
+    whole run heals before the next sweep: the grown incident is sent (update) before its resolution."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    failed_round(oc, w)
+    b = oc.c.number - 1
+    oc.vote(b, 1)
+    oc.vote(b, 2)
+    oc.c.elapse(160)  # the worker is not stepping: b fails ...
+    oc.round()  # ... and a newer round commits
+    tick(w, oc, 1)
+    kinds = [(r["kind"], str(b) in r["text"]) for r in sent(w, "m9") if r["ikey"] == "failed-round"]
+    assert kinds == [("open", False), ("update", True), ("resolved", True)]
