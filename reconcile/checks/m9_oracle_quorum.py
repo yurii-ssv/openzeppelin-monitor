@@ -164,8 +164,10 @@ class M9OracleQuorum(Check):
         gap_blocks = blocks_for(max_gap, self.spb)
         commits = hist.commits
         out = []
-        for prev, nxt in zip(commits, commits[1:]):  # gaps that opened and closed (reported once after downtime)
-            if (nxt.block - prev.block) * self.spb > max_gap:
+        open_gaps = {r[0] for r in ctx.db.conn.execute(
+            f"SELECT episode FROM {TABLE} WHERE key='cadence' AND closed=0")}
+        for prev, nxt in zip(commits, commits[1:]):  # gaps that closed: resolve the open one, report a missed one
+            if (nxt.block - prev.block) * self.spb > max_gap or f"cadence:{prev.block}" in open_gaps:
                 hours = (nxt.block - prev.block) * self.spb / 3600
                 out.append(self._gap(prev.block, prev.ref_block, False, prev.block + gap_blocks,
                                      f"about {hours:.1f} h (block distance)",

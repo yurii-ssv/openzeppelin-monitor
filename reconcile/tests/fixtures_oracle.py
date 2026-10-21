@@ -96,6 +96,14 @@ class OracleChain:
             self.c.mine()
         return tx
 
+    def reorg(self, from_block: int, latest: int, refs=()) -> None:
+        """chain.reorg(from_block) plus the model's rewind: latest committed blockNum, votes of `refs` forgotten."""
+        self.c.reorg(from_block)
+        self.latest = latest
+        self.voted = {v for v in self.voted if v[0] not in refs}
+        self.acc = {k: a for k, a in self.acc.items() if k[0] not in refs}
+        self.stub()
+
     def committed(self, ref: int) -> bool:
         return self.latest >= ref
 
@@ -160,6 +168,7 @@ def failed_commit_root(oc: OracleChain, path, sender: str, error: str, ref: int 
     """A reverted commitRoot from `sender` in the pending block, appended to the inbox file once sealed."""
     data = COMMIT_ROOT_SELECTOR + "%064x" % (0xBAD << 200) + "%064x" % ref
     oc.c.stub_call(PROXY, data, revert=ERR[error])
+    oc.c.mine()  # the inbox resolves the revert with eth_call at block - 1
     tx = oc.c.add_tx(sender, PROXY, data)
     oc.c.mine()
     with open(path, "a") as fh:
@@ -182,6 +191,7 @@ def failed_update(chain: FakeChain, path, sender: str, error: str, ref: int, own
     cluster = cluster or Cluster(1, 0, 0, True, 10**18)
     data = update_calldata(ref, owner, ops, cluster, eb)
     chain.stub_call(PROXY, data, revert=ERR[error])
+    chain.mine()
     tx = chain.add_tx(sender, PROXY, data)
     chain.mine()
     with open(path, "a") as fh:
@@ -192,11 +202,11 @@ def failed_update(chain: FakeChain, path, sender: str, error: str, ref: int, own
 
 
 def tick(w, oc: OracleChain | None = None, blocks: int = 0, seconds: float = 0):
-    """Mine `blocks`, move the worker clock by `seconds`, then run one worker step."""
+    """Mine `blocks` (12 s of worker clock each), move the clock by `seconds` more, then run one worker step."""
     if oc is not None and blocks:
         oc.c.mine(blocks)
-    if seconds:
-        w.clock.advance(seconds)
+    if seconds or blocks:
+        w.clock.advance(seconds + 12 * blocks)
     w.step()
     return w
 
@@ -210,5 +220,9 @@ def open_keys(w, check) -> dict[str, str]:
 
 
 def sent(w, check, where="1=1"):
+    """Outbox rows of a check (health messages excluded), each with `ikey` = the incident key it belongs to."""
     return [dict(r) for r in w.db.conn.execute(
-        f"SELECT * FROM outbox WHERE check_id=? AND {where} ORDER BY created_at, rowid", (check,))]
+        f"SELECT o.*, i.key AS ikey FROM outbox o LEFT JOIN incidents i ON i.id = o.incident_id "
+        f"WHERE o.check_id=? AND o.severity != 'health' AND "
+        f"{where.replace('kind', 'o.kind').replace('severity', 'o.severity')} "
+        f"ORDER BY o.created_at, o.rowid", (check,))]
