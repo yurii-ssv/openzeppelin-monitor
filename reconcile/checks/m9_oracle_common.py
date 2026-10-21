@@ -19,7 +19,7 @@ id, `active` (the condition holds at the checkpoint) and `evidence_block` (where
 |---|---|
 | active | its finding (opens / keeps / escalates / re-sends on a new `revision`) |
 | healed, reported and still open in the book | `resolve=True` with the episode's resolution text |
-| healed, never reported, `evidence_block` > baseline | its finding then `resolve=True` (reported once, e.g. after downtime) |
+| healed, never reported, `evidence_block` > baseline | its finding then `resolve=True` (reported once, e.g. after downtime); not for a clean evaluation (`occurred=False`) |
 | healed, never reported, at or below the baseline | nothing (history before the check's first run) |
 | unknown (an input is unavailable) | the last reported finding again, unchanged (stays open; nothing sent) |
 | book row whose episode is no longer derived | non-reorg run: resolved; reorg run (evidence above the ancestor): row deleted and the key left to the framework's re-find rule ("evidence left the canonical chain", README §6.2) |
@@ -35,6 +35,7 @@ The table commits in the run's transaction, so a crash between detection and han
 
 from __future__ import annotations
 
+import bisect
 import json
 import math
 from dataclasses import dataclass, field
@@ -102,15 +103,17 @@ class History:
     rounds: dict[int, Round]
     commits: list  # RootCommitted Events in chain order
     replaced: list  # OracleReplaced Events in chain order
+    _refs: list | None = None
 
     def superseded_by(self, ref: int, before: tuple[int, int] | None = None):
-        """The first commit of a higher blockNum (optionally strictly before position `before`), or None."""
-        for c in self.commits:
-            if before is not None and c.pos >= before:
-                break
-            if c.ref_block > ref:
-                return c
-        return None
+        """The first commit of a higher blockNum (optionally strictly before position `before`), or None.
+        Committed blockNums strictly increase in chain order (StaleBlockNumber), so this is a bisection."""
+        if self._refs is None:
+            self._refs = [c.ref_block for c in self.commits]
+        i = bisect.bisect_right(self._refs, ref)
+        if i == len(self.commits) or (before is not None and self.commits[i].pos >= before):
+            return None
+        return self.commits[i]
 
     def closing_event(self, rnd: Round, before: tuple[int, int] | None = None):
         """The commit that closed `rnd` (its own, or a superseding one), optionally strictly before `before`."""
@@ -200,6 +203,7 @@ class Episode:
     evidence: dict = field(default_factory=dict)
     revision: str | None = None
     resolution: str = "Condition no longer holds."
+    occurred: bool = True  # False: a clean evaluation that only closes an open episode, never reported
 
 
 def book_schema(table: str) -> str:
@@ -283,7 +287,7 @@ class EpisodeBook:
                         out.append(self._finding(e, resolve=True))
                         resolved = True
                     self._store(e, ctx.block, closed=True)
-                elif r is None and e.evidence_block > base:
+                elif r is None and e.occurred and e.evidence_block > base:
                     out += [self._finding(e), self._finding(e, resolve=True)]
                     resolved = True
                     self._store(e, ctx.block, closed=True)

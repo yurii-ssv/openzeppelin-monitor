@@ -226,3 +226,95 @@ def sent(w, check, where="1=1"):
         f"WHERE o.check_id=? AND o.severity != 'health' AND "
         f"{where.replace('kind', 'o.kind').replace('severity', 'o.severity')} "
         f"ORDER BY o.created_at, o.rowid", (check,))]
+
+
+# ---------------------------------------------------------------- M11: clusters, updater, proof API
+
+
+OPS = (1, 2, 3, 4)
+
+
+class FakeProofApi:
+    """`{proof_api}/proof/{clusterId}`: the leaf EB at `ref`, `{"error": "cluster not found"}` for unknown ids
+    (the live API's answer, measured 2026-10-21), ProofApiError while `down`."""
+
+    def __init__(self):
+        self.leaves: dict[str, int] = {}
+        self.ref: int | None = None
+        self.down = False
+        self.calls = 0
+
+    def get(self, url: str, timeout: float) -> dict:
+        from checks.m11_updater_liveness import ProofApiError
+
+        self.calls += 1
+        if self.down:
+            raise ProofApiError("URLError: [Errno 61] Connection refused")
+        cid = url.rsplit("/", 1)[1]
+        if cid not in self.leaves:
+            return {"error": "cluster not found"}
+        return {"clusterId": cid, "effectiveBalance": self.leaves[cid], "proof": [], "merkleRoot": "0x" + "11" * 32,
+                "referenceBlock": self.ref}
+
+
+class UpdaterWorld:
+    """`n` active ETH clusters (MiniSSV, one validator each), the oracle slots, an M11 worker with a fake proof API.
+    getEffectiveBalance answers `eb` for every cluster (selector stub); the API's leaves default to the same."""
+
+    def __init__(self, tmp_path, n=3, eb=32, checks=None, confirmations=0, **over):
+        self.oc = OracleChain()
+        self.ssv = MiniSSV(self.oc.c)
+        self.owners = ["0x%040x" % (0x3000 + i) for i in range(n)]
+        for i, owner in enumerate(self.owners):
+            self.ssv.register(owner, OPS, keys(1, 7000 + 10 * i))
+        self.cids = ["0x" + cid.hex() for cid in self.ssv.clusters]
+        self.api = FakeProofApi()
+        self.set_eb(eb)
+        cfg = self.cfg = {"proof_api": "https://proof.invalid/api/v1", **(checks or {})}
+        self.oc, self.w = oracle_worker(tmp_path, ids=("m11",), oc=self.oc, inbox=True, checks={"m11": cfg},
+                                        start_block=1000, activation_block=1000, confirmations=confirmations, **over)
+        self.w.checks["m11"].http_get = self.api.get
+        self.inbox = tmp_path / "failed-tx.jsonl"
+        self.tmp_path = tmp_path
+
+    @property
+    def c(self):
+        return self.oc.c
+
+    def set_eb(self, eb: int, leaves: dict | None = None) -> None:
+        from checks.m11_updater_liveness import GET_EB
+
+        self.c.stub_call(VIEWS, GET_EB, u256(eb))
+        self.api.leaves = {cid: eb for cid in self.cids}
+        self.api.leaves.update(leaves or {})
+
+    def commit(self) -> int:
+        ref = self.c.number - 1
+        self.ssv.commit(ref)
+        self.api.ref = ref
+        return ref
+
+    def update(self, i: int, eb: int = 64, sender: str | None = None) -> str:
+        return self.ssv.update(self.owners[i], OPS, eb, sender=sender or SLOTS[4])
+
+    def round(self, updates=(0,), sender=None) -> int:
+        ref = self.commit()
+        for i in updates:
+            self.update(i, eb=32 + 1 + (self.ssv.latest_root % 7), sender=sender)
+        return ref
+
+    def close(self, extra: int = 5):
+        """Mine past the 60 min window (300 blocks) and step."""
+        tick(self.w, self.oc, 300 + extra)
+        return self.w
+
+    def fail(self, error: str, ref: int, i: int = 0, eb: int = 64, sender: str | None = None) -> str:
+        st = self.ssv.clusters[bytes.fromhex(self.cids[i][2:])]
+        return failed_update(self.c, self.inbox, sender or SLOTS[4], error, ref, owner=self.owners[i], ops=OPS,
+                             cluster=self.ssv._cluster(st), eb=eb)
+
+    def restart(self, w=None):
+        w2 = restart(self.tmp_path, w or self.w, self.oc, ids=("m11",), inbox=True,
+                     checks={"m11": self.cfg})
+        w2.checks["m11"].http_get = self.api.get
+        return w2

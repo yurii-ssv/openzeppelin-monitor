@@ -135,6 +135,15 @@ class M11UpdaterLiveness(Check):
                 raise RuntimeError(f"oracle slot {self.config['updater_slot']} is empty: no updater address")
             self.updater = addr.lower()
 
+    def updater_at(self, block: int) -> str:
+        """The updater of a transaction in `block`: the configured address, or the slot's address at that block from
+        the stored OracleReplaced history (current address when the slot was never rotated in the history), so a
+        round before a rotation is judged by the key of its time."""
+        if self.config["updater"] or not self.rotations:
+            return self.updater
+        before = [ev for ev in self.rotations if ev.block < block]
+        return before[-1].extra["new"] if before else self.rotations[0].extra["old"]
+
     # ---- run
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
@@ -145,6 +154,8 @@ class M11UpdaterLiveness(Check):
         if ctx.reorg_ancestor is not None:
             ctx.db.conn.execute("DELETE FROM m11_senders WHERE block>?", (ctx.reorg_ancestor,))
         commits = list(ctx.db.events_after(FIRST, block, frozenset({"RootCommitted"})))
+        self.rotations = [ev for ev in ctx.db.events_after(FIRST, block, frozenset({"OracleReplaced"}))
+                          if ev.extra["oracleId"] == self.config["updater_slot"]]
         closed = [c for c in commits if c.block + self.window <= block][-self.config["history_rounds"]:]
         rounds = [self.round_stats(ctx, c) for c in closed]
         episodes = self.liveness(ctx, rounds, commits, block)
@@ -187,8 +198,8 @@ class M11UpdaterLiveness(Check):
         events = [ev for ev in ctx.db.events_after((commit.block - 1, 1 << 62), end, frozenset({"ClusterBalanceUpdated"}))
                   if ev.ref_block == commit.ref_block]
         senders = self.senders(ctx, events)
-        ours = sorted({ev.tx_hash for ev in events if senders[ev.tx_hash] == self.updater})
-        others = sorted({ev.tx_hash for ev in events if senders[ev.tx_hash] != self.updater})
+        ours = sorted({ev.tx_hash for ev in events if senders[ev.tx_hash] == self.updater_at(ev.block)})
+        others = sorted({ev.tx_hash for ev in events if senders[ev.tx_hash] != self.updater_at(ev.block)})
         return {"commit": commit, "end": end, "events": events, "senders": senders, "ours": ours, "others": others}
 
     def liveness(self, ctx: Ctx, rounds: list[dict], commits, block: int) -> list[Episode]:
@@ -225,19 +236,19 @@ class M11UpdaterLiveness(Check):
             key="liveness", episode=f"liveness:{run[0]['commit'].ref_block}", active=active,
             evidence_block=run[0]["end"], severity=sev,
             title=f"EB updater sent 0 updates for {len(run)} committed round(s)",
-            body=(f"No updateClusterBalance from the updater {self.updater} within "
+            body=(f"No updateClusterBalance from the updater {self.updater_at(last.block)} within "
                   f"{self.config['update_window_s'] // 60} min of RootCommitted for blockNum {', '.join(map(str, refs))} "
                   f"(last committed at block {last.block}). The updater keeps lastProcessedBlock in memory: no backfill "
                   f"until the next root." + (f" Other senders updated in these windows ({len(others)} tx)." if others
                                              else "") + proof_note),
-            subject={"updater": self.updater}, revision=str(last.ref_block),
+            subject={"updater": self.updater_at(last.block)}, revision=str(last.ref_block),
             evidence={"zero_rounds": refs, "commit_block": last.block, "other_sender_txs": others[:20], **evidence},
             resolution=(f"The updater sent {len(healed['ours'])} update(s) for blockNum {healed['commit'].ref_block}."
                         if healed else ""))
 
     def revert_rate(self, ctx: Ctx, rounds: list[dict]) -> list[Episode]:
         rows = [r for r in inbox_rows(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance")
-                if (r["sender"] or "").lower() == self.updater]
+                if (r["sender"] or "").lower() == self.updater_at(r["block"])]
         out = []
         for i, rd in enumerate(rounds):
             c = rd["commit"]
@@ -261,14 +272,14 @@ class M11UpdaterLiveness(Check):
                 key="revert-rate", episode=f"revert-rate:{c.ref_block}", active=latest, evidence_block=rd["end"],
                 severity="warn",
                 title=f"EB updater revert rate {rate:.0%} for blockNum {c.ref_block}",
-                body=(f"{len(counted)} of {total} updateClusterBalance txs from {short(self.updater)} reverted in the "
+                body=(f"{len(counted)} of {total} updateClusterBalance txs from {short(self.updater_at(c.block))} reverted in the "
                       f"window of blockNum {c.ref_block} (threshold {self.config['revert_rate']:.0%}): "
                       + ", ".join(f"{n} x{k}" for n, k in sorted(names.items()))
                       + (f". {len(benign)} benign StaleUpdate revert(s) (another sender set the same EB) excluded"
                          if benign else "")
                       + (f". IncorrectClusterState reverts go to M1 (stale cluster tuple): {', '.join(m1[:5])}"
                          if m1 else "") + "."),
-                subject={"updater": self.updater, "ref_block": c.ref_block}, revision=str(c.ref_block),
+                subject={"updater": self.updater_at(c.block), "ref_block": c.ref_block}, revision=str(c.ref_block),
                 evidence={"reverted": [r["tx_hash"] for r in counted][:50], "benign": [r["tx_hash"] for r in benign][:50],
                           "successful": len(rd["ours"]), "m1_handoff": m1, "reasons": names},
                 resolution="The updater's revert rate is back under the threshold."))
@@ -286,7 +297,7 @@ class M11UpdaterLiveness(Check):
         if call is None or call["ref"] != rd["commit"].ref_block:
             return False
         return any(ev.cluster_id and ev.cluster_id.hex() == call["cluster_id"] and ev.eb == call["eb"]
-                   and rd["senders"][ev.tx_hash] != self.updater for ev in rd["events"])
+                   and rd["senders"][ev.tx_hash] != self.updater_at(ev.block) for ev in rd["events"])
 
     # ---- proof API
 
@@ -322,6 +333,7 @@ class M11UpdaterLiveness(Check):
         res = saved["result"]
         return [Episode(
             key="state-mismatch", episode=f"state-mismatch:{saved['ref']}", active=bool(res["mismatches"]),
+            occurred=bool(res["mismatches"]),
             evidence_block=saved["commit_block"], severity="warn",
             title=f"{len(res['mismatches'])} cluster(s) with on-chain EB != leaf (blockNum {saved['ref']})",
             body=(f"Full-state comparison at blockNum {saved['ref']} (after its update window): "
