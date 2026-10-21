@@ -131,7 +131,7 @@ class OracleChain:
         return tx
 
 
-def oracle_worker(tmp_path, ids=("m9",), oc: OracleChain | None = None, clock=None, checks=None, inbox=False,
+def oracle_worker(tmp_path, ids=("m9",), oc: OracleChain | None = None, clock=None, checks=None, inbox=True,
                   **over):
     oc = oc or OracleChain()
     oc.c.mine(100)
@@ -146,7 +146,7 @@ def oracle_worker(tmp_path, ids=("m9",), oc: OracleChain | None = None, clock=No
     return oc, w
 
 
-def restart(tmp_path, w, oc: OracleChain, ids=("m9",), checks=None, inbox=False, **over):
+def restart(tmp_path, w, oc: OracleChain, ids=("m9",), checks=None, inbox=True, **over):
     """A new process on the same database (README §8 V2x.3 pattern)."""
     kw = {}
     if inbox:
@@ -433,8 +433,10 @@ def replay_mainnet(tmp_path, rows=None, step_every: int = 50, after: int = 400, 
             slots.setdefault(r[8], r[9])
     oc = OracleChain(chain, slots=slots, active=sorted(slots))
     chain.mine()
+    (tmp_path / "failed-tx.jsonl").write_text("")
     _, w = make_worker(tmp_path, only=list(ids), chain=chain, clock=FakeClock(), views=VIEWS,
-                       start_block=chain.sealed, activation_block=chain.sealed, **over)
+                       start_block=chain.sealed, activation_block=chain.sealed,
+                       inbox={"path": str(tmp_path / "failed-tx.jsonl")}, **over)
     w.step()
     by_block: dict[int, list] = {}
     for r in rows:

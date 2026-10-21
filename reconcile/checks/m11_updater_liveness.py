@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from types import SimpleNamespace
 
 from checks.base import Check, Ctx, Every, Finding, OnEvents, OnInbox
 from checks.m9_oracle_common import (
@@ -112,6 +113,7 @@ class M11UpdaterLiveness(Check):
         "proof_api_abort_after": 3,  # consecutive transport failures that make the API "unreachable"
         "full_state_interval_s": 604_800,
         "seconds_per_block": 12,
+        "require_inbox": True,  # the revert-rate rule needs the failed-transaction inbox (inbox.path)
     }
     schema = SCHEMA
 
@@ -122,6 +124,9 @@ class M11UpdaterLiveness(Check):
                              "address of oracle slot updater_slot)")
         if not config["proof_api"]:
             raise SystemExit("checks.m11: proof_api is required (spec: the oracle proof endpoint)")
+        if config["require_inbox"] and not inbox_enabled(SimpleNamespace(settings=settings)):
+            raise SystemExit("checks.m11: the revert-rate rule needs the failed-transaction inbox (inbox.path); set "
+                             "checks.m11.require_inbox false to run without it")
         self.schedule = (Every(config["interval_s"]), OnEvents({"RootCommitted"}), OnInbox())
         self.book = EpisodeBook(self.id, TABLE)
         self.window = blocks_for(config["update_window_s"], config["seconds_per_block"])
@@ -161,7 +166,7 @@ class M11UpdaterLiveness(Check):
         rounds = [self.round_stats(ctx, c) for c in closed]
         episodes = self.liveness(ctx, rounds, commits, block)
         unknown: set[str] = set()
-        if not inbox_enabled(ctx):
+        if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
             ctx.health("m11-inbox", "M11 revert-rate rule not evaluated: the failed-transaction inbox is not configured "
                        "(inbox.path).", dedup="m11-inbox-disabled")
         elif inbox_unavailable(ctx) or inbox_gate_pending(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance"):

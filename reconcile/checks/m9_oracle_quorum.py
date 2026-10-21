@@ -24,6 +24,7 @@ block is no longer the latest stored commit.
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 from checks.base import Check, Ctx, Every, Finding, OnEvents, OnInbox
 from checks.m9_oracle_common import (
@@ -60,6 +61,7 @@ class M9OracleQuorum(Check):
         "min_committing_slots": 3,
         "absent_rounds": 6,
         "seconds_per_block": 12,
+        "require_inbox": True,  # the commitRoot-revert rule needs the failed-transaction inbox (inbox.path)
     }
     events = ORACLE_EVENTS
     schema = book_schema(TABLE)
@@ -69,6 +71,9 @@ class M9OracleQuorum(Check):
         if not settings.get("views"):
             raise SystemExit("checks.m9: settings.views (SSVNetworkViews) is required: the oracle slots are live "
                              "parameters")
+        if config["require_inbox"] and not inbox_enabled(SimpleNamespace(settings=settings)):
+            raise SystemExit("checks.m9: the commitRoot-revert rule needs the failed-transaction inbox (inbox.path); "
+                             "set checks.m9.require_inbox false to run without it")
         self.schedule = (Every(config["interval_s"]), OnEvents(ROUND_KINDS | {"OracleReplaced"}), OnInbox())
         self.book = EpisodeBook(self.id, TABLE)
         self.spb = config["seconds_per_block"]
@@ -91,7 +96,7 @@ class M9OracleQuorum(Check):
         episodes = (self.failed_rounds(hist, block, timeout) + self.cadence(ctx, hist, block)
                     + self.dissent(hist, settled) + self.weak_commits(hist) + self.absent(hist))
         unknown: set[str] = set()
-        if not inbox_enabled(ctx):
+        if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
             ctx.health("m9-inbox", "M9 commitRoot-revert rule not evaluated: the failed-transaction inbox is not "
                        "configured (inbox.path).", dedup="m9-inbox-disabled")
         elif inbox_unavailable(ctx) or inbox_gate_pending(ctx, COMMIT_ROOT_SELECTOR, "commitRoot"):

@@ -582,3 +582,14 @@ def test_replay_mainnet_2026_08_outage(tmp_path):
     assert set(opened) == {"failed-round", "cadence", "split", "dissent:3", "absent:3"}
     cadence_open = sent(w, "m9", "kind='open'")
     assert [r["ikey"] for r in cadence_open if r["ikey"] == "cadence"] == ["cadence"]
+
+
+def test_missing_inbox_is_a_startup_error_unless_opted_out(tmp_path):
+    from fixtures_oracle import VIEWS
+    from harness import make_worker
+
+    with pytest.raises(SystemExit, match="checks.m9: the commitRoot-revert rule needs the failed-transaction inbox"):
+        make_worker(tmp_path, only=["m9"], views=VIEWS)
+    oc, w = oracle_worker(tmp_path, inbox=False, checks={"m9": {"require_inbox": False}})
+    tick(w)
+    assert w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:m9-inbox%'").fetchone()

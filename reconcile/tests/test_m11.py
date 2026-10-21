@@ -438,3 +438,12 @@ def test_empty_inventory_is_deferred_not_clean(tmp_path):
     assert "no active ETH cluster" in incidents(u.w, "m11")[0]["body"]
     assert u.w.db.meta("check:m11:full_state") is None
     assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api-weekly%'").fetchone()
+
+
+def test_missing_inbox_is_a_startup_error_unless_opted_out(tmp_path):
+    from fixtures_oracle import VIEWS
+    from harness import make_worker
+
+    with pytest.raises(SystemExit, match="checks.m11: the revert-rate rule needs the failed-transaction inbox"):
+        make_worker(tmp_path, only=["m11"], views=VIEWS)
+    make_worker(tmp_path, only=["m11"], views=VIEWS, checks={"m11": {"require_inbox": False}})
