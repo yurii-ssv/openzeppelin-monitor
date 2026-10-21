@@ -21,6 +21,23 @@ MUT = [
  ("F13c", "reconcile/checks/m13_retired_keys.py", 'conn.execute("DELETE FROM m13_topup WHERE block > ?", (ancestor,))',
   "pass",
   "reconcile/tests/test_m13.py::test_m13_reorg_depth_1_removing_the_top_up_resolves_and_never_re_pages"),
+ # repair 1 (QA attempt 1 F1 and the generalised audit)
+ ("F12e", "reconcile/checks/m12_wallet_burn.py", "                if ctx.reorg_ancestor is not None:  # README §6.2 item 4",
+  "                if {f'{w.address}:runway', f'{w.address}:daily-spend'} & ctx.reorg_keys:  # README §6.2 item 4",
+  "reconcile/tests/test_m12.py::test_m12_qa1_f1_reorg_unknown_with_an_older_open_runway_keeps_the_marker"),
+ ("F12e-sweep", "reconcile/checks/m12_wallet_burn.py", "                if ctx.reorg_ancestor is not None:  # README §6.2 item 4",
+  "                if {f'{w.address}:runway', f'{w.address}:daily-spend'} & ctx.reorg_keys:  # README §6.2 item 4",
+  "reconcile/tests/test_m12.py::test_m12_adversarial_reorg_sweep"),
+ ("F12f", "reconcile/checks/m12_wallet_burn.py", "if not isinstance(res, list) or len(res) != len(params):", "if False:",
+  "reconcile/tests/test_m13.py::test_m13_short_batch_response_raises_never_a_partial_read"),
+ ("F12g-sweep", "reconcile/checks/m12_wallet_burn.py", '        conn.execute("DELETE FROM m12_tx WHERE block > ?", (ancestor,))\n',
+  "        pass\n", "reconcile/tests/test_m12.py::test_m12_adversarial_reorg_sweep"),
+ ("F8b-sweep", "reconcile/checks/m8_supply_floor.py",
+  ' or (ctx.reorg_ancestor is not None and st["block"] > ctx.reorg_ancestor))', ")",
+  "reconcile/tests/test_m8.py::test_m8_adversarial_reorg_sweep"),
+ ("F13d-sweep", "reconcile/checks/m13_retired_keys.py",
+  'conn.execute("UPDATE m13_topup SET resolved_block=NULL, resolved_balance=NULL WHERE resolved_block > ?",',
+  'conn.execute("SELECT ?",', "reconcile/tests/test_m13.py::test_m13_adversarial_reorg_sweep"),
 ]
 py = f"{ROOT}/reconcile/.venv/bin/python"
 for name, path, old, new, test in MUT:

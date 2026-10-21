@@ -80,3 +80,14 @@ LIVE smoke (extra evidence, not a V row; record mode, `alerts.mode: "record"`, t
 
 - Deviations and findings: see attempt 2; CP3 items in [plan.md](plan.md) "Lane README".
 - Resulting head: `b24e53e` (+ the docs commit of this attempt)
+
+<a id="attempt-4"></a>
+## Attempt 4 — repair 1 (QA attempt 1 F1), fresh implementer
+
+- Observed UTC: 2026-10-21 (start not timestamped; frozen-head RED run before the fix) → 15:10Z
+- Task / Dispatch: `task_afcc65d1aea9` / `ctx_df1e784ecc1b`
+- Frozen start head: `326d7ff5971c3ed958af732e521c899c53716856` (`git rev-parse HEAD`; status clean; `reconcile/.venv` present and working, baseline 337 passed)
+- Action and concrete outcome: ported QA Appendix A/B reproducers into `test_m12.py` and ran them on the frozen code: 7 failed / 3 passed (the 4 F1/restart tests, the 3 short-batch cases; RED); fixed `M12WalletBurn.run` (any `SpendUnknown` in a reorg run raises) and `raw_batch` (short batch → `RpcError`); generalised audit table, regressions for every untested row of M12/M8/M13, three seeded adversarial reorg sweeps; re-ran all V rows and the extended falsifier script (14/14). Details, table and verification in [plan.md#repair-1](plan.md#repair-1).
+- Sweep harness corrections during the attempt (test-side, not findings): the first M13/M8 sweep draft reorganised twice (a "rewrite" reorg below the checkpoint), and started the watch before `activation_block` with confirmations 2 (baseline at the second checkpoint): fixed in the harness before any assertion was trusted.
+- Resulting head: `56a26a9` (+ the docs commit of this attempt)
+- Next action: fresh Codex QA.
