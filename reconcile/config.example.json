@@ -42,7 +42,7 @@
   "checks": {
     "m3": {"n_blocks": 50, "n2_blocks": 7200, "full_sweep_interval_s": 600, "near_blocks": 300, "pre_alert_blocks": 7200},
     "m4": {"interval_s": 86400},
-    "m14": {"window_blocks": 7200, "repeat_count": 3, "sweep_interval_s": 600},
+    "m14": {"window_s": 86400, "repeat_count": 3, "sweep_interval_s": 600},
     "m5": {
       "sweep_interval_s": 300,
       "full_sweep_interval_s": 3600,

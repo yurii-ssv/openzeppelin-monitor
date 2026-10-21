@@ -131,11 +131,14 @@ def test_v2a7_benign_other_failed_transactions_are_ignored(tmp_path):
     assert not hits(w) and not incidents(w, "m14")
 
 
-def test_v2a7_liquidate_ssv_entry_is_correlated_too(tmp_path):
+def test_v2a7_benign_liquidate_ssv_on_an_eth_cluster_reverts_by_version(tmp_path):
+    # liquidateSSV validates VERSION_SSV: on an ETH cluster it reverts whatever the tuple (not a front-run);
+    # the legacy cluster case is test_qa1_h3_* below
     chain, w, cl, path = make(tmp_path)
     frontrun(chain, cl, path, fn="liquidateSSV")
     advance(w)
-    assert [h["function"] for h in hits(w)] == ["liquidateSSV"]
+    assert not hits(w) and not incidents(w, "m14")
+    assert not [r for r in outbox(w) if r["key"].startswith("health:m14")]
 
 
 # ---------------------------------------------------------------- V2x.1: repetition (warn), zero (page), end
@@ -194,7 +197,7 @@ def test_no_hit_for_a_window_resolves(tmp_path):
     frontrun(chain, cl, path)
     advance(w)
     assert sent(w, "m14") == [("open", "warn")]
-    chain.mine(7_199)
+    chain.mine(7_199)  # 7,199 full 12 s slots = 86,388 s of chain time
     w.clock.advance(600)
     advance(w)
     assert len(open_incidents(w, "m14")) == 1
@@ -237,7 +240,7 @@ def test_thresholds_from_chain_liquidatable_follows_the_live_threshold_period(tm
 
 
 def test_thresholds_from_chain_window_and_repeat_from_config(tmp_path):
-    chain, w, cl, path = make(tmp_path, cfg={"m14": {"window_blocks": 100, "repeat_count": 2}})
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"window_s": 1_200, "repeat_count": 2}})
     frontrun(chain, cl, path)
     advance(w)
     frontrun(chain, cl, path)
@@ -271,6 +274,7 @@ def test_rpc_budget_per_entry(tmp_path):
     advance(w)
     calls = w.db.meta("run:m14")["rpc_calls"]
     assert calls["eth_call"] <= 3 + 1 and calls["eth_getTransactionByHash"] == 1
+    assert calls["eth_getBlockByNumber"] <= 2 and calls["eth_getStorageAt"] <= 2 + 2
 
 
 # ---------------------------------------------------------------- UNKNOWN inputs
@@ -397,3 +401,331 @@ def test_reorg_crash_between_rewind_and_reorg_run_is_replayed(tmp_path):
     advance(w2)
     assert [r["state"] for r in incidents(w2, "m14")] == ["resolved"] and not hits(w2)
     assert w2.db.meta("reorg:m14") is None
+
+
+# ---------------------------------------------------------------- QA cp2a attempt 1 regressions (repair 1)
+# Each was red on the frozen head 098c2cd (attempts.md "Repair 1"), green after.
+
+
+def unknown_health(w):
+    return [r["text"] for r in outbox(w) if r["key"].startswith("health:m14-unknown")]
+
+
+def test_qa1_h2_reorg_missing_replacement_transaction_does_not_clean_resolve(tmp_path):
+    """QA H2 (its scenario): the canonical replacement's transaction is unreadable in the reorg run."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}})
+    fork, old = chain.number, cl.tuple()
+    frontrun(chain, cl, path)
+    chain.mine(2)
+    advance(w)
+    assert sent(w, "m14") == [("open", "warn")]
+    chain.reorg(fork)
+    cl.state[cluster_id(OWNER, OPS)].update(index=old.index, nfi=old.network_fee_index, balance=old.balance)
+    chain.mine()
+    cl.deposit(value=1, mine=False)
+    tx, _ = failed_liquidation(chain, cl, path, tuple_=old)
+    chain.mine(2)
+    w.check_reorg()
+    w.scan()
+    w.poll_inbox()
+    saved = chain.txs.pop(tx)
+    w.run_checks()  # the check raises: rolled back, the reorg marker is kept
+    assert w.db.meta("reorg:m14") is not None and open_incidents(w, "m14")
+    assert not outbox(w, "kind='resolved'")
+    w.clock.advance(7 * 3600)
+    w.housekeeping()
+    assert not outbox(w, "kind='realert'")  # incidents of a pending reorg run are not re-alerted
+    chain.txs[tx] = saved
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    assert open_incidents(w, "m14") and not outbox(w, "kind='resolved'")
+    assert w.db.meta("reorg:m14") is None and [h["block"] for h in hits(w)] == [fork + 1]
+
+
+def test_qa1_h2_unreadable_transaction_is_retried_until_evaluated(tmp_path):
+    """Outside a reorg run an UNKNOWN entry is pending, named in health and retried; it becomes a hit later."""
+    chain, w, cl, path = make(tmp_path)
+    tx = frontrun(chain, cl, path)
+    saved = chain.txs.pop(tx)
+    advance(w)
+    assert not hits(w) and not incidents(w, "m14")
+    assert w.db.conn.execute("SELECT cluster_id FROM m14_pending").fetchall()[0][0] is None
+    assert "retried every run" in unknown_health(w)[-1]
+    chain.txs[tx] = saved
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    assert len(hits(w)) == 1 and sent(w, "m14") == [("open", "info")]
+    assert not w.db.conn.execute("SELECT * FROM m14_pending").fetchall()
+
+
+def test_qa1_h2_pending_entry_keeps_an_open_incident_past_the_window(tmp_path):
+    """No resolve without positive proof: a pending entry in the window could be a hit on the open cluster."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}})
+    frontrun(chain, cl, path)
+    advance(w)
+    assert sent(w, "m14") == [("open", "warn")]
+    chain.mine(7_000)
+    tx = frontrun(chain, cl, path)
+    chain.txs.pop(tx)
+    advance(w)
+    chain.mine(300)  # the first hit leaves the window; the unreadable second may be a hit
+    w.clock.advance(600)
+    advance(w)
+    assert [r["severity"] for r in open_incidents(w, "m14").values()] == ["warn"]
+    assert sent(w, "m14") == [("open", "warn")]
+    chain.mine(7_200)  # the pending entry ages out of the window unevaluated: nothing can support it now
+    w.clock.advance(600)
+    advance(w)
+    assert sent(w, "m14") == [("open", "warn"), ("resolved", "info")]
+    assert any("left the 86400 s window unevaluated" in t for t in unknown_health(w))
+
+
+def test_qa1_h2_reorg_run_with_a_known_cluster_unknown_keeps_its_key(tmp_path):
+    """A re-derived entry whose cluster is known but whose views fail keeps that cluster's key open."""
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}})
+    fork = chain.number
+    frontrun(chain, cl, path)
+    chain.mine(2)
+    advance(w)
+    assert sent(w, "m14") == [("open", "warn")]
+    chain.reorg(fork + 1)  # above the hit's block: the hit survives, its incident is a reorg key
+    chain.view_faults[cluster_id(OWNER, OPS)] = "revert"
+    chain.mine(2)
+    w.clock.advance(600)
+    advance(w)
+    assert [r["severity"] for r in open_incidents(w, "m14").values()] == ["warn"]
+    assert not outbox(w, "kind='resolved'") and w.db.meta("reorg:m14") is None
+
+
+def legacy(tmp_path, balance=None, **kw):
+    """make() plus a modelled legacy SSV cluster (SSV storage slot, SSV views, SSV parameters)."""
+    chain, w, cl, path = make(tmp_path, **kw)
+    burn = 10**9  # SSV wei per block
+    cl.create(OWNER2, OPS, balance=100_240 * burn - 1_000 * burn if balance is None else balance, burn=burn,
+              version="SSV")
+    return chain, w, cl, path, burn
+
+
+def test_qa1_h3_legacy_ssv_cluster_liquidate_ssv_front_run_is_info(tmp_path):
+    chain, w, cl, path, burn = legacy(tmp_path)
+    frontrun(chain, cl, path, owner=OWNER2, ops=OPS, fn="liquidateSSV")
+    advance(w)
+    info = w.inventory.get(chain.sealed).clusters[cid_hex(OWNER2, OPS)]
+    assert info.version == "SSV" and info.valid
+    (h,) = hits(w)
+    assert h["function"] == "liquidateSSV" and h["version"] == "SSV" and h["burn_rate"] == str(burn)
+    assert sent(w, "m14") == [("open", "info")] and "of 1 SSV" in outbox(w, "kind='open'")[0]["text"]
+
+
+def test_qa1_h3_legacy_benign_one_block_of_ssv_burn_and_eth_liquidate_are_silent(tmp_path):
+    chain, w, cl, path, burn = legacy(tmp_path)
+    frontrun(chain, cl, path, owner=OWNER2, ops=OPS, fn="liquidateSSV", value=burn)  # not below one block of burn
+    frontrun(chain, cl, path, owner=OWNER2, ops=OPS, fn="liquidate")  # liquidate validates VERSION_ETH
+    advance(w)
+    assert not hits(w) and not incidents(w, "m14") and not unknown_health(w)
+
+
+def test_qa1_h3_legacy_benign_healthy_cluster_is_silent(tmp_path):
+    chain, w, cl, path, burn = legacy(tmp_path, balance=10**30)
+    frontrun(chain, cl, path, owner=OWNER2, ops=OPS, fn="liquidateSSV")
+    advance(w)
+    assert not hits(w) and not incidents(w, "m14")
+
+
+def test_qa1_h3_legacy_cluster_at_computed_zero_pages(tmp_path):
+    chain, w, cl, path, burn = legacy(tmp_path, balance=50 * 10**9)
+    frontrun(chain, cl, path, owner=OWNER2, ops=OPS, fn="liquidateSSV")
+    chain.mine(60)
+    advance(w)
+    assert sent(w, "m14") == [("open", "page")] and "Computed zero" in outbox(w, "kind='open'")[0]["text"]
+
+
+def test_qa1_h3_legacy_minissv_stub_scenario(tmp_path):
+    """QA H3 (its scenario): a MiniSSV legacy cluster whose SSV views are generic stubs."""
+    from fakechain import MiniSSV, _enc, _topic_addr
+    from harness import VIEWS
+
+    from checks.m3_views import selector
+    from eb_storage import u256
+
+    chain, w, cl, path = make(tmp_path)
+    owner, ops = "0x" + "bb" * 20, (31, 32, 33, 34)
+    mini = MiniSSV(chain)
+    cid = mini.legacy_ssv_cluster(owner, ops, 1)
+    st = mini.clusters[cid]
+    st["balance"] = 100
+    mini._persist(cid, st)
+    old = mini._cluster(st)
+    chain.mine()
+    st["balance"] += 1
+    mini._persist(cid, st)
+    tx = chain.new_tx(owner)
+    chain.emit(tx, "ClusterDeposited", [_topic_addr(owner)], _enc(["uint64[]", "uint", "cluster"],
+                                                                  [list(ops), 1, mini._cluster(st)]))
+    for name, val in [("isLiquidatableSSV", 1), ("getBalanceSSV", 100), ("getBurnRateSSV", BURN)]:
+        chain.stub_call(VIEWS, selector(name + "(address,uint64[],(uint32,uint64,uint64,bool,uint256))"), u256(val))
+    failed_liquidation(chain, cl, path, owner=owner, ops=ops, fn="liquidateSSV", tuple_=old)
+    chain.mine()
+    advance(w)
+    assert sent(w, "m14") == [("open", "info")]
+
+
+def test_qa1_m1_three_hits_over_26_hours_of_chain_time_do_not_warn(tmp_path):
+    """QA M1 (its scenario): 3,500 produced blocks per 13 hours (missed slots); three hits span 26 h."""
+    chain, w, cl, path = make(tmp_path)
+    for i in range(3):
+        if i:
+            chain.mine(3500)
+            w.clock.advance(13 * 3600)
+        frontrun(chain, cl, path)
+        advance(w)
+    assert not [s for _, s in sent(w, "m14") if s in {"warn", "page"}]
+    assert json.loads(incidents(w, "m14")[-1]["evidence"])["count"] == 2
+
+
+def test_qa1_m1_window_is_header_time_not_the_worker_clock(tmp_path):
+    """Chain time alone decides: missed slots (no worker clock involved) stretch ~7,000 blocks over 26 h, and a
+    worker clock that jumps a day per hit does not age out hits that are seconds apart in chain time."""
+    chain, w, cl, path = make(tmp_path)
+    chain.clock = None
+    for i in range(3):
+        if i:
+            chain.mine(3500)
+            chain.elapse(13 * 3600 - 3501 * 12)
+        frontrun(chain, cl, path)
+        advance(w)
+    assert [s for _, s in sent(w, "m14")] == ["info", "info", "info"]
+    (tmp_path / "b").mkdir()
+    chain2, w2, cl2, path2 = make(tmp_path / "b")
+    chain2.clock = None
+    for _ in range(3):
+        frontrun(chain2, cl2, path2)
+        w2.clock.advance(86_400)
+        advance(w2)
+    assert sent(w2, "m14")[-1] == ("escalate", "warn")
+
+
+def test_qa1_m2_old_hits_expire_at_the_current_checkpoint(tmp_path):
+    """QA M2 (its scenario): the count is anchored at the checkpoint, so the first hit expires before the last."""
+    chain, w, cl, path = make(tmp_path)
+    frontrun(chain, cl, path)
+    advance(w)
+    for _ in range(2):
+        chain.mine(3500)
+        w.clock.advance(3500 * 12)
+        frontrun(chain, cl, path)
+        advance(w)
+    assert list(open_incidents(w, "m14").values())[0]["severity"] == "warn"
+    chain.mine(300)
+    w.clock.advance(300 * 12 + 600)
+    advance(w)
+    assert json.loads(incidents(w, "m14")[-1]["evidence"])["count"] == 2
+    assert list(open_incidents(w, "m14").values())[0]["severity"] == "info"
+    assert sent(w, "m14") == [("open", "info"), ("update", "info"), ("escalate", "warn")]  # silent downgrade
+
+
+def test_qa1_m3_later_same_block_top_up_does_not_hide_the_attack(tmp_path):
+    """QA M3 (its scenario): dust deposit, failed liquidation, then a large top-up, all in one block."""
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old)
+    cl.deposit(value=10**18, mine=False)
+    chain.mine()
+    advance(w)
+    assert sent(w, "m14") == [("open", "info")]
+    (h,) = hits(w)
+    assert h["value"] == "1" and h["deposit_block"] == h["block"]
+
+
+def test_qa1_m3_previous_block_dust_with_a_later_same_block_top_up_is_a_hit(tmp_path):
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=1)  # previous block
+    failed_liquidation(chain, cl, path, tuple_=old)
+    cl.deposit(value=10**18, mine=False)  # after the failed transaction
+    chain.mine()
+    advance(w)
+    assert sent(w, "m14") == [("open", "info")]
+
+
+def test_qa1_m3_benign_top_up_before_the_failed_transaction_is_silent(tmp_path):
+    """The twin: the top-up precedes the failed liquidation, so the cluster it met was healthy."""
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    cl.deposit(value=10**18, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old)
+    chain.mine()
+    advance(w)
+    assert not hits(w) and not incidents(w, "m14") and not unknown_health(w)
+
+
+def test_qa1_m3_benign_healthy_cluster_with_a_later_top_up_is_silent(tmp_path):
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple(OWNER2, OPS2)
+    cl.deposit(OWNER2, OPS2, value=BURN, mine=False)  # Σ ≥ one block of burn on a healthy cluster: proof
+    failed_liquidation(chain, cl, path, OWNER2, OPS2, tuple_=old)
+    cl.deposit(OWNER2, OPS2, value=10**18, mine=False)
+    chain.mine()
+    advance(w)
+    assert not hits(w) and not incidents(w, "m14") and not unknown_health(w)
+
+
+def test_qa1_m3_undeterminable_position_state_is_unknown_not_dismissed(tmp_path):
+    """A withdrawal before the failed transaction and a top-up after it: the state it met is not derivable."""
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    cl.withdraw(value=1, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old)
+    cl.deposit(value=10**18, mine=False)
+    chain.mine()
+    advance(w)
+    assert not incidents(w, "m14")
+    assert "not derivable" in unknown_health(w)[-1]
+    assert w.db.conn.execute("SELECT cluster_id FROM m14_pending").fetchall()[0][0] == cid_hex()
+
+
+def test_qa1_m3_unknown_order_with_several_events_in_the_block_is_unknown(tmp_path):
+    chain, w, cl, path = make(tmp_path)
+    old = cl.tuple()
+    cl.deposit(value=1, mine=False)
+    failed_liquidation(chain, cl, path, tuple_=old, tx_index=False)
+    cl.deposit(value=10**18, mine=False)
+    chain.mine()
+    advance(w)
+    assert not incidents(w, "m14") and "order against the failed transaction is unknown" in unknown_health(w)[-1]
+
+
+def test_qa1_h1_class_inventory_omission_does_not_lower_a_zero_page(tmp_path):
+    """The H1 class in M14: an inventory that stops listing the cluster is not 'not in storage'."""
+    import dataclasses
+
+    chain, w, cl, path = make(tmp_path)
+    cl.create(OWNER, OPS2, balance=50 * BURN)
+    frontrun(chain, cl, path, owner=OWNER, ops=OPS2)
+    chain.mine(60)
+    advance(w)
+    assert sent(w, "m14") == [("open", "page")]
+    get = w.inventory.get
+    w.inventory.get = lambda b: dataclasses.replace(get(b), clusters={
+        k: v for k, v in get(b).clusters.items() if k != cid_hex(OWNER, OPS2)})  # an API page without it
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    assert [r["severity"] for r in open_incidents(w, "m14").values()] == ["page"]
+    assert "Computed zero" in incidents(w, "m14")[-1]["body"]
+
+
+def test_qa1_old_database_hits_without_block_time_are_filled_from_headers(tmp_path):
+    chain, w, cl, path = make(tmp_path)
+    frontrun(chain, cl, path)
+    advance(w)
+    w.db.conn.execute("UPDATE m14_hits SET block_time = NULL")
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    assert w.db.conn.execute("SELECT block_time FROM m14_hits").fetchone()[0] == chain.timestamp(hits(w)[0]["block"])

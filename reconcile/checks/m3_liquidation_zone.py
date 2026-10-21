@@ -35,6 +35,13 @@ checks that the inventory is complete: the validators of its active, validated E
 to `getNetworkValidatorsCount()` (a cluster missing from both the API and the logs would otherwise never be
 evaluated); a mismatch is the same health message. Transport errors raise.
 
+Absence from the inventory is not evidence (QA cp2a-1 H1): a cluster this check tracks (`m3_zone`, rows
+rewound in this run, or an open incident's subject) that the inventory does not list with a validated tuple
+is read from storage at the evaluated block with its persisted tuple (`m3_zone.tuple`, the last tuple the
+views accepted) and its stored logs as candidates. It leaves the zone only on positive on-chain proof: the
+views on a storage-validated tuple say not liquidatable (or it is inactive, has no validators), or both
+cluster slots are empty, or the stored version is not ETH. Otherwise it is UNKNOWN (kept, health).
+
 Reorg rule (README §6.2), table `m3_zone` and state `last_full_block`, identical for depth 1 and N:
 rows whose `onset_block` is above the ancestor A are deleted (their onset was observed on a deleted
 block) and `zero_block` above A is cleared; the reorg run is a full sweep over the inventory, every
@@ -50,7 +57,17 @@ import json
 import logging
 
 from checks.base import Check, Ctx, Every, Finding, NearSetEveryBlock, OnEvents
-from checks.m3_views import ClusterView, blocks_until_liquidatable, evaluate, inventory_gap, short
+from checks.m3_views import (
+    ClusterView,
+    blocks_until_liquidatable,
+    ensure_columns,
+    evaluate,
+    inventory_gap,
+    short,
+    stored_cluster,
+    tuple_from_json,
+    tuple_json,
+)
 from checks.registry import register
 from eb_events import CLUSTER_KINDS
 
@@ -60,7 +77,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS m3_zone (
   cluster_id TEXT PRIMARY KEY, owner TEXT NOT NULL, operator_ids TEXT NOT NULL,
   onset_block INTEGER NOT NULL, not_liquidatable_before INTEGER, zero_block INTEGER,
-  last_block INTEGER NOT NULL, severity TEXT NOT NULL, balance TEXT NOT NULL, burn_rate TEXT NOT NULL
+  last_block INTEGER NOT NULL, severity TEXT NOT NULL, balance TEXT NOT NULL, burn_rate TEXT NOT NULL,
+  tuple TEXT
 );
 """
 
@@ -83,18 +101,19 @@ class M3LiquidationZone(Check):
         super().__init__(config, settings)
         if not settings.get("views"):
             raise SystemExit("checks.m3 needs the SSVNetworkViews address in the top-level 'views' setting")
-        self.views = settings["views"].lower()
+        self.views, self.proxy = settings["views"].lower(), settings["proxy"].lower()
         self.schedule = (Every(config["full_sweep_interval_s"]), OnEvents(CLUSTER_KINDS | {"RootCommitted"}),
                          NearSetEveryBlock())
         self.near_set: frozenset = frozenset()
         self.tuples: dict = {}  # cluster id -> ClusterInfo of the last validated read (near-set runs)
         self.last_full: float | None = None
-        self.rewound: set[str] = set()
+        self.rewound: dict[str, dict] = {}  # cluster id -> its m3_zone row deleted by this run's rewind
 
     def on_reorg(self, ancestor: int) -> None:
         self.near_set, self.tuples, self.last_full = frozenset(), {}, None
 
     def prepare(self, ctx: Ctx) -> None:
+        ensure_columns(ctx.db.conn, "m3_zone", {"tuple": "TEXT"})
         self.threshold_period = ctx.params.liquidation_threshold_period
         self.minimum_collateral = ctx.params.minimum_liquidation_collateral
 
@@ -103,9 +122,11 @@ class M3LiquidationZone(Check):
     def rows(self, ctx: Ctx) -> dict:
         return {r["cluster_id"]: dict(r) for r in ctx.db.conn.execute("SELECT * FROM m3_zone")}
 
-    def rewind(self, ctx: Ctx, ancestor: int) -> set[str]:
-        """Drop what was derived from blocks above the ancestor; returns the clusters whose onset was there."""
-        gone = {r[0] for r in ctx.db.conn.execute("SELECT cluster_id FROM m3_zone WHERE onset_block > ?", (ancestor,))}
+    def rewind(self, ctx: Ctx, ancestor: int) -> dict[str, dict]:
+        """Drop what was derived from blocks above the ancestor; returns the rows whose onset was there (their
+        identity and tuple stay candidates for this run: a tuple is used only if storage validates it)."""
+        gone = {r["cluster_id"]: dict(r) for r in
+                ctx.db.conn.execute("SELECT * FROM m3_zone WHERE onset_block > ?", (ancestor,))}
         ctx.db.conn.execute("DELETE FROM m3_zone WHERE onset_block > ?", (ancestor,))
         ctx.db.conn.execute("UPDATE m3_zone SET zero_block = NULL WHERE zero_block > ?", (ancestor,))
         ctx.db.conn.execute("UPDATE m3_zone SET not_liquidatable_before = NULL WHERE not_liquidatable_before > ?",
@@ -121,7 +142,7 @@ class M3LiquidationZone(Check):
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
         reorg = ctx.reorg_ancestor is not None
-        self.rewound = self.rewind(ctx, ctx.reorg_ancestor) if reorg else set()
+        self.rewound = self.rewind(ctx, ctx.reorg_ancestor) if reorg else {}
         touched, root = set(), False
         for ev in ctx.events():
             if ev.kind == "RootCommitted":
@@ -134,28 +155,31 @@ class M3LiquidationZone(Check):
         tracked = self.rows(ctx)
         must_report = set(tracked) | set(ctx.reorg_keys)
 
+        def fetch(cids) -> dict:
+            inv = ctx.inventory(block)
+            got = {cid: inv.clusters.get(cid) for cid in cids}
+            got.update(self.lookup(ctx, block, [cid for cid in cids if cid in must_report], inv, tracked))
+            return got
+
         gap = None
         if full:
             inv = ctx.inventory(block)
             infos = {cid: c for cid, c in inv.clusters.items() if c.version == "ETH"}
             gap = inventory_gap(ctx.rpc, self.views, infos.values())
-            for cid in must_report:
-                infos.setdefault(cid, inv.clusters.get(cid))
+            infos.update(self.lookup(ctx, block, must_report, inv, tracked))
             cached = set()
         else:
             wanted = set(self.near_set) | touched | must_report
             infos = {cid: self.tuples.get(cid) for cid in wanted}
             fresh = {cid for cid in wanted if cid in touched or infos[cid] is None}
             if fresh:
-                inv = ctx.inventory(block)
-                infos.update({cid: inv.clusters.get(cid) for cid in fresh})
+                infos.update(fetch(fresh))
             cached = set(wanted) - fresh
 
         status, views = self.evaluate(ctx, infos)
         stale = [cid for cid in cached if status.get(cid, "").startswith("unknown")]
         if stale:  # a cached tuple that changed reverts in the views: re-read it from storage once
-            inv = ctx.inventory(block)
-            infos.update({cid: inv.clusters.get(cid) for cid in stale})
+            infos.update(fetch(stale))
             st2, v2 = self.evaluate(ctx, {cid: infos[cid] for cid in stale})
             status.update(st2)
             views.update(v2)
@@ -208,11 +232,45 @@ class M3LiquidationZone(Check):
             self.near_set = frozenset((set(self.near_set) - evaluated) | near)
         return findings
 
+    def identity(self, ctx: Ctx, cid: str, tracked: dict) -> tuple[str, list, object] | None:
+        """(owner, operator ids, persisted tuple or None) of a cluster this check tracks or has an open incident on."""
+        row = tracked.get(cid) or self.rewound.get(cid)
+        if row is not None:
+            return row["owner"], json.loads(row["operator_ids"]), tuple_from_json(row.get("tuple"))
+        inc = ctx.db.conn.execute("SELECT subject FROM incidents WHERE check_id=? AND key=? AND state='open'",
+                                  (self.id, cid)).fetchone()
+        subject = json.loads(inc[0]) if inc and inc[0] else {}
+        if subject.get("owner") and subject.get("operator_ids") is not None:
+            return subject["owner"], subject["operator_ids"], None
+        return None
+
+    def lookup(self, ctx: Ctx, block: int, cids, inv, tracked: dict) -> dict:
+        """ClusterInfo of the clusters that must be reported: the inventory's entry when it has a validated tuple
+        or proves the cluster absent from storage; otherwise storage at `block`, with the persisted tuple and the
+        stored logs' tuples as candidates. An inventory that omits a cluster proves nothing (QA cp2a-1 H1)."""
+        out = {}
+        for cid in cids:
+            info = inv.clusters.get(cid)
+            if info is not None and (info.valid or info.version is None):
+                out[cid] = info
+                continue
+            ident = self.identity(ctx, cid, tracked)
+            if ident is None:
+                out[cid] = info
+                continue
+            owner, ops, persisted = ident
+            logs = [("logs", ev.cluster) for ev in reversed(ctx.db.cluster_events(cid[2:], block))
+                    if ev.cluster is not None][:1]
+            out[cid] = stored_cluster(ctx.rpc, self.proxy, owner, ops, [("persisted", persisted)] + logs, block)
+        return out
+
     def evaluate(self, ctx: Ctx, infos: dict) -> tuple[dict, dict]:
         """({cluster id: status text}, {cluster id: ClusterView}); a status starting with "unknown" is UNKNOWN."""
         status, targets = {}, []
         for cid, info in infos.items():
-            if info is None or info.version is None:
+            if info is None:
+                status[cid] = "unknown: not listed by the inventory, and no persisted identity to read it by"
+            elif info.version is None:
                 status[cid] = "is not in storage (absent)"
             elif info.version != "ETH":
                 status[cid] = "is not an ETH cluster"
@@ -261,9 +319,9 @@ class M3LiquidationZone(Check):
                 + "\nRunbook: check that our keeper attempted the liquidation; if not, liquidate manually.")
         ctx.db.conn.execute(
             "INSERT OR REPLACE INTO m3_zone (cluster_id, owner, operator_ids, onset_block, not_liquidatable_before, "
-            "zero_block, last_block, severity, balance, burn_rate) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "zero_block, last_block, severity, balance, burn_rate, tuple) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (cid, info.owner, json.dumps(list(info.operator_ids)), row["onset_block"], before, zero_block, block, sev,
-             str(view.balance), str(view.burn_rate)))
+             str(view.balance), str(view.burn_rate), tuple_json(info.cluster)))
         return Finding(
             check=self.id, key=cid, severity=sev, title=title, body=body,
             subject={"cluster_id": cid, "owner": info.owner, "operator_ids": list(info.operator_ids)},

@@ -480,3 +480,151 @@ def test_missing_views_setting_is_a_startup_error(tmp_path):
     with pytest.raises(SystemExit, match="views"):
         M3LiquidationZone(dict(M3LiquidationZone.defaults), {"proxy": "0x" + "00" * 20})
 
+
+
+# ---------------------------------------------------------------- QA cp2a attempt 1 regressions (repair 1)
+# H1: an inventory (API page) that stops listing a tracked cluster proves nothing; red on the frozen head 098c2cd.
+
+
+def api_baseline(tmp_path, balance=0, **kw):
+    """A cluster registered before the scan starts (no log): only the API lists it; the run that sees it."""
+    from fixtures_liquidation import OPS as OPS1
+    from fixtures_liquidation import OWNER
+    from harness import api_row
+
+    chain = LiquidationChain()
+    stub_params(chain)
+    chain.mine()
+    cl = Clusters(chain)
+    cl.create(balance=balance)
+    chain.mine()
+    chain, w, _ = setup(tmp_path, chain=chain, inventory={"api_url": "https://api.invalid", "api_refresh_s": 0}, **kw)
+    c = cl.tuple()
+    response = {"clusters": [api_row(OWNER, OPS1, c.validator_count, c.network_fee_index, c.index, c.active,
+                                     c.balance)], "pagination": {"pages": 1}}
+    w.inventory.http_get = lambda _: response
+    advance(w)
+    return chain, w, cl, response
+
+
+@pytest.mark.parametrize("reorg", [False, True])
+def test_qa1_h1_empty_api_does_not_resolve_a_live_computed_zero_page(tmp_path, reorg):
+    """QA H1 (its scenario): the API returns `clusters: []`; the chain still holds the cluster at zero."""
+    chain, w, cl, response = api_baseline(tmp_path)
+    assert sent(w, "m3") == [("open", "page")]
+    original = incidents(w, "m3")[-1]["id"]
+    chain.mine(3)
+    advance(w)
+    response["clusters"] = []
+    if reorg:
+        chain.reorg(chain.number - 1)
+    chain.mine(2)
+    w.clock.advance(600)
+    advance(w)
+    assert original in {x["id"] for x in open_incidents(w, "m3").values()}
+    assert not outbox(w, "kind='resolved'") and sent(w, "m3") == [("open", "page")]
+    assert "inventory incomplete" in [r for r in outbox(w) if r["key"].startswith("health:m3-unknown")][-1]["text"]
+
+
+def test_qa1_h1_empty_api_after_a_restart_reads_the_persisted_tuple(tmp_path):
+    chain, w, cl, response = api_baseline(tmp_path)
+    response["clusters"] = []
+    w2 = restart(tmp_path, w, inventory={"api_url": "https://api.invalid", "api_refresh_s": 0})
+    w2.inventory.http_get = lambda _: response
+    chain.mine()
+    advance(w2)  # first run of the new process: a full sweep with no in-memory tuple
+    assert list(open_incidents(w2, "m3").values())[0]["severity"] == "page"
+    assert not outbox(w2, "kind='resolved'")
+
+
+def test_qa1_h1_reorg_below_the_onset_with_an_empty_api_reports_the_key_again(tmp_path):
+    """The row is rewound (onset above A): its identity and tuple still let storage decide on the new chain."""
+    chain, w, cl, response = api_baseline(tmp_path, balance=THRESHOLD + 2 * BURN)
+    assert not open_incidents(w, "m3")
+    fork = chain.number
+    chain.mine(4)
+    advance(w)  # liquidatable now (onset recorded above `fork`)
+    assert sent(w, "m3") == [("open", "info")]
+    response["clusters"] = []
+    chain.reorg(fork)
+    chain.mine(5)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["open"] and sent(w, "m3") == [("open", "info")]
+    assert w.db.meta("reorg:m3") is None
+
+
+def test_qa1_h1_empty_api_then_a_real_liquidation_resolves_on_proof(tmp_path):
+    chain, w, cl, response = api_baseline(tmp_path)
+    response["clusters"] = []
+    cl.liquidate()  # the ClusterLiquidated log's tuple validates against storage: inactive, a positive fact
+    w.clock.advance(600)
+    advance(w)
+    assert sent(w, "m3") == [("open", "page"), ("resolved", "info")]
+    assert "is inactive (liquidated)" in outbox(w, "kind='resolved'")[0]["text"]
+
+
+def test_qa1_h1_empty_api_and_an_unvalidatable_tuple_stays_unknown(tmp_path):
+    chain, w, cl, response = api_baseline(tmp_path)
+    response["clusters"] = []
+    cl.corrupt()  # storage holds a word no candidate (persisted, logs) matches
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["open"] and not outbox(w, "kind='resolved'")
+    text = [r for r in outbox(w) if r["key"].startswith("health:m3-unknown")][-1]["text"]
+    assert cid_hex() in text and "no candidate tuple validates" in text
+
+
+def test_qa1_h1_api_error_resolves_nothing(tmp_path):
+    chain, w, cl, response = api_baseline(tmp_path)
+
+    def down(_):
+        raise OSError("api down")
+
+    w.inventory.http_get = down
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["open"] and not outbox(w, "kind='resolved'")
+    assert w.db.meta("run:m3")["last_error"]
+
+
+def test_qa1_h1_empty_api_cluster_absent_from_storage_on_the_new_chain_resolves(tmp_path):
+    """Positive proof: after a reorg that removes the registration, both cluster slots are empty."""
+    from fixtures_liquidation import OPS as OPS1
+    from fixtures_liquidation import OWNER
+    from harness import api_row
+
+    chain, w, cl = setup(tmp_path, inventory={"api_url": "https://api.invalid", "api_refresh_s": 0})
+    response = {"clusters": [], "pagination": {"pages": 1}}
+    w.inventory.http_get = lambda _: response
+    chain.mine()
+    advance(w)
+    fork = chain.number
+    cl.create(balance=0)
+    c = cl.tuple()
+    response["clusters"] = [api_row(OWNER, OPS1, c.validator_count, c.network_fee_index, c.index, c.active,
+                                    c.balance)]
+    advance(w)
+    assert sent(w, "m3") == [("open", "page")]
+    response["clusters"] = []
+    chain.reorg(fork)
+    chain.mine(2)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["resolved"]
+    assert "is not in storage (absent)" in outbox(w, "kind='resolved'")[0]["text"]
+
+
+def test_qa1_h1_reorg_key_without_identity_raises_and_keeps_the_marker(tmp_path):
+    chain, w, cl, response = api_baseline(tmp_path)
+    w.db.conn.execute("DELETE FROM m3_zone")  # no persisted row; the incident subject still names the cluster
+    w.db.conn.execute("UPDATE incidents SET last_seen_block = last_seen_block + 100")  # last seen above A
+    response["clusters"] = []
+    cl.corrupt()
+    chain.mine(2)
+    advance(w)  # not tracked, not a reorg run: nothing reported, nothing resolved (absence never resolves)
+    chain.reorg(chain.number - 1)
+    chain.mine(2)
+    advance(w)  # the reorg run cannot evaluate the key: it raises (rolled back, retried, marker kept)
+    assert [r["state"] for r in incidents(w, "m3")] == ["open"] and w.db.meta("reorg:m3") is not None
+    assert "cannot be evaluated" in w.db.meta("run:m3")["last_error"]

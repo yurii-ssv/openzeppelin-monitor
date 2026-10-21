@@ -8,9 +8,11 @@ UNKNOWN by `evaluate`, never as clean; a transport failure propagates (`RpcError
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
-from eb_storage import MAIN_BASE, Cluster, keccak, u256
+from eb_storage import MAIN_BASE, Cluster, cluster_id, eth_cluster_slot, keccak, ssv_cluster_slot, u256
+from inventory import ClusterInfo
 from rpc import RpcError
 
 CLUSTER_ARGS = "(address,uint64[],(uint32,uint64,uint64,bool,uint256))"
@@ -23,6 +25,11 @@ def selector(signature: str) -> bytes:
 IS_LIQUIDATABLE = selector("isLiquidatable" + CLUSTER_ARGS)
 GET_BALANCE = selector("getBalance" + CLUSTER_ARGS)
 GET_BURN_RATE = selector("getBurnRate" + CLUSTER_ARGS)
+# legacy SSV clusters: the ETH variants enforce VERSION_ETH (SSVViews at the pin), these enforce VERSION_SSV;
+# balances and burn rates are in SSV (token wei, wei/block)
+IS_LIQUIDATABLE_SSV = selector("isLiquidatableSSV" + CLUSTER_ARGS)
+GET_BALANCE_SSV = selector("getBalanceSSV" + CLUSTER_ARGS)
+GET_BURN_RATE_SSV = selector("getBurnRateSSV" + CLUSTER_ARGS)
 GET_OPERATOR_EARNINGS = selector("getOperatorEarnings(uint64)")
 GET_NETWORK_EARNINGS = selector("getNetworkEarnings()")
 STAKING_ETH_POOL_BALANCE = selector("stakingEthPoolBalance()")
@@ -78,9 +85,12 @@ class ClusterView:
     burn_rate: int
 
 
-def cluster_calls(views: str, owner: str, operator_ids, cluster: Cluster) -> list[tuple[str, bytes]]:
+def cluster_calls(views: str, owner: str, operator_ids, cluster: Cluster, version: str = "ETH") -> list[tuple[str, bytes]]:
+    """isLiquidatable, getBalance, getBurnRate — the `SSV` variants for a legacy cluster."""
     args = encode_cluster_args(owner, operator_ids, cluster)
-    return [(views, IS_LIQUIDATABLE + args), (views, GET_BALANCE + args), (views, GET_BURN_RATE + args)]
+    sels = (IS_LIQUIDATABLE, GET_BALANCE, GET_BURN_RATE) if version == "ETH" else \
+        (IS_LIQUIDATABLE_SSV, GET_BALANCE_SSV, GET_BURN_RATE_SSV)
+    return [(views, s + args) for s in sels]
 
 
 def _decode(out: list[bytes]) -> ClusterView:
@@ -149,6 +159,60 @@ def blocks_until_liquidatable(view: ClusterView, threshold_period: int, minimum_
     if view.balance < threshold:
         return 0
     return (view.balance - threshold) // view.burn_rate + 1
+
+
+def stored_cluster(rpc, proxy: str, owner: str, operator_ids, candidates, block: int | None = None) -> ClusterInfo:
+    """A cluster the inventory does not list (an API page that omits it is not evidence of anything), read from
+    storage at `block`: the version from which slot is set (None: not in storage, a positive fact), the tuple from
+    `candidates` [(source, Cluster)] (persisted or log tuples) only if its hash equals the stored word."""
+    cid = cluster_id(owner, operator_ids)
+    eth_word, ssv_word = rpc.storage(proxy, [eth_cluster_slot(cid), ssv_cluster_slot(cid)], block)
+    version = "ETH" if eth_word else "SSV" if ssv_word else None
+    stored = eth_word or ssv_word
+    src, cl = next(((s, c) for s, c in candidates if c is not None and stored
+                    and int.from_bytes(c.hash_data(), "big") == stored), (None, None))
+    return ClusterInfo(cluster_id="0x" + cid.hex(), owner=owner.lower(), operator_ids=tuple(operator_ids),
+                       version=version, cluster=cl, tuple_source=src, sources=frozenset({"persisted"}),
+                       api_migrated=None)
+
+
+def tuple_json(cl: Cluster) -> str:
+    return json.dumps([cl.validator_count, cl.network_fee_index, cl.index, cl.active, str(cl.balance)])
+
+
+def tuple_from_json(text: str | None) -> Cluster | None:
+    if not text:
+        return None
+    c = json.loads(text)
+    return Cluster(int(c[0]), int(c[1]), int(c[2]), bool(c[3]), int(c[4]))
+
+
+def block_times(rpc, blocks, hashes: dict | None = None) -> dict[int, int]:
+    """{block: timestamp} from the blocks' own headers (chain time, not the worker clock). A block the node does not
+    have, or whose hash differs from the expected one in `hashes` (a reorg while reading), raises RpcError: the run
+    is retried, never evaluated on another fork's time."""
+    blocks = sorted(set(blocks))
+    if not blocks:
+        return {}
+    rpc.counts["eth_getBlockByNumber"] += len(blocks)
+    out = rpc.rpc.batch([("eth_getBlockByNumber", [hex(b), False]) for b in blocks])
+    times = {}
+    for b, blk in zip(blocks, out):
+        want = (hashes or {}).get(b)
+        if not blk or blk.get("timestamp") is None:
+            raise RpcError(f"block {b}: header or timestamp unavailable")
+        if want and blk["hash"].lower() != want.lower():
+            raise RpcError(f"block {b}: hash {blk['hash']} is not the expected {want} (reorganised while reading)")
+        times[b] = int(blk["timestamp"], 16)
+    return times
+
+
+def ensure_columns(conn, table: str, columns: dict) -> None:
+    """Additive migration of a check's own table on a database created by an earlier version of the check."""
+    have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+    for name, decl in columns.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def short(cid: str) -> str:

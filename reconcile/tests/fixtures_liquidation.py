@@ -10,8 +10,19 @@
   when the tuple's hash differs from the stored word at the block (validateHashedCluster);
   getNetworkValidatorsCount = the validators of active clusters (ethDaoValidatorCount), from `Clusters`.
 
-The two parameters are read from the chain's own `params.GETTERS` stubs (`harness.stub_params`), so a
-parameter change on the fake chain changes the views exactly as it would on mainnet. `Clusters` writes
+Legacy SSV clusters (`Clusters.create(..., version="SSV")`, stored in `clusters[id]`, not `ethClusters[id]`)
+answer the `…SSV` variants (`isLiquidatableSSV`, `getBalanceSSV`, `getBurnRateSSV`) from the same model in SSV
+units, with the SSV parameters; each variant reverts `IncorrectClusterVersion()` on the other version, as
+`ClusterLib.validateClusterVersion` does at the pin (a legacy cluster outside the model, e.g. `MiniSSV`'s, answers
+the `…SSV` views from `stub_call`).
+
+The parameters are read from the chain's own `params.GETTERS` stubs (`harness.stub_params`), so a
+parameter change on the fake chain changes the views exactly as it would on mainnet.
+
+Block headers carry a `timestamp` (chain time, which M14's 24-hour window counts): 12 s per slot from
+`T0`, plus missed-slot gaps added with `elapse(seconds)`; when a `clock` is attached (`setup` attaches the
+worker's), a block first read at worker time t is never earlier than t, so `w.clock.advance(13 * 3600)`
+between blocks models 13 hours of chain time too. Timestamps never decrease with the block number. `Clusters` writes
 real tuples to storage and emits real logs (ValidatorAdded, ClusterDeposited, ClusterWithdrawn,
 ClusterLiquidated), so the framework's scan, inventory and storage validation run unmodified.
 Dated values (spec §5, block 25,933,264) are the `harness.stub_params` defaults.
@@ -26,21 +37,25 @@ from harness import VIEWS, make_worker, stub_params
 
 from checks.m3_views import (
     GET_BALANCE,
+    GET_BALANCE_SSV,
     GET_BURN_RATE,
+    GET_BURN_RATE_SSV,
     GET_NETWORK_EARNINGS,
     GET_NETWORK_VALIDATORS_COUNT,
     GET_OPERATOR_EARNINGS,
     IS_LIQUIDATABLE,
+    IS_LIQUIDATABLE_SSV,
     LIQUIDATE,
     MAIN_LAST_OPERATOR_ID,
     STAKING_ETH_POOL_BALANCE,
     decode_cluster_args,
     encode_cluster_args,
 )
-from eb_storage import Cluster, cluster_id, eth_cluster_slot, u256
+from eb_storage import Cluster, cluster_id, eth_cluster_slot, ssv_cluster_slot, u256
 from params import GETTERS, selector
 
 INCORRECT_CLUSTER_STATE = "0x12e04c87"
+INCORRECT_CLUSTER_VERSION = "0x" + selector("IncorrectClusterVersion()").hex()
 CLUSTER_IS_LIQUIDATED = "0x" + selector("ClusterIsLiquidated()").hex()
 OWNER = "0x" + "aa" * 20
 OWNER2 = "0x" + "ab" * 20
@@ -51,7 +66,11 @@ LTP = 42_960  # spec §5 liquidation threshold period (blocks), the stub_params 
 MIN_COLL = 325_000_000_000_000  # spec §5 minimum liquidation collateral (wei)
 THRESHOLD = LTP * BURN  # 0.0004296 ETH > MIN_COLL
 VIEW_SELECTORS = {"0x" + s.hex(): name for s, name in
-                  ((IS_LIQUIDATABLE, "isLiquidatable"), (GET_BALANCE, "getBalance"), (GET_BURN_RATE, "getBurnRate"))}
+                  ((IS_LIQUIDATABLE, "isLiquidatable"), (GET_BALANCE, "getBalance"), (GET_BURN_RATE, "getBurnRate"),
+                   (IS_LIQUIDATABLE_SSV, "isLiquidatableSSV"), (GET_BALANCE_SSV, "getBalanceSSV"),
+                   (GET_BURN_RATE_SSV, "getBurnRateSSV"))}
+T0 = 1_800_000_000  # FakeClock's start: slot time and worker time agree at the start
+SLOT_S = 12
 
 
 class LiquidationChain(FakeChain):
@@ -62,6 +81,30 @@ class LiquidationChain(FakeChain):
         self.view_faults: dict[bytes, str] = {}  # cid -> "revert" | "empty" (fault injection)
         self.dao_validators: list[tuple[int, int]] = []  # [(from block, ethDaoValidatorCount)]
         self.hidden_validators = 0  # validators of clusters the inventory cannot see (completeness fault)
+        self.start = start_block
+        self.clock = None  # worker clock (FakeClock): blocks are first read no earlier than its time
+        self.gaps: list[tuple[int, int]] = []  # [(from block, seconds)] missed slots before that block
+        self.stamps: dict[int, float] = {}  # block -> worker time when its header was first read
+
+    # ---- chain time
+
+    def elapse(self, seconds: int) -> None:
+        """Missed slots: the pending block (and every later one) is `seconds` later than its slot time."""
+        self.gaps.append((self.number, seconds))
+
+    def timestamp(self, n: int) -> int:
+        t = T0 + SLOT_S * (n - self.start) + sum(s for b, s in self.gaps if b <= n)
+        if self.clock is not None:
+            if n not in self.stamps:
+                self.stamps[n] = min([self.clock()] + [v for m, v in self.stamps.items() if m > n])
+            t = max(t, int(self.stamps[n]))
+        return t
+
+    def _handle(self, m: str, p: list):
+        res = super()._handle(m, p)
+        if m == "eth_getBlockByNumber" and res:
+            res = dict(res, timestamp=hex(self.timestamp(int(res["number"], 16))))
+        return res
 
     # ---- model
 
@@ -89,6 +132,8 @@ class LiquidationChain(FakeChain):
         self.dao_validators.append((self.number, now + delta))
 
     def reorg(self, from_block: int) -> None:
+        self.gaps = [g for g in self.gaps if g[0] < from_block]
+        self.stamps = {b: t for b, t in self.stamps.items() if b < from_block}
         self.dao_validators = [d for d in self.dao_validators if d[0] < from_block]
         for cid in self.model:
             self.model[cid] = [s for s in self.model[cid] if s[0] < from_block]
@@ -105,11 +150,20 @@ class LiquidationChain(FakeChain):
         name = VIEW_SELECTORS.get(data[:10]) if to == self.views else None
         if name is None:
             return super()._eth_call(obj, block)
-        self.calls.append((to, data, block))
         owner, ops, cl = decode_cluster_args(bytes.fromhex(data[10:]))
         cid = cluster_id(owner, ops)
-        if int.from_bytes(cl.hash_data(), "big") != self.storage(eth_cluster_slot(cid), block):
+        if name.endswith("SSV") and cid not in self.model:  # a legacy cluster outside the model: generic stubs
+            return super()._eth_call(obj, block)
+        self.calls.append((to, data, block))
+        word = int.from_bytes(cl.hash_data(), "big")
+        version = ("ETH" if word == self.storage(eth_cluster_slot(cid), block) else
+                   "SSV" if word == self.storage(ssv_cluster_slot(cid), block) else None)
+        if version is None:  # validateHashedCluster
             raise Revert(INCORRECT_CLUSTER_STATE)
+        ssv = name.endswith("SSV")
+        if version != ("SSV" if ssv else "ETH"):  # validateClusterVersion
+            raise Revert(INCORRECT_CLUSTER_VERSION)
+        name = name.removesuffix("SSV")
         fault = self.view_faults.get(cid)
         if fault == "revert":
             raise Revert("0x4e487b710000000000000000000000000000000000000000000000000000000000000011")
@@ -122,9 +176,10 @@ class LiquidationChain(FakeChain):
             if not cl.active:
                 raise Revert(CLUSTER_IS_LIQUIDATED)
             return "0x" + u256(bal).hex()
+        suffix = "_ssv" if ssv else ""
         liq = cl.active and cl.validator_count > 0 and (
-            bal < self.param("minimum_liquidation_collateral", block)
-            or bal < self.param("liquidation_threshold_period", block) * burn)
+            bal < self.param("minimum_liquidation_collateral" + suffix, block)
+            or bal < self.param("liquidation_threshold_period" + suffix, block) * burn)
         return "0x" + u256(int(liq)).hex()
 
 
@@ -145,7 +200,8 @@ class Clusters:
         st["nfi"] += 1
         st["balance"] = self.c.balance_at(cid, self.c.number) if balance is None else balance
         cl = Cluster(st["count"], st["nfi"], st["index"], st["active"], st["balance"])
-        self.c.write(eth_cluster_slot(cid), int.from_bytes(cl.hash_data(), "big"))
+        slot = eth_cluster_slot(cid) if st["version"] == "ETH" else ssv_cluster_slot(cid)
+        self.c.write(slot, int.from_bytes(cl.hash_data(), "big"))
         self.c.settle(cid, st["balance"] if st["active"] else 0, st["burn"])
         return cl
 
@@ -154,10 +210,16 @@ class Clusters:
             self.c.mine()
         return tx
 
-    def create(self, owner=OWNER, ops=OPS, count=1, balance=10**18, burn=BURN, mine=True) -> str:
+    def create(self, owner=OWNER, ops=OPS, count=1, balance=10**18, burn=BURN, mine=True, version="ETH") -> str:
+        """An ETH cluster with `count` ValidatorAdded logs; `version="SSV"`: a legacy SSV cluster registered before
+        the scan starts (storage only, no log: only the API or a later log can list it; balance/burn in SSV)."""
         cid = cluster_id(owner, ops)
         st = self.state.setdefault(cid, {"owner": owner, "ops": tuple(ops), "count": 0, "nfi": 0, "index": 0,
-                                         "active": True, "balance": 0, "burn": burn})
+                                         "active": True, "balance": 0, "burn": burn, "version": version})
+        if version == "SSV":
+            st.update(count=st["count"] + count, burn=burn, active=True)
+            self._persist(cid, st, balance)
+            return self._end(self.c.new_tx(owner), mine)
         self.c.add_dao_validators(count + (0 if st["active"] else st["count"]))
         st.update(count=st["count"] + count, burn=burn, active=True)
         tx = self.c.new_tx(owner)
@@ -170,6 +232,8 @@ class Clusters:
         return self._end(tx, mine)
 
     def deposit(self, owner=OWNER, ops=OPS, value=1, sender=None, mine=True) -> str:
+        """`ClusterDeposited` with `value` in the cluster's own unit (wei of ETH, or of SSV for a legacy cluster: the
+        pre-v2 SSV deposit emitted the same event; at the pin `deposit` is ETH-only)."""
         cid = cluster_id(owner, ops)
         st = self.state[cid]
         tx = self.c.new_tx(sender or "0x" + "de" * 20)
@@ -218,6 +282,7 @@ def setup(tmp_path, checks=("m3",), cfg=None, chain=None, **over):
     stub_params(chain)
     chain.mine()
     over.setdefault("clock", FakeClock())
+    chain.clock = over["clock"]
     chain, w = make_worker(tmp_path, only=list(checks), chain=chain, views=VIEWS, checks=cfg or {}, **over)
     return chain, w, Clusters(chain)
 
