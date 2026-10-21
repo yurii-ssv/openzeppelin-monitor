@@ -42,7 +42,7 @@ class M3LiquidationZone(Check):
         super().__init__(config, settings)               # self.config (resolved), self.settings (whole config)
         self.schedule = (Every(300), OnEvents({"ClusterLiquidated", "ClusterDeposited"}))
 
-    def prepare(self, ctx: Ctx) -> None:                 # before the first run and after a parameter event
+    def prepare(self, ctx: Ctx) -> None:                 # before the first run, after a parameter reload or a reorg
         self.threshold = ctx.params.liquidation_threshold_period
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
@@ -73,7 +73,9 @@ Rules:
   Any other exception sends a `check-error` health message (re-sent every 6 h while it persists) and
   increments `ssv_watch_check_errors_total{check}`; the other checks still run.
 - In-memory state is lost on restart; persist what matters in your own tables or with `ctx.set_state`.
-  Override `on_reorg(ancestor)` to drop in-memory state derived from rewound blocks.
+  Override `on_reorg(ancestor)` to drop in-memory state derived from rewound blocks. State you persisted
+  from blocks above `ctx.reorg_ancestor` (own rows, `ctx.set_state`, open incidents) came from deleted
+  blocks: correct it in the run with reason `reorg` (§6.1).
 
 ## 3. Schedules
 
@@ -86,8 +88,8 @@ says which. Every run is at the current checkpoint block (intermediate blocks ar
 | `OnEvents({"Kind", …})` | a stored proxy event of one of these kinds is past the check's event cursor | `events` |
 | `OnInbox()` | resolved inbox entries are past the check's inbox cursor | `inbox` |
 | `NearSetEveryBlock()` | `self.near_set` (a set you maintain) is non-empty and the checkpoint advanced | `block` |
-| (framework) | a parameter event was scanned, or the parameters became readable again after a failed read (after `prepare`) | `params` |
-| (framework) | the chain was reorganised below the checkpoint | `reorg` |
+| (framework) | a parameter event was scanned, the parameters were re-read after a reorg, or they became readable again after a failed read (after `prepare`) | `params` |
+| (framework) | the chain was reorganised below the checkpoint (durable until the check's run commits, also across a restart; `ctx.reorg_ancestor`) | `reorg` |
 | (framework) | `once` / `step(force=True)` | `force` |
 
 Cursors (`meta` keys `cursor:events:<id>`, `cursor:inbox:<id>`) are durable and advance only when a
@@ -148,6 +150,7 @@ worker status file (`<db>.status.json`) has `healthy: false` with the reason in 
 | Field | Type / content |
 |---|---|
 | `ctx.check_id`, `ctx.block` | the check id; the checkpoint block of this run |
+| `ctx.reorg_ancestor` | the lowest common ancestor of the reorgs since the check's last successful run, or None (§6.1) |
 | `ctx.rpc` | `rpc.Chain` pinned to `block`: `call(to, data) -> bytes`, `call_many([(to, data), …])`, `balance(addr)`, `balances([…])`, `storage(addr, [slots])`, `code(addr)`, `transaction(hash)`, `logs(address, [topic0, …], start, end=None)` (any contract, raw logs). A revert raises `RpcError` with `.data` = revert data. `ctx.rpc.counts` is a `Counter` of JSON-RPC calls made by this run (also stored as `rpc_calls` in `meta run:<id>`). |
 | `ctx.params` | live parameters at the last successful reload (`params.py`; failed reads: §5.1): `network_fee`, `network_fee_ssv`, `liquidation_threshold_period`, `liquidation_threshold_period_ssv`, `minimum_liquidation_collateral`, `minimum_liquidation_collateral_ssv`, `operator_fee_increase_limit`, `maximum_operator_fee`, `minimum_operator_eth_fee`, `validators_per_operator_limit`, `quorum_bps`, `cooldown_duration`, `active_oracle_ids` (4 ids, 0 = empty slot), `oracles` ({id: address}), `min_blocks_between_updates`; `ctx.params.block` = read block; `ctx.params.enabled` is False when `views` is not configured; `ctx.params.ok` is False while the values are invalid (`ctx.params.error` says why). Attribute, item or `.get` access; ints, raw units (wei, blocks, bps). Access while invalid raises `params.ParamsUnavailable`. |
 | `ctx.inventory(block=None)` | `inventory.Inventory` at the block (cached per block): `.clusters` {`0x…` id: `ClusterInfo`}, `.operators` {op id: {"clusters", "validators"}} over validated clusters, `.invalid` (exist in storage, no candidate tuple validates — M1 input), `.stats()`. `ClusterInfo`: `cluster_id`, `owner`, `operator_ids`, `version` ("ETH" / "SSV" from storage; None = not in storage), `cluster` (`eb_storage.Cluster`, storage-validated, or None), `valid`, `legacy`, `tuple_source` ("logs" / "api"), `sources`, `api_migrated`, `api` (raw API row). API pages are refetched at most every `inventory.api_refresh_s`. |
@@ -162,8 +165,10 @@ worker status file (`<db>.status.json`) has `healthy: false` with the reason in 
 
 ### 5.1 Live parameters after a failed read
 
-The framework reads the parameters before the first run and again in the step that scans a parameter
-event (`eb_events.PARAM_KINDS`). When a read fails (a getter reverts, returns no data, or the RPC
+The framework reads the parameters before the first run, again in the step that scans a parameter
+event (`eb_events.PARAM_KINDS`), and after every reorg below the checkpoint (values read above the
+common ancestor may come from a deleted block, so they are invalidated at the reorg and re-read at the
+new checkpoint before any check runs; §6.1). When a read fails (a getter reverts, returns no data, or the RPC
 fails), the old values are **invalidated, not kept**:
 
 - every `ctx.params.<name>`, `ctx.params[name]` and `ctx.params.get(name, default)` raises
@@ -188,6 +193,24 @@ worker sends an `inbox-unavailable` health message (once per outage, re-sent eve
 ingested before the outage (their other schedules still run). The deployment creates the empty
 file before the Monitor's first append (the worker mounts the inbox read-only).
 
+**Confirmation gate.** The Monitor appends at its own depth (`confirmation_blocks: 2` in
+`deploy/config/networks/evm_ethereum_mainnet.json`); the worker's checkpoint is `confirmations` (12)
+deep. An entry is delivered (`ctx.inbox`) only once the checkpoint has reached its `block` **and** its
+`block_hash` equals the canonical hash at that block (looked up once per entry, batched per step):
+
+- **latency**: inbox evidence reaches checks about `confirmations − 2` blocks (≈ 2 min at 12) after the
+  Monitor wrote it, together with the logs of the same block, so `entry.block <= ctx.block` always holds
+  and correlations with stored events of that block are complete;
+- an entry of an orphaned block is marked `canonical = 0`, logged, counted in the status file
+  (`inbox.orphaned`) and `ssv_watch_inbox_entries{state="orphaned"}`, and **never delivered**; a
+  transaction re-included in another block arrives as a new `(tx_hash, block_hash)` line and is
+  delivered once;
+- entries are delivered in file order: an entry not yet confirmed holds the ones after it
+  (`inbox.held`, `state="held"`);
+- if the hash lookup fails, entries stay held (never delivered unverified), the status file reports
+  `healthy: false` with the reason, `ssv_watch_input_unavailable{input="inbox"}` is 1, and the lookup is
+  retried at every step.
+
 ## 6. Events
 
 The scan stores every proxy log whose topic0 is tracked (`eb_events.TOPIC0`): the cluster kinds
@@ -204,6 +227,40 @@ at its first start, without backfill). Events of other contracts are read with `
 
 `Event` fields: `kind`, `block`, `log_index`, `tx_index`, `tx_hash`, `block_hash`, `cluster_id` (bytes),
 `owner`, `operator_ids`, `cluster`, `pubkey`, `shares_len`, `ref_block`, `eb`, `root`, `extra`, `pos`.
+
+### 6.1 Reorg semantics
+
+`confirmations` (12) keeps the checkpoint below ordinary reorgs; a deeper one is detected at the next
+step (the checkpoint's recorded hash, or the block itself on a shorter chain, is no longer canonical)
+and rewound to the newest recorded block whose hash is still canonical (the **ancestor**; searched over
+`reorg_search_depth` recorded blocks, beyond which the worker stops with an error). One `reorg` health
+message is sent per distinct (checkpoint, ancestor). Every piece of state the worker keeps across
+blocks, with its handling for a reorg of depth 1 and of depth N (no row differs between the two except
+where stated):
+
+| State | Where | Handling on a reorg | Status before repair 2 → test |
+|---|---|---|---|
+| Stored logs | `logs` | rows above the ancestor deleted (same transaction as the rewind), the new chain is rescanned | correct → `test_worker::test_reorg_rewinds_and_replays` (1), `test_reorg_state::test_reorg_depth_n_replays_only_new_chain_events_once` (N) |
+| Logs read while the chain changes | `scan` | every event block within `reorg_search_depth` of the target is compared with its canonical hash (one batched lookup); a mismatch (a reorg between `eth_getLogs` and the hash read, or a load-balanced RPC answering from another fork) fails the step and the window is re-read | **wrong** (orphan logs stored under the new checkpoint hash, never detected) → `test_scan_rejects_logs_of_a_block_reorganised_during_the_scan` |
+| Recorded block hashes, checkpoint | `blocks`, `meta checkpoint` | rows above the ancestor deleted; checkpoint = ancestor; a checkpoint block the node does not have (shorter new chain) counts as non-canonical | **wrong** for a shorter chain (RPC failure every step until the chain regrew) → `test_near_set_check_runs_after_a_reorg_onto_a_shorter_chain` |
+| Event cursors | `meta cursor:events:<id>` | rewound to `(ancestor, end of block)`: the new chain's events are delivered once | correct → `test_framework::test_scheduler_reorg_resets_event_cursor` (1), `test_reorg_depth_n_replays_only_new_chain_events_once` (N) |
+| Live parameters | `Worker.params` (memory) | invalidated at the reorg, re-read at the new checkpoint before any check runs; a failed re-read is §5.1 (`ParamsUnavailable`, `healthy: false`, retried every step) | **wrong** (QA attempt 2: orphan value used indefinitely) → `test_qa2_regressions` (Appendix A, B), `test_reorg_params_reread_failure_blocks_consumers_until_it_succeeds` |
+| `prepare` copies | check attributes, `Worker.prepared` | every check's `prepare` is due again (reasons `reorg`, `params`) | **wrong** (same finding) → Appendix A `cached`, `test_reorg_depth_n_rereads_params_and_every_prepare_copy` |
+| Inventory cache | `InventoryCache` (memory, keyed by block number, which the new chain reuses) | cleared; rebuilt from the new chain's logs and storage | correct, untested → `test_reorg_invalidates_the_inventory_cache[1,3]` |
+| Inventory API rows | `InventoryCache` (memory) | off-chain and untrusted: every tuple is re-validated against storage at the evaluated block | not block-derived → `test_framework::test_inventory_validates_tuples_against_storage` |
+| Inbox byte offset, `(tx_hash, block_hash)` dedup | `meta inbox:offset`, `inbox` | file position, not chain-derived; a re-included transaction has a new block hash, hence a new entry | correct → `test_inbox_entry_of_an_orphaned_block_is_never_delivered_and_its_reinclusion_is` |
+| Inbox delivery | `inbox.canonical` | §5.2 gate; the rewind resets the flag of entries above the ancestor, so an undelivered entry is re-checked on the new chain | **wrong** (entries delivered before their block was confirmed and from orphaned blocks) → the five `test_inbox_*` / `test_reorg_below_the_checkpoint_rechecks_undelivered_inbox_entries` tests in `test_reorg_state.py` |
+| Inbox cursors | `meta cursor:inbox:<id>` | not rewound (ids, not blocks): an entry delivered before a reorg was canonical at or below the checkpoint of that time, exactly like the logs of its block; the check corrects what it derived from it via `ctx.reorg_ancestor` | by design |
+| Per-check reorg notice | `meta reorg:<id>`, `Worker.pending` | durable marker written with the rewind (lowest ancestor kept), cleared when the check's run commits; replayed at start (`on_reorg` + reason `reorg`) if the process died first; `ctx.reorg_ancestor` | **wrong** (in memory only: lost by a crash between the rewind and the run) → `test_reorg_marker_survives_a_restart_and_gives_the_lowest_ancestor` |
+| `NearSetEveryBlock` progress | `Worker.last_block` (memory) | reset: the check runs at the new checkpoint (`reorg`, `block`) and at every following block | was masked by the shorter-chain failure → `test_near_set_check_runs_after_a_reorg_onto_a_shorter_chain` |
+| `Every` progress | `Worker.last_run` (memory, time) | not block-derived; the `reorg` reason runs the check anyway | by design |
+| Check in-memory state | check attributes (M5 `dirty`, a check's `near_set`) | `on_reorg(ancestor)`, also at start for a reorg whose run had not committed | M5: `test_reorg_rewinds_and_replays` (1), `test_m5_reorg_depth_n_reevaluates_on_the_new_chain` (N) |
+| Check persisted state | own tables, `ctx.set_state` | the check's job in the run with reason `reorg`: rows derived from blocks above `ctx.reorg_ancestor` came from deleted blocks (M5 re-evaluates and rewrites every cluster) | contract (§2); M5 tests above |
+| Open incidents found on deleted blocks | `incidents` | kept (a sent alert cannot be unsent; the `reorg` health message says so); the check re-evaluates in its `reorg` run and resolves keys the new chain does not support (absence never resolves) | contract; M5 tests above |
+| Default incident id `<check>-<key>-<block>` | `incidents.id` | an id taken by the deleted chain's incident gets `-2`, `-3`, … (a check-proposed `incident_id` must still be unique) | **wrong** (`ValueError`, check-error, the run lost) → `test_default_incident_id_reused_by_a_reorganised_block_gets_a_suffix` |
+| Outbox keys with a block or revision (`…:escalate:<sev>:<block>`, `…:resolved:<block>`, `<id>:<revision>`, `digest:<block>`) | `outbox.key` | a send the incident state machine decided is never dropped: a taken key gets `#2`, `#3`, … (health keys still de-duplicate by design) | **wrong** (silently dropped while `incidents.alerts` counted it) → `test_escalation_replayed_on_a_reorganised_block_is_sent_again` |
+| Status file, `/metrics` checkpoint and lag | `meta` | read at each write/scrape: follow the rewind | correct → `test_reorg_depth_n_replays_only_new_chain_events_once` (gauge) |
+| Reorg deeper than the search | `check_reorg` | the worker stops (`reorg deeper than … recorded blocks`) instead of guessing an ancestor | correct, untested → `test_reorg_deeper_than_the_search_stops_the_worker` |
 
 ## 7. Configuration
 

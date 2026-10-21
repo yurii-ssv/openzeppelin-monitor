@@ -2,14 +2,17 @@
 """SSV watch worker: the stateful half of the monitoring service (plan §6), grown from the #94775 worker.
 
 The worker is read-only against the chain. Each step:
-  1. checks for a reorg below the checkpoint and rewinds (logs, cursors, inventory),
+  1. checks for a reorg below the checkpoint and rewinds every piece of block-derived state (logs,
+     cursors, inventory, live parameters, inbox confirmations; checks/README.md §6.1),
   2. scans confirmed SSVNetwork proxy logs into SQLite and advances a durable checkpoint
-     (`eth_getLogs` in bounded windows; an error is never read as "no logs"),
-  3. ingests the Monitor's failed-transaction inbox and resolves revert selectors (a configured inbox
-     that cannot be read is monitor health, never an empty input),
-  4. reloads live protocol parameters after a parameter event (a failed read invalidates them and is
-     retried every step), then runs every due check (interval, event, inbox and near-set-per-block
-     schedules) and turns its findings into incidents and outbox messages,
+     (`eth_getLogs` in bounded windows; an error is never read as "no logs"; logs of a non-canonical
+     block are rejected),
+  3. ingests the Monitor's failed-transaction inbox, resolves revert selectors and confirms each entry's
+     block hash once the checkpoint passes it (a configured inbox that cannot be read is monitor
+     health, never an empty input),
+  4. reloads live protocol parameters after a parameter event or a reorg (a failed read invalidates
+     them and is retried every step), then runs every due check (interval, event, inbox and
+     near-set-per-block schedules) and turns its findings into incidents and outbox messages,
   5. re-alerts open incidents, sends the daily digest, delivers the outbox.
 Checks live in checks/ (interface: checks/README.md); M5 (#94775) is checks/m5_eb_desync.py.
 
@@ -152,6 +155,11 @@ class Worker:
         self.last_block: dict[str, int] = {}
         self.prepared: set[str] = set()
         self.pending: dict[str, set[str]] = {c: set() for c in self.checks}
+        for cid, check in self.checks.items():  # a reorg whose re-run did not commit before a restart
+            ancestor = self.db.meta(f"reorg:{cid}")
+            if ancestor is not None:
+                check.on_reorg(ancestor)
+                self.pending[cid].add("reorg")
 
     # ---- identity / bootstrap
 
@@ -190,10 +198,18 @@ class Worker:
         return self.rpc.block_number() - self.cfg.confirmations
 
     def check_reorg(self) -> None:
+        """Rewind every piece of state derived from blocks above the last common ancestor (checks/README.md §6.1).
+
+        Durable (one transaction): logs, recorded block hashes, the checkpoint, event cursors, the inbox
+        entries' canonical flag, and a per-check `reorg:<id>` marker (lowest ancestor since the check's
+        last successful run: `ctx.reorg_ancestor`, survives a crash). In memory, after the commit: the
+        inventory cache, the live parameters and every `prepare` copy (re-read before the next run), each
+        check's `on_reorg`, and the `reorg` run reason."""
         cp = self.checkpoint()
         if not cp["hash"]:
             return
-        if self.rpc.block_hash(cp["block"]) == cp["hash"]:
+        # A block the node does not have (the new chain is shorter) is not canonical either.
+        if self.rpc.block_hash(cp["block"], missing_ok=True) == cp["hash"]:
             return
         rows = self.db.conn.execute(
             "SELECT number, hash FROM blocks WHERE number<=? ORDER BY number DESC LIMIT ?",
@@ -201,7 +217,7 @@ class Worker:
         ).fetchall()
         ancestor = None
         for r in rows:
-            if self.rpc.block_hash(r["number"]) == r["hash"]:
+            if self.rpc.block_hash(r["number"], missing_ok=True) == r["hash"]:
                 ancestor = (r["number"], r["hash"])
                 break
         if ancestor is None:
@@ -209,20 +225,32 @@ class Worker:
         with self.db.tx():
             n = self.db.conn.execute("DELETE FROM logs WHERE block>?", (ancestor[0],)).rowcount
             self.db.conn.execute("DELETE FROM blocks WHERE number>?", (ancestor[0],))
+            self.db.conn.execute("UPDATE inbox SET canonical=NULL WHERE block>?", (ancestor[0],))
             self.db.set_meta("checkpoint", {"block": ancestor[0], "hash": ancestor[1]})
             for cid in self.checks:
                 if self._cursor(cid)[0] > ancestor[0]:
                     self.db.set_meta(f"cursor:events:{cid}", [ancestor[0], END_OF_BLOCK])
+                prev = self.db.meta(f"reorg:{cid}")
+                self.db.set_meta(f"reorg:{cid}", ancestor[0] if prev is None else min(prev, ancestor[0]))
             self.alerts.health(
                 "reorg",
                 f"Chain reorganisation below the confirmation horizon: checkpoint {cp['block']} rewound to "
                 f"{ancestor[0]}, {n} logs discarded and replayed. Incidents are re-evaluated on the new chain.",
                 dedup=f"reorg:{cp['block']}:{ancestor[0]}",
             )
+        self._after_reorg(ancestor[0])
+
+    def _after_reorg(self, ancestor: int) -> None:
         self.inventory.invalidate()
+        if self.params.enabled:
+            # Values read above the ancestor may come from a deleted block; even without a parameter
+            # event on the new chain they are re-read at the new checkpoint before any check runs.
+            self.params.invalidate(f"chain reorganised above block {ancestor}; not yet re-read")
+        self.prepared.clear()
         for cid, check in self.checks.items():
-            check.on_reorg(ancestor[0])
+            check.on_reorg(ancestor)
             self.pending[cid].add("reorg")
+            self.last_block.pop(cid, None)
 
     def _ingest(self, logs: list[dict]) -> list:
         events = []
@@ -247,6 +275,7 @@ class Worker:
             end = min(target, start + step - 1)
             events = self._ingest(self.rpc.get_logs(self.cfg.proxy, start, end, step, self.topics))
             end_hash = self.rpc.block_hash(end)
+            self._verify_log_blocks(events, end, end_hash, target)
             with self.db.tx():
                 for ev in events:
                     self.db.insert_event(ev)
@@ -259,6 +288,20 @@ class Worker:
                 log.info("scanned %d-%d: %d events", start, end, len(events))
             start = end + 1
         return total
+
+    def _verify_log_blocks(self, events: list, end: int, end_hash: str, target: int) -> None:
+        """Every stored log must belong to the chain whose hash the checkpoint records: a reorg between
+        `eth_getLogs` and the hash read (or a load-balanced RPC answering from another fork) would store
+        logs of deleted blocks that no later hash comparison could find. Blocks deeper than
+        `reorg_search_depth` below the target are final for the worker and not re-checked."""
+        want = {ev.block: ev.block_hash for ev in events if ev.block > target - self.cfg.reorg_search_depth}
+        others = [b for b in want if b != end]
+        canonical = self.rpc.block_hashes(others) if others else {}
+        canonical[end] = end_hash
+        bad = sorted(b for b, h in want.items() if canonical.get(b) != h)
+        if bad:
+            raise RpcError(f"eth_getLogs returned logs of non-canonical block(s) {bad[:5]}; the window ending "
+                           f"at {end} is re-read at the next step")
 
     def backfill(self, topics: list[str]) -> int:
         """Events newly tracked on an existing database: fetch their history up to the checkpoint once."""
@@ -295,8 +338,25 @@ class Worker:
             for line in bad:
                 self.alerts.health("inbox-malformed", f"Malformed failed-tx inbox line skipped:\n{line}", dedup=line)
             self.inbox.resolve(self.rpc)
+            self._confirm_inbox()
         if new:
             log.info("inbox: %d new failed transaction(s)", new)
+
+    def _confirm_inbox(self) -> None:
+        """Entries reach checks only from canonical blocks at or below the checkpoint (inbox.py). A failed
+        hash lookup holds them (not delivered) and degrades health until a lookup succeeds."""
+        cp = self.checkpoint()["block"]
+        try:
+            orphaned = self.inbox.confirm(self.rpc, cp)
+        except RpcError as exc:
+            log.warning("inbox entries held, block hashes unavailable: %s", exc)
+            self.db.set_meta("inbox:unverified", {"since": (self.db.meta("inbox:unverified") or {}).get(
+                "since", self.clock()), "error": f"inbox block hashes could not be read at checkpoint {cp}: {exc}"})
+            return
+        self.db.set_meta("inbox:unverified", None)
+        for r in orphaned:
+            log.warning("inbox %s: block %d hash %s is not canonical; orphaned entry not delivered",
+                        r["tx_hash"], r["block"], r["block_hash"])
 
     def _inbox_unavailable(self, exc: InboxUnavailable) -> None:
         """A configured inbox that cannot be read: health (once per outage, re-sent every health window)."""
@@ -314,11 +374,12 @@ class Worker:
 
     # ---- scheduler
 
-    def _ctx(self, check, block: int, reasons, chain=None, events=None, inbox=None) -> Ctx:
+    def _ctx(self, check, block: int, reasons, chain=None, events=None, inbox=None, reorg_ancestor=None) -> Ctx:
         return Ctx(
             check_id=check.id, block=block, rpc=chain or Chain(self.rpc, block, self.cfg.max_log_range), db=self.db,
             params=self.params, config=check.config, settings=self.cfg.raw, clock=self.clock,
             log=logging.getLogger(f"eb-reconcile.{check.id}"), reasons=frozenset(reasons),
+            reorg_ancestor=reorg_ancestor,
             _events=events, _inbox=inbox, _inventory=self.inventory.get, _health=self.alerts.health,
         )
 
@@ -408,7 +469,9 @@ class Worker:
         entries = self.inbox.pending(self.db.meta(f"cursor:inbox:{check.id}", 0)) if wants_inbox and self.inbox else []
         chain = Chain(self.rpc, block, self.cfg.max_log_range)
         events = (lambda: self.db.events_after(cursor, block, kinds)) if kinds else None
-        ctx = self._ctx(check, block, reasons, chain=chain, events=events, inbox=lambda: entries)
+        reorg_ancestor = self.db.meta(f"reorg:{check.id}")
+        ctx = self._ctx(check, block, reasons, chain=chain, events=events, inbox=lambda: entries,
+                        reorg_ancestor=reorg_ancestor)
         now = self.clock()
         with self.db.tx():
             if check.id not in self.prepared or "params" in reasons:
@@ -421,6 +484,8 @@ class Worker:
             if check.resolve_on_absence:
                 self.alerts.resolve_absent(check.id, {f.key for f in findings if not f.resolve}, block)
             self.db.set_meta(f"cursor:events:{check.id}", [block, END_OF_BLOCK])
+            if reorg_ancestor is not None:
+                self.db.set_meta(f"reorg:{check.id}", None)
             if entries:
                 self.db.set_meta(f"cursor:inbox:{check.id}", entries[-1].id)
             prev = self.db.meta(f"run:{check.id}", {})
@@ -502,8 +567,16 @@ class Worker:
                 self.alerts.health("lag", f"Checkpoint {cp} is {lag} blocks behind the confirmed head {target}.",
                                    dedup="lag", realert=True)
 
+    def _inbox_problem(self) -> dict | None:
+        if self.inbox is None:
+            return None
+        return self.db.meta("inbox:unavailable") or self.db.meta("inbox:unverified")
+
     def status(self) -> dict:
-        inbox_down = self.db.meta("inbox:unavailable") if self.inbox is not None else None
+        inbox_down = self._inbox_problem()
+        counts = dict(self.db.conn.execute(
+            "SELECT CASE WHEN canonical=0 THEN 'orphaned' WHEN canonical IS NULL THEN 'held' ELSE 'delivered' END, "
+            "COUNT(*) FROM inbox GROUP BY 1").fetchall())
         return {
             "identity": self.db.meta("identity"), "schema_version": self.db.meta("schema_version"),
             "checkpoint": self.checkpoint(), "lag_blocks": self.db.meta("lag_blocks"),
@@ -513,7 +586,8 @@ class Worker:
             "params": {"enabled": self.params.enabled, "ok": self.params.ok, "block": self.params.block,
                        "error": self.params.error},
             "inbox": {"enabled": self.inbox is not None, "ok": not inbox_down,
-                      "path": self.inbox.path if self.inbox else None, "error": (inbox_down or {}).get("error")},
+                      "path": self.inbox.path if self.inbox else None, "error": (inbox_down or {}).get("error"),
+                      "held": counts.get("held", 0), "orphaned": counts.get("orphaned", 0)},
             "open_incidents": {f"{c}/{s}": n for c, s, n in self.db.conn.execute(
                 "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity")},
             "undelivered": self.db.conn.execute("SELECT COUNT(*) FROM outbox WHERE sent_at IS NULL").fetchone()[0],
@@ -524,7 +598,7 @@ class Worker:
         out = []
         if not self.params.ok:
             out.append(f"live parameters unavailable: {self.params.error}")
-        if self.inbox is not None and (down := self.db.meta("inbox:unavailable")):
+        if down := self._inbox_problem():
             out.append(f"inbox unavailable: {down['error']}")
         return out
 
@@ -555,7 +629,7 @@ class Worker:
                                        f"Checkpoint {self.checkpoint()['block']}.", dedup=f"rpc:{self.rpc_failures}",
                                        realert=True)
             self.write_status(False, str(exc))
-        inbox_down = self.inbox is not None and bool(self.db.meta("inbox:unavailable"))
+        inbox_down = bool(self._inbox_problem())
         self.db.set_meta("inputs_unavailable", {"params": not self.params.ok, "inbox": inbox_down})
         self.lag_check()
         self.housekeeping()

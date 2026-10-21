@@ -95,6 +95,9 @@ class Ctx:
     clock: Callable[[], float]
     log: logging.Logger
     reasons: frozenset[str]  # why it runs: interval, events, inbox, block, force, params, reorg (digest)
+    # lowest common ancestor of the reorgs since the check's last successful run (None: no reorg); state the
+    # check derived from blocks above it (own tables, ctx.set_state, open incidents) came from deleted blocks
+    reorg_ancestor: int | None = None
     _events: Callable[[], Iterator] = None
     _inbox: Callable[[], list] = None
     _inventory: Callable[[int | None], Any] = None
@@ -143,7 +146,7 @@ class Check:
         return self.schedule if isinstance(self.schedule, tuple) else (self.schedule,)
 
     def prepare(self, ctx: Ctx) -> None:
-        """Read live parameters; called before the first run and after any parameter event."""
+        """Read live parameters; called before the first run, after any parameter reload and after a reorg."""
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
         raise NotImplementedError
@@ -153,4 +156,5 @@ class Check:
         return []
 
     def on_reorg(self, ancestor: int) -> None:
-        """The chain was rewound to `ancestor`; drop in-memory state derived from later blocks."""
+        """The chain was rewound to `ancestor`; drop in-memory state derived from later blocks. Also called at
+        start when a reorg's re-run had not committed before a restart."""

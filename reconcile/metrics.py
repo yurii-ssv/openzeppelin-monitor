@@ -55,9 +55,11 @@ def render(conn: sqlite3.Connection, check_ids: list[str]) -> str:
     unavailable = meta("inputs_unavailable", {})
     metric("ssv_watch_input_unavailable", "gauge", "1 while a configured input (live parameters, inbox) cannot be read.",
            [({"input": k}, int(unavailable.get(k, False))) for k in ("params", "inbox")])
-    inbox = conn.execute("SELECT COUNT(*), COALESCE(SUM(resolved = 0), 0) FROM inbox").fetchone()
+    inbox = conn.execute("SELECT COUNT(*), COALESCE(SUM(resolved = 0), 0), COALESCE(SUM(canonical IS NULL), 0), "
+                         "COALESCE(SUM(canonical = 0), 0) FROM inbox").fetchone()
+    # pending: revert not yet resolved; held: block not yet confirmed canonical; orphaned: never delivered
     metric("ssv_watch_inbox_entries", "gauge", "Failed-transaction inbox entries by state.",
-           [({"state": "total"}, inbox[0]), ({"state": "pending"}, inbox[1])])
+           [({"state": s}, n) for s, n in zip(("total", "pending", "held", "orphaned"), inbox)])
     return "\n".join(lines) + "\n"
 
 

@@ -13,3 +13,5 @@ known-first-party = ["alerts", "checks", "db", "eb_events", "eb_model", "eb_reco
 [lint.per-file-ignores]
 # Registration lines stay in per-lane blocks so wave-2 merges are textual.
 "checks/__init__.py" = ["I001"]
+# QA attempt-2 probes kept in their original one-line style so they diff against the QA report.
+"tests/test_qa2_regressions.py" = ["E701", "E702"]

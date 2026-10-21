@@ -10,13 +10,17 @@ and a `/metrics` endpoint.
 
 The worker is read-only against the chain. Each step:
 
-1. Rewinds on a reorg below the checkpoint; scans confirmed SSVNetwork proxy logs into SQLite and
-   advances a durable checkpoint (`eth_getLogs` in bounded windows; a window the RPC rejects is split,
-   and an error is never read as "no logs").
+1. Rewinds on a reorg below the checkpoint (logs, cursors, inventory, live parameters and every other
+   piece of block-derived state: [checks/README.md §6.1](checks/README.md)); scans confirmed SSVNetwork
+   proxy logs into SQLite and advances a durable checkpoint (`eth_getLogs` in bounded windows; a window
+   the RPC rejects is split, an error is never read as "no logs", and logs whose block hash is not
+   canonical are rejected).
 2. Ingests new lines of the failed-transaction inbox and resolves their revert selectors
    (`eth_call` at `block − 1`, Blockscout as fallback). A configured inbox file that is missing or
    unreadable is a monitor-health alert, never an empty inbox (create the empty file at deployment).
-3. Reloads the live parameters after a parameter event (spec M15), then runs every due check
+   Entries reach checks only once the checkpoint has passed their block and their block hash is
+   canonical (the Monitor writes at 2 confirmations: inbox evidence waits for the worker's 12).
+3. Reloads the live parameters after a parameter event (spec M15) or a reorg, then runs every due check
    (interval, event, inbox, near-set-per-block) and turns its findings into incidents and outbox rows.
    A failed read invalidates the parameters (checks that read them do not run) and is retried every
    step; see [checks/README.md §5.1](checks/README.md).

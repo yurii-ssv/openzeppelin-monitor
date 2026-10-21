@@ -114,11 +114,21 @@ class Rpc:
     def block_number(self) -> int:
         return int(self.call("eth_blockNumber", []), 16)
 
-    def block_hash(self, number: int) -> str:
+    def block_hash(self, number: int, missing_ok: bool = False) -> str | None:
+        """The canonical hash of block `number`; None (with `missing_ok`) when the node has no such block,
+        e.g. above the head of a shorter chain after a reorg."""
         blk = self.call("eth_getBlockByNumber", [hex(number), False])
         if not blk:
+            if missing_ok:
+                return None
             raise RpcError(f"block {number} not found")
         return blk["hash"].lower()
+
+    def block_hashes(self, numbers: list[int]) -> dict[int, str | None]:
+        """Canonical hashes of several blocks in batched requests; None for a block the node does not have."""
+        numbers = sorted(set(numbers))
+        out = self.batch([("eth_getBlockByNumber", [hex(n), False]) for n in numbers])
+        return {n: blk["hash"].lower() if blk else None for n, blk in zip(numbers, out)}
 
     def get_logs(self, address: str, start: int, end: int, max_range: int, topics: list[str]) -> list[dict]:
         """Bounded windows; a window the endpoint rejects is split in halves.

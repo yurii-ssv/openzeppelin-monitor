@@ -459,7 +459,8 @@ def test_inbox_check_receives_resolved_entries_once(tmp_path):
     chain.mine()
     advance(w)
     assert stub.runs == []  # no entries yet
-    path.write_text(inbox_line(tx=tx, block=chain.number))
+    # the transaction's (sealed) block and its canonical hash: entries are delivered from canonical blocks only
+    path.write_text(inbox_line(tx=tx, block=chain.sealed, block_hash=chain.hash(chain.sealed)))
     advance(w)
     advance(w)
     assert len(stub.runs) == 1 and stub.runs[0]["inbox"] == [tx] and stub.runs[0]["reasons"] == {"inbox"}

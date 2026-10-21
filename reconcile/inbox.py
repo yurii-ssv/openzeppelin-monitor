@@ -8,6 +8,10 @@ mounted read-only in the worker. The worker:
     deployment creates it before the Monitor's first append),
   - restarts from offset 0 when the file shrinks or is replaced (log rotation),
   - de-duplicates on (tx_hash, block_hash),
+  - delivers an entry only once the worker's checkpoint has reached its block and its `block_hash` is the
+    canonical hash there (the Monitor writes at 2 confirmations, the checkpoint is 12 deep): an entry of an
+    orphaned block is marked `canonical = 0` and never delivered (a re-included transaction arrives as a new
+    (tx_hash, block_hash) line); a reorg below the checkpoint re-opens the check for entries above the ancestor,
   - resolves the revert selector with `eth_call` of the same transaction at `block - 1`
     (Blockscout v2 `revert_reason` as fallback), then names it from ERRORS.
 Checks scheduled `OnInbox` receive the resolved entries in order (`ctx.inbox`).
@@ -230,7 +234,7 @@ class Inbox:
     def resolve(self, rpc) -> int:
         """Resolve pending entries (bounded per call). Transport errors leave them pending. Inside a transaction."""
         rows = self.db.conn.execute(
-            "SELECT * FROM inbox WHERE resolved=0 ORDER BY id LIMIT ?", (self.batch,)).fetchall()
+            "SELECT * FROM inbox WHERE resolved=0 AND canonical IS NOT 0 ORDER BY id LIMIT ?", (self.batch,)).fetchall()
         done = 0
         for r in rows:
             try:
@@ -278,13 +282,36 @@ class Inbox:
             reason = reason.get("raw")
         return reason.lower() if isinstance(reason, str) and reason.startswith("0x") else None
 
+    # ---- confirmation
+
+    def confirm(self, rpc, upto: int) -> list:
+        """Compare the block hash of every unchecked entry at or below the checkpoint `upto` with the canonical
+        chain (one batched lookup); returns the rows found orphaned. Inside a transaction. An RpcError
+        propagates with nothing marked: the entries stay unchecked and are not delivered."""
+        rows = self.db.conn.execute(
+            "SELECT id, tx_hash, block, block_hash FROM inbox WHERE canonical IS NULL AND block<=? ORDER BY id",
+            (upto,)).fetchall()
+        if not rows:
+            return []
+        hashes = rpc.block_hashes([r["block"] for r in rows])
+        missing = sorted({r["block"] for r in rows if hashes[r["block"]] is None})
+        if missing:
+            raise RpcError(f"blocks {missing[:5]} at or below checkpoint {upto} not found")
+        orphaned = [r for r in rows if hashes[r["block"]] != r["block_hash"]]
+        self.db.conn.executemany("UPDATE inbox SET canonical=? WHERE id=?",
+                                 [(int(hashes[r["block"]] == r["block_hash"]), r["id"]) for r in rows])
+        return orphaned
+
     # ---- consumption
 
     def pending(self, cursor: int) -> list[InboxEntry]:
-        """Resolved entries after `cursor`, stopping at the first unresolved one (order is preserved)."""
+        """Resolved, canonical entries after `cursor`, stopping at the first one not yet resolved or
+        confirmed (order is preserved); orphaned entries are skipped."""
         out = []
         for r in self.db.conn.execute("SELECT * FROM inbox WHERE id > ? ORDER BY id", (cursor,)):
-            if not r["resolved"]:
+            if r["canonical"] == 0:
+                continue
+            if not r["resolved"] or r["canonical"] is None:
                 break
             out.append(InboxEntry.from_row(r))
         return out

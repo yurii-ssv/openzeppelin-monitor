@@ -68,13 +68,21 @@ class Alerts:
         return self.routes[severity]
 
     def enqueue(self, key: str, severity: str, text: str, kind: str, check_id: str | None = None,
-                incident_id: str | None = None, route: str | None = None) -> bool:
-        cur = self.db.conn.execute(
-            "INSERT OR IGNORE INTO outbox(key, created_at, severity, text, delivery, check_id, incident_id, kind) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (key, self.clock(), severity, text, route or self.route(severity), check_id, incident_id, kind),
-        )
-        return cur.rowcount == 1
+                incident_id: str | None = None, route: str | None = None, unique: bool = False) -> bool:
+        """Queue one message; an existing key de-duplicates it. With `unique` (a send the incident state
+        machine already decided, e.g. a block-keyed escalation replayed on a reorganised chain) a taken key
+        gets a `#n` suffix instead of being dropped."""
+        base, n = key, 1
+        while True:
+            cur = self.db.conn.execute(
+                "INSERT OR IGNORE INTO outbox(key, created_at, severity, text, delivery, check_id, incident_id, kind) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (key, self.clock(), severity, text, route or self.route(severity), check_id, incident_id, kind),
+            )
+            if cur.rowcount == 1 or not unique:
+                return cur.rowcount == 1
+            n += 1
+            key = f"{base}#{n}"
 
     # ---- incidents
 
@@ -107,13 +115,20 @@ class Alerts:
                 # An info-severity message, delivered where the incident was sent.
                 text = self._text("resolved", f.title, f.body, row["id"])
                 return int(self.enqueue(f"{row['id']}:resolved:{block}", "info", text, "resolved",
-                                        f.check, row["id"], route=self.route(row["severity"])))
+                                        f.check, row["id"], route=self.route(row["severity"]), unique=True))
             return 0
 
         if row is None:
-            inc_id = f.incident_id or f"{f.check}-{_short(f.key)}-{block}"
-            if self.db.conn.execute("SELECT 1 FROM incidents WHERE id=?", (inc_id,)).fetchone():
-                raise ValueError(f"incident id {inc_id} already exists; a check must propose unique ids")
+            if f.incident_id:
+                inc_id = f.incident_id
+                if self._id_taken(inc_id):
+                    raise ValueError(f"incident id {inc_id} already exists; a check must propose unique ids")
+            else:  # the block may repeat: a key reopened at a block number reused by a reorganised chain
+                base = inc_id = f"{f.check}-{_short(f.key)}-{block}"
+                n = 1
+                while self._id_taken(inc_id):
+                    n += 1
+                    inc_id = f"{base}-{n}"
             self.db.conn.execute(
                 "INSERT INTO incidents (id, ikey, check_id, key, severity, state, notify, title, body, subject, "
                 "evidence, revision, opened_block, last_seen_block, opened_at, updated_at, last_alert_at, alerts) "
@@ -125,7 +140,7 @@ class Alerts:
                 return 0
             key = f"{inc_id}:{f.revision}" if f.revision else f"{inc_id}:open"
             return int(self.enqueue(key, f.severity, self._text(f.severity, f.title, f.body, inc_id), "open",
-                                    f.check, inc_id))
+                                    f.check, inc_id, unique=True))
 
         inc_id = row["id"]
         escalated = RANK[f.severity] > RANK[row["severity"]]
@@ -144,7 +159,10 @@ class Alerts:
         kind = "escalate" if escalated else "update"
         key = f"{inc_id}:{f.revision}" if revised else f"{inc_id}:{kind}:{f.severity}:{block}"
         return int(self.enqueue(key, f.severity, self._text(f.severity, f.title, f.body, inc_id), kind,
-                                f.check, inc_id))
+                                f.check, inc_id, unique=True))
+
+    def _id_taken(self, inc_id: str) -> bool:
+        return self.db.conn.execute("SELECT 1 FROM incidents WHERE id=?", (inc_id,)).fetchone() is not None
 
     def resolve_absent(self, check: str, seen_keys: set[str], block: int) -> int:
         """`resolve_on_absence`: close the check's open incidents that this run did not report."""
@@ -198,7 +216,7 @@ class Alerts:
                 lines.append(f"[{check}]")
                 lines += extra
         self.db.set_meta("last_digest", self.clock())
-        return self.enqueue(f"digest:{block}", "digest", "\n".join(lines), "digest")
+        return self.enqueue(f"digest:{block}", "digest", "\n".join(lines), "digest", unique=True)
 
 
 def _short(key: str) -> str:

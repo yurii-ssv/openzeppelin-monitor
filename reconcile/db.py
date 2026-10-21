@@ -45,17 +45,19 @@ SCHEMA = [
       attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at REAL NOT NULL DEFAULT 0,
       sent_at REAL, delivery TEXT, last_error TEXT,
       check_id TEXT, incident_id TEXT, kind TEXT, receipt TEXT)""",
-    # Failed-transaction inbox (inbox.py), de-duplicated on (tx_hash, block_hash).
+    # Failed-transaction inbox (inbox.py), de-duplicated on (tx_hash, block_hash). `canonical`: NULL until the
+    # checkpoint passes `block` and its hash is compared, then 1 (delivered to checks) or 0 (orphaned, never).
     """CREATE TABLE IF NOT EXISTS inbox (
       id INTEGER PRIMARY KEY AUTOINCREMENT, tx_hash TEXT NOT NULL, block_hash TEXT NOT NULL,
       block INTEGER NOT NULL, sender TEXT, target TEXT, selector TEXT, function TEXT, status TEXT,
       monitor TEXT, observed_at TEXT, line TEXT NOT NULL,
       resolved INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
-      revert_selector TEXT, revert_name TEXT, revert_source TEXT, revert_data TEXT,
+      revert_selector TEXT, revert_name TEXT, revert_source TEXT, revert_data TEXT, canonical INTEGER,
       UNIQUE (tx_hash, block_hash))""",
 ]
 
 OUTBOX_ADDED_COLUMNS = ("check_id TEXT", "incident_id TEXT", "kind TEXT", "receipt TEXT")
+INBOX_ADDED_COLUMNS = ("canonical INTEGER",)
 
 
 def _columns(conn, table: str) -> set[str]:
@@ -84,6 +86,11 @@ def migrate(conn: sqlite3.Connection) -> int:
                     conn.execute(f"ALTER TABLE outbox ADD COLUMN {col}")
         if legacy_outbox:
             _normalise_legacy_outbox(conn)
+        if "inbox" in tables:
+            have = _columns(conn, "inbox")
+            for col in INBOX_ADDED_COLUMNS:
+                if col.split()[0] not in have:
+                    conn.execute(f"ALTER TABLE inbox ADD COLUMN {col}")
         for stmt in SCHEMA:
             conn.execute(stmt)
         if legacy_m5:
