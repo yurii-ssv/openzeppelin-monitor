@@ -3,6 +3,8 @@ thresholds from the chain (V2x.2), restart (V2x.3), rpc_budget (V2x.4), reorg (R
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fixtures_liquidation import (
     BURN,
@@ -628,3 +630,36 @@ def test_qa1_h1_reorg_key_without_identity_raises_and_keeps_the_marker(tmp_path)
     advance(w)  # the reorg run cannot evaluate the key: it raises (rolled back, retried, marker kept)
     assert [r["state"] for r in incidents(w, "m3")] == ["open"] and w.db.meta("reorg:m3") is not None
     assert "cannot be evaluated" in w.db.meta("run:m3")["last_error"]
+
+
+def test_sweep_m3_resolution_on_a_deleted_block_is_found_again_without_the_api(tmp_path):
+    """Sweep seed 12: a liquidation resolved the page; a reorg removes the liquidation while the API omits the
+    cluster (no log left): the reorg run re-checks every cluster observed above the ancestor (m3_tuples)."""
+    chain, w, cl, response = api_baseline(tmp_path)
+    assert sent(w, "m3") == [("open", "page")]
+    fork = chain.number
+    cl.liquidate()
+    advance(w)
+    assert sent(w, "m3") == [("open", "page"), ("resolved", "info")]
+    response["clusters"] = []
+    chain.reorg(fork)
+    chain.mine(2)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["resolved", "open"]
+    assert sent(w, "m3") == [("open", "page"), ("resolved", "info"), ("open", "page")]
+
+
+def test_sweep_m3_reorg_removing_the_latest_change_uses_an_earlier_validated_tuple(tmp_path):
+    """Sweep seed 13: the persisted tuple came from a deposit the reorg removed and the API omits the cluster;
+    the tuple validated before the deposit (m3_tuples) matches storage on the new chain."""
+    chain, w, cl, response = api_baseline(tmp_path)
+    response["clusters"] = []
+    fork = chain.number
+    cl.deposit(value=1)  # still at zero after one block of burn; the persisted tuple is now this one
+    chain.mine()
+    advance(w)
+    chain.reorg(fork)
+    chain.mine(3)
+    advance(w)
+    assert [r["state"] for r in incidents(w, "m3")] == ["open"] and sent(w, "m3") == [("open", "page")]
+    assert evidence(w)["balance_wei"] == "0" and "unknown" not in json.dumps(evidence(w))

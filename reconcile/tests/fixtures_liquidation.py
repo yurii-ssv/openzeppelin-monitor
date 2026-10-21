@@ -233,11 +233,17 @@ class Clusters:
 
     def deposit(self, owner=OWNER, ops=OPS, value=1, sender=None, mine=True) -> str:
         """`ClusterDeposited` with `value` in the cluster's own unit (wei of ETH, or of SSV for a legacy cluster: the
-        pre-v2 SSV deposit emitted the same event; at the pin `deposit` is ETH-only)."""
+        pre-v2 SSV deposit emitted the same event; at the pin `deposit` is ETH-only). As `SSVClusters.deposit` at
+        the pin, it does not settle the cluster: the tuple keeps its indexes, its stored balance grows by `value`
+        (the view-computed balance grows by `value` too)."""
         cid = cluster_id(owner, ops)
         st = self.state[cid]
         tx = self.c.new_tx(sender or "0x" + "de" * 20)
-        cl = self._persist(cid, st, self.c.balance_at(cid, self.c.number) + value)
+        st["balance"] += value
+        cl = Cluster(st["count"], st["nfi"], st["index"], st["active"], st["balance"])
+        slot = eth_cluster_slot(cid) if st["version"] == "ETH" else ssv_cluster_slot(cid)
+        self.c.write(slot, int.from_bytes(cl.hash_data(), "big"))
+        self.c.settle(cid, self.c.balance_at(cid, self.c.number) + value, st["burn"])
         self.c.emit(tx, "ClusterDeposited", [_topic_addr(owner)], _enc(["uint64[]", "uint", "cluster"],
                                                                        [list(ops), value, cl]))
         return self._end(tx, mine)

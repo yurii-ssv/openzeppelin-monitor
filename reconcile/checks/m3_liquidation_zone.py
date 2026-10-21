@@ -41,12 +41,16 @@ is read from storage at the evaluated block with its persisted tuple (`m3_zone.t
 views accepted) and its stored logs as candidates. It leaves the zone only on positive on-chain proof: the
 views on a storage-validated tuple say not liquidatable (or it is inactive, has no validators), or both
 cluster slots are empty, or the stored version is not ETH. Otherwise it is UNKNOWN (kept, health).
+`m3_tuples` keeps the last tuples the check validated for every cluster it tracked, re-checked or had in its
+near set (with owner and operators): candidates only, never trusted without the storage hash, so they are
+not rewound; a reorg that removes the latest change of a cluster the API omits still finds its tuple.
 
 Reorg rule (README §6.2), table `m3_zone` and state `last_full_block`, identical for depth 1 and N:
 rows whose `onset_block` is above the ancestor A are deleted (their onset was observed on a deleted
 block) and `zero_block` above A is cleared; the reorg run is a full sweep over the inventory, every
 `m3_zone` row and `ctx.reorg_keys`, so every persisted or opened key gets a finding, a resolve=True,
-or (UNKNOWN) a re-report. A key found again opens/keeps the incident with its onset re-observed at
+or (UNKNOWN) a re-report. It also re-checks every cluster of `m3_tuples` observed above A: one resolved on
+a deleted block (e.g. by a liquidation the reorg removed) is found again even if the API omits it. A key found again opens/keeps the incident with its onset re-observed at
 the reorg run's block (age restarts, a lower severity is recorded silently). `on_reorg` drops the
 in-memory near set and tuples; a restart before the reorg run replays it (durable marker).
 """
@@ -80,7 +84,12 @@ CREATE TABLE IF NOT EXISTS m3_zone (
   last_block INTEGER NOT NULL, severity TEXT NOT NULL, balance TEXT NOT NULL, burn_rate TEXT NOT NULL,
   tuple TEXT
 );
+CREATE TABLE IF NOT EXISTS m3_tuples (
+  cluster_id TEXT NOT NULL, owner TEXT NOT NULL, operator_ids TEXT NOT NULL, tuple TEXT NOT NULL,
+  block INTEGER NOT NULL, PRIMARY KEY (cluster_id, tuple)
+);
 """
+HISTORY = 8  # validated tuples kept per cluster (candidates after a reorg removes the latest change)
 
 WEI = 10**18
 
@@ -153,12 +162,16 @@ class M3LiquidationZone(Check):
         full = (reorg or root or self.last_full is None or bool(ctx.reasons & {"params", "force", "reorg"})
                 or now - self.last_full >= self.config["full_sweep_interval_s"])
         tracked = self.rows(ctx)
-        must_report = set(tracked) | set(ctx.reorg_keys)
+        must_report = set(tracked) | set(ctx.reorg_keys)  # a finding each (kept, resolved or raise)
+        recheck = set(must_report)  # evaluated even when the inventory omits them
+        if reorg:
+            recheck |= {r[0] for r in ctx.db.conn.execute("SELECT DISTINCT cluster_id FROM m3_tuples WHERE block > ?",
+                                                          (ctx.reorg_ancestor,))}
 
         def fetch(cids) -> dict:
             inv = ctx.inventory(block)
             got = {cid: inv.clusters.get(cid) for cid in cids}
-            got.update(self.lookup(ctx, block, [cid for cid in cids if cid in must_report], inv, tracked))
+            got.update(self.lookup(ctx, block, [cid for cid in cids if cid in recheck], inv, tracked))
             return got
 
         gap = None
@@ -166,10 +179,10 @@ class M3LiquidationZone(Check):
             inv = ctx.inventory(block)
             infos = {cid: c for cid, c in inv.clusters.items() if c.version == "ETH"}
             gap = inventory_gap(ctx.rpc, self.views, infos.values())
-            infos.update(self.lookup(ctx, block, must_report, inv, tracked))
+            infos.update(self.lookup(ctx, block, recheck, inv, tracked))
             cached = set()
         else:
-            wanted = set(self.near_set) | touched | must_report
+            wanted = set(self.near_set) | touched | recheck
             infos = {cid: self.tuples.get(cid) for cid in wanted}
             fresh = {cid for cid in wanted if cid in touched or infos[cid] is None}
             if fresh:
@@ -202,7 +215,7 @@ class M3LiquidationZone(Check):
                     pre_alert.append({"cluster_id": cid, "owner": info.owner, "operator_ids": list(info.operator_ids),
                                       "blocks": ahead, "at_block": block + ahead, "balance": str(view.balance),
                                       "burn_rate": str(view.burn_rate)})
-                if cid in must_report:
+                if cid in recheck:
                     findings.append(self.resolved(ctx, block, cid, tracked.get(cid), "is no longer liquidatable"))
                 continue
             st = status[cid]
@@ -212,8 +225,12 @@ class M3LiquidationZone(Check):
                     near.add(cid)
                 if cid in must_report:
                     findings.append(self.unknown(ctx, block, cid, tracked.get(cid), st))
-            elif cid in must_report:
+            elif cid in recheck:
                 findings.append(self.resolved(ctx, block, cid, tracked.get(cid), st))
+        for cid, info in infos.items():
+            if (info is not None and info.valid and not status.get(cid, "").startswith("unknown")
+                    and (cid in recheck or cid in near)):
+                self.remember(ctx, info, block)
 
         if gap:
             unknown_rows.append(("inventory", "unknown: " + gap))
@@ -232,16 +249,29 @@ class M3LiquidationZone(Check):
             self.near_set = frozenset((set(self.near_set) - evaluated) | near)
         return findings
 
-    def identity(self, ctx: Ctx, cid: str, tracked: dict) -> tuple[str, list, object] | None:
-        """(owner, operator ids, persisted tuple or None) of a cluster this check tracks or has an open incident on."""
+    def remember(self, ctx: Ctx, info, block: int) -> None:
+        cid, t = info.cluster_id, tuple_json(info.cluster)
+        ctx.db.conn.execute("INSERT INTO m3_tuples VALUES (?,?,?,?,?) ON CONFLICT (cluster_id, tuple) DO UPDATE SET "
+                            "block = excluded.block", (cid, info.owner, json.dumps(list(info.operator_ids)), t, block))
+        ctx.db.conn.execute("DELETE FROM m3_tuples WHERE cluster_id=? AND tuple NOT IN (SELECT tuple FROM m3_tuples "
+                            "WHERE cluster_id=? ORDER BY block DESC LIMIT ?)", (cid, cid, HISTORY))
+
+    def identity(self, ctx: Ctx, cid: str, tracked: dict) -> tuple[str, list, list] | None:
+        """(owner, operator ids, candidate tuples) of a cluster this check tracks, re-checks or has an open incident
+        on: the persisted row's tuple first, then the validated tuples of `m3_tuples`, newest first."""
+        history = ctx.db.conn.execute("SELECT owner, operator_ids, tuple FROM m3_tuples WHERE cluster_id=? "
+                                      "ORDER BY block DESC", (cid,)).fetchall()
+        tuples = [tuple_from_json(h["tuple"]) for h in history]
         row = tracked.get(cid) or self.rewound.get(cid)
         if row is not None:
-            return row["owner"], json.loads(row["operator_ids"]), tuple_from_json(row.get("tuple"))
+            return row["owner"], json.loads(row["operator_ids"]), [tuple_from_json(row.get("tuple"))] + tuples
+        if history:
+            return history[0]["owner"], json.loads(history[0]["operator_ids"]), tuples
         inc = ctx.db.conn.execute("SELECT subject FROM incidents WHERE check_id=? AND key=? AND state='open'",
                                   (self.id, cid)).fetchone()
         subject = json.loads(inc[0]) if inc and inc[0] else {}
         if subject.get("owner") and subject.get("operator_ids") is not None:
-            return subject["owner"], subject["operator_ids"], None
+            return subject["owner"], subject["operator_ids"], []
         return None
 
     def lookup(self, ctx: Ctx, block: int, cids, inv, tracked: dict) -> dict:
@@ -261,7 +291,8 @@ class M3LiquidationZone(Check):
             owner, ops, persisted = ident
             logs = [("logs", ev.cluster) for ev in reversed(ctx.db.cluster_events(cid[2:], block))
                     if ev.cluster is not None][:1]
-            out[cid] = stored_cluster(ctx.rpc, self.proxy, owner, ops, [("persisted", persisted)] + logs, block)
+            out[cid] = stored_cluster(ctx.rpc, self.proxy, owner, ops, [("persisted", t) for t in persisted] + logs,
+                                      block)
         return out
 
     def evaluate(self, ctx: Ctx, infos: dict) -> tuple[dict, dict]:

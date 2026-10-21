@@ -31,7 +31,10 @@ the cluster events of block B (the failed transaction's) are split into those be
   - nothing of the cluster after it in B: the cluster at the failed transaction is the end-of-B state, so the
     views at B on the last tuple at or before it decide (exact);
   - a later event in B (e.g. a top-up after the attack): the end-of-B state is not the one the liquidation
-    met. The views at B−1 on the tuple stored at the end of B−1 give liquidatable₀ and burn₀; if every cluster
+    met. The views at B−1 on the tuple stored at the end of B−1 (the cluster's last log before B; or, when
+    the cluster's first event in B is a deposit, that log's tuple minus its value — `deposit` only adds
+    msg.value to the validated tuple; or the inventory's API tuple; the views validate whichever is used)
+    give liquidatable₀ and burn₀; if every cluster
     event of B before the failed transaction is a ClusterDeposited (a deposit changes neither indexes, burn
     rate nor threshold) of total Σ, the computed balance at the failed transaction is the B−1 balance + Σ −
     one block of burn: liquidatable₀ ∧ Σ < burn₀ proves liquidatable, ¬liquidatable₀ ∧ Σ ≥ burn₀ proves not;
@@ -86,8 +89,9 @@ from checks.m3_views import (
     word,
 )
 from checks.registry import register
-from eb_storage import cluster_id, eth_cluster_slot, ssv_cluster_slot
+from eb_storage import Cluster, cluster_id, eth_cluster_slot, ssv_cluster_slot
 from inbox import InboxEntry
+from inventory import api_tuple
 from rpc import RpcError
 
 SCHEMA = """
@@ -204,17 +208,35 @@ class M14DepositFrontrun(Check):
             if any(ev.kind != "ClusterDeposited" for ev in before):
                 raise Unknown(f"state at the failed transaction not derivable (block {B} changes the cluster "
                               f"before it by more than deposits, and again after it)", key)
-            at, tup = B - 1, (earlier[-1].cluster if earlier else None)
+            at, tuples = B - 1, [ev.cluster for ev in earlier[-1:]]
+            first = in_block[0] if in_block else None
+            if first is not None and first.kind == "ClusterDeposited" and first.cluster is not None:
+                # deposit() only adds msg.value to the caller's (validated) tuple: the tuple before it is exact
+                c = first.cluster
+                tuples.append(Cluster(c.validator_count, c.network_fee_index, c.index, c.active,
+                                      c.balance - int(first.extra.get("value", 0))))
+            info = ctx.inventory().clusters.get(key)
+            if info is not None and info.api:  # an untrusted candidate: the views validate its hash at B-1
+                try:
+                    tuples.append(api_tuple(info.api))
+                except (KeyError, ValueError, TypeError):
+                    pass
         else:
-            at, tup = B, ([ev.cluster for ev in earlier + before if ev.cluster is not None] or [None])[-1]
-        if tup is None:
+            at, tuples = B, [ev.cluster for ev in earlier + before if ev.cluster is not None][-1:]
+        if not tuples:
             raise Unknown(f"no stored tuple of the cluster at block {at}", key)
         version = self.version_at(ctx, cid, at)
         if version is None:
             raise Unknown(f"the cluster is not in storage at block {at}", key)
         if version != VERSION[fn]:
             return None  # e.g. liquidate on a legacy cluster: reverted for its version, not for a deposit
-        liq, burn = self.views_at(ctx, owner, ops, tup, version, at)
+        for i, tup in enumerate(tuples):  # the views validate the tuple's hash: the first that validates
+            try:
+                liq, burn = self.views_at(ctx, owner, ops, tup, version, at)
+                break
+            except Unknown:
+                if i == len(tuples) - 1:
+                    raise
         if after:
             total = sum(int(ev.extra.get("value", 0)) for ev in before)
             if not (liq and total < burn) and not (not liq and total >= burn):
