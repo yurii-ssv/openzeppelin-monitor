@@ -110,3 +110,45 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - Finding (worker, to be re-measured by QA): `cargo test --locked --test integration -- filters::evm::filter` is flaky: intermittent red in `test_handle_match_with_duplicate_event_signatures` / `test_handle_match_with_key_collision` (`MockTriggerExecutionService::new(?, ?): No matching expectation found`, mockall static-context race). Pristine `main@86a17db` (git archive) flakes the same way (1/60). `--test-threads=1` green; the target test `test_failure_monitor_only_fetches_receipts_for_monitored_transactions` passed in every run.
 - Decision: commit the Rust diff as its own commit; V0.8 recorded as GREEN WITH KNOWN FLAKE (pre-existing), all run counts kept, the serial variant as a separately named row, flake signature and baseline control recorded. New finding for CP3 (integrator): de-flake the mockall static expectations. Reported to Marco.
 - Next: CP0 continues.
+
+<a id="event-0008"></a>
+## Event 0008 — CP0 worker_done accepted for QA; Codex QA dispatched
+
+- Observed UTC: 2026-10-21T09:46Z
+- Actor: coordinator; delivery `delivery_75a569fea1d1` (`msg_cba46fb58b01`, worker_done succeeded from `ctx_80ac41873894`, task `task_afe9e8ca054e`), acknowledged.
+- Claim: `plan/monitoring-service` head `9772b2da2acd427aeaf6687c27656ee89bd895d8`, 10 commits over `main@86a17db`; V0.1–V0.12 + V0.3f measured; V0.8 GREEN WITH KNOWN FLAKE (event-0007); V0.9 30 passed.
+- Coordinator inspection: changed paths ⊆ CP0 allowed writes + SSV material of F2 + the src/+tests/ diff (88 files: .claude/settings.json, .gitignore, deploy/config/** 55, docs/ssv-specs spec, plans/**, reconcile/** per reconcile/.gitignore, scripts/local-dry-run.sh, 2 compose files, 2 Rust files); 0 mode changes main..head; primary checkout left with only `.dockerignore`, `Dockerfile.production` (out of CP0 scope, uncommitted by design) and untracked `.env copy.example`. No venv/data/config.zip/.local-dry/.env tracked (the 6 hits are upstream `.env.example` and `config/**/.gitkeep`).
+- Coordinator re-runs (cheap rows): V0.4 exit 0 both ignored; V0.6 0 plain values; V0.3 0 rows; V0.12 `{"baseRef":"head"}`, 36 allow entries, 0 push. Extra: the 3 unique plain secret values of `config/{triggers,networks}` appear 0 times in HEAD and 0 times in `git log -p main..HEAD` (counts only, scratch deleted).
+- Worker findings: (a) pre-existing mockall flake → CP3 (event-0007; the worker labelled it "F14", which collides with the coordinator's F14 placement finding of event-0005 — ledger renumbering at the next plan edit); (b) Telegram `chat_id` is a `${TELEGRAM_CHAT_ID}` placeholder in deploy/config/triggers → CP1A render must substitute it; (c) F3 stale (26 monitors, not 24), F4 stale (venv recreated).
+- Worker disposition: `worker-release ctx_80ac41873894` → retained by Orca (terminal not reclaimable); reclaimable list empty.
+- QA: task `task_1dba974dfa43`, dispatch `ctx_6bbf815ec207`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` (new child of `plan/monitoring-service` @ `9772b2d`), terminal `term_4109b727-03a1-4366-8710-4108ac012264`; launch.requested = launch.effective = codex / gpt-6.1-sol / high.
+- Next: wait for QA worker_done; import its evidence commit; report verdict to Marco; CP1A/CP1B wait for his wave approval and OG2.
+
+<a id="event-0009"></a>
+## Event 0009 — CP0 QA start placed under the triage workspace; stopped by Marco; placement rule fixed
+
+- Observed UTC: 2026-10-21T09:51Z
+- Actor: coordinator, after Marco's report ("you asked the QA step to start in another folder, /Users/marco/ssv/repos/ssv-network-triage/ … I stopped all and delete the workspace. you should work only in ssv-network-monitor and create workspaces from there").
+- Root cause (measured): this coordinator session runs in an Orca tab of the **ssv-network-triage** workspace (`ORCA_WORKSPACE_ID`/`ORCA_WORKTREE_ID` = `34354cd0-…::/Users/marco/ssv/repos/ssv-network-triage`, handle `term_b15807c1-…`, tab launched by app 1.4.227 while the binary is 1.4.232). Orca resolves `--worktree current` and the lineage of `new-child` from that tab, not from the shell cwd. Hence CP0 dispatch 1 landed in triage (event-0005) and the QA child `ms-qa-cp0` (git: monitor repo, base `plan/monitoring-service@9772b2d`, path `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0`) was created as a child of the triage workspace.
+- State after Marco's stop: QA dispatch `ctx_6bbf815ec207` (task `task_1dba974dfa43`) = failed / process_exited, no verdict, no QA writes imported; worktree and branch `mtabasco/ms-qa-cp0` deleted (`git worktree list` shows only the primary checkout). CP0 implementation is unaffected: `plan/monitoring-service@9772b2d` stays IMPLEMENTED — AWAITING QA.
+- Fix: plan §6 placement precondition — the coordinator runs in an Orca tab of the ssv-network-monitor workspace, verifies `ORCA_WORKSPACE_ID` before run-create, passes `--repo id:316cdd8d-…` on every start, and checks the receipt's worktree effect. F14 (placement) is this finding; the worker's mockall-flake note is renamed F15 at the next ledger edit.
+- Run `run_6a94d8a4633c` is bound to the triage tab; it is retired once a coordinator in a monitor tab creates a fresh Run. Next: Codex QA attempt 1 for CP0 from that coordinator, on head `9772b2d`.
+
+<a id="event-0010"></a>
+## Event 0010 — CP0 QA attempt 1 started from the monitor workspace
+
+- Observed UTC: 2026-10-21T10:34Z
+- Actor: coordinator (Claude Code, tab of the ssv-network-monitor workspace; `ORCA_WORKSPACE_ID` = `316cdd8d-…::/Users/marco/ssv/repos/ssv-network-monitor`, checked before run-create). Orca guidance loaded via `orca skills get orchestration` (CLI 1.4.232, `orca` on PATH).
+- Fresh Run `run_96be3e0c7302` (coordinator handle `term_89e2fa6f-…`); retired Run `run_6a94d8a4633c` not reused.
+- QA: task `task_16bd4412f92a`, dispatch `ctx_4bd11bbdbf4e`, terminal `term_c15d7008-960a-44ee-b4ec-0165463a90d5`; worktree effect `created_child` `316cdd8d-…::/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` (repo id matches, path under monitor Orca workspaces); worktree HEAD = `9772b2da2acd427aeaf6687c27656ee89bd895d8`, branch `mtabasco/ms-qa-cp0`. launch.requested = launch.effective = codex / gpt-6.1-sol / high; turn start observed.
+- Packet: QA-CONTRACT + CP0 id + frozen head + V0.1–V0.12/V0.3f + PATH export + allowed writes + note that uncommitted coordinator edits are outside its tree. RPC variables not needed for CP0.
+- Next: wait for QA worker_done; inspect report and diff against allowed writes; re-run the cheapest V row; import evidence; report verdict to Marco. CP1A/CP1B stay gated on his wave approval and OG2 (`MAINNET_RPC_URL`, `TEST_RPC_URL` are NOT exported in this shell).
+
+<a id="event-0011"></a>
+## Event 0011 — CP0 QA attempt 1 delivered: PASS WITH NOTES
+
+- Observed UTC: 2026-10-21T10:55Z · Delivery `delivery_e0c9e0d09d02` (msg `msg_162a3b738fec`, worker_done, outcome succeeded) from dispatch `ctx_4bd11bbdbf4e` / task `task_16bd4412f92a`; matches the expected live dispatch. Earlier question `msg_e0ba563ea34f` (V0.9 venv) answered: existing main-checkout venv from the QA worktree, module paths proven to resolve inside the QA tree.
+- Verdict: **PASS WITH NOTES** on frozen head `9772b2d`; QA commit `3821104` on branch `mtabasco/ms-qa-cp0` (report `qa/cp0-attempt-1.md`, plan CP0 status line → VERIFIED, one log event). Not yet imported into `plan/monitoring-service`.
+- Coordinator inspection: `git diff --name-status 9772b2d 3821104` = plan.md (M), execution-log.md (M), qa/cp0-attempt-1.md (A) — within QA write scope; QA worktree porcelain clean. Re-ran cheap rows in the QA tree: V0.3 (git grep) 0 matches; V0.4 prints only `config.zip` (QA note 3 reproduced); V0.6 0 plain values; V0.12 `{"baseRef":"head"}`; `git ls-files reconcile/.venv reconcile/data` = 0.
+- QA notes (owned): (1) parallel Rust row flake / network-dependent `test_monitor_error_cases` — known red per event-0007, serial control 18/18 green, owner CP3; (2) V0.6 cannot detect a missing credential key — CP1A must add required-field schema checks; (3) V0.4 command must use `.local-dry/` (trailing slash) in fresh children — coordinator, fix in plan §7 at next edit. Unconfirmed claims: exact V0.9 path (equivalent 30 passed), historical flake statistics, byte identity to live `config/`; tracked SSV files 84 not 82 (stale count).
+- Worker: `worker-release` returned state `retained` (reason `user_takeover`), reclaimable list empty. Next: Marco approves the wave transition; integrate `3821104` (needs the coordinator's uncommitted plan/state/log edits committed or merged first); then CP1A (Sonnet) and CP1B (Opus) once OG2 variables are exported.
