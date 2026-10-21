@@ -12,18 +12,18 @@ mkdir -p "$(dirname "$INBOX_PATH")"
 
 input=$(cat)
 
-# blockNumber arrives as a hex quantity (0x...); the contract wants a decimal number.
-block_hex=$(printf '%s' "$input" | jq -er '.monitor_match.EVM.transaction.blockNumber')
-block=$(printf '%d' "$block_hex")
 observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-line=$(printf '%s' "$input" | jq -ce \
-  --argjson block "$block" --arg observed_at "$observed_at" '
+# blockNumber arrives as a hex quantity (0x...); the contract wants a decimal number. Converted in
+# jq, not with printf, so the result does not depend on which sh runs this script.
+line=$(printf '%s' "$input" | jq -ce --arg observed_at "$observed_at" '
+  def hex2int: ltrimstr("0x") | explode
+    | reduce .[] as $c (0; . * 16 + (if $c >= 97 then $c - 87 elif $c >= 65 then $c - 55 else $c - 48 end));
   .monitor_match.EVM as $m
   | {
       schema: 1,
       tx_hash: $m.transaction.hash,
-      block: $block,
+      block: ($m.transaction.blockNumber | hex2int),
       block_hash: $m.transaction.blockHash,
       from: $m.transaction.from,
       to: $m.transaction.to,
@@ -32,7 +32,8 @@ line=$(printf '%s' "$input" | jq -ce \
       status: ($m.matched_on.transactions[0].status | ascii_downcase),
       monitor: $m.monitor.name,
       observed_at: $observed_at
-    }')
+    }
+  | if (.tx_hash and .block_hash and .from and .to and .selector and .function) then . else error("incomplete match") end')
 
 # One short write in append mode: lines are far below PIPE_BUF, so concurrent appends do not interleave.
 printf '%s\n' "$line" >> "$INBOX_PATH"
