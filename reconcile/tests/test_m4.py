@@ -80,7 +80,7 @@ def test_deficit_benign_exact_cover_and_surplus_stay_silent(tmp_path):
     chain, w, cl = balanced(tmp_path, surplus=0)  # proxy ETH == liabilities: deficit 0 is not > 0
     assert not incidents(w, "m4") and not sent(w, "m4")
     s = w.db.conn.execute("SELECT surplus, complete FROM m4_scans").fetchone()
-    assert s["surplus"] == "0" and s["complete"] == 1
+    assert s["surplus"] == "0" and s["complete"] == 1 and not [r for r in outbox(w) if r["kind"] == "health"]
     root(chain)
     advance(w)  # balances burnt since: a growing surplus
     assert not sent(w, "m4")
@@ -196,14 +196,14 @@ def test_rpc_budget_350_clusters(tmp_path):
     chain.mine()
     advance(w)
     calls = w.db.meta("run:m4")["rpc_calls"]
-    assert calls["eth_call"] <= 350 + 40 + 2 and calls.get("eth_getBalance") == 1
+    assert calls["eth_call"] <= 350 + 40 + 3 and calls.get("eth_getBalance") == 1
     assert w.db.conn.execute("SELECT complete, eth_clusters FROM m4_scans").fetchone()[:] == (1, 350)
 
 
 # ---------------------------------------------------------------- UNKNOWN inputs: never clean
 
 
-@pytest.mark.parametrize("fault", ["revert", "empty", "corrupt", "operators", "last_operator"])
+@pytest.mark.parametrize("fault", ["revert", "empty", "corrupt", "operators", "last_operator", "hidden_cluster"])
 def test_incomplete_inputs_are_unknown_not_resolved(tmp_path, fault):
     chain, w, cl = balanced(tmp_path, surplus=-10**15)
     assert sent(w, "m4") == [("open", "page")]
@@ -212,6 +212,8 @@ def test_incomplete_inputs_are_unknown_not_resolved(tmp_path, fault):
         chain.view_faults[cluster_id(OWNER, OPS)] = fault
     elif fault == "corrupt":
         cl.corrupt(OWNER2, OPS2)
+    elif fault == "hidden_cluster":
+        chain.hidden_validators = 1  # a cluster missing from the inventory: its balance is not in the sum
     elif fault == "operators":
         chain.stub_call(VIEWS, GET_OPERATOR_EARNINGS + u256(12), "0x")
     else:

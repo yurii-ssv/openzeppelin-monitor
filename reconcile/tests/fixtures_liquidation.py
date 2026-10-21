@@ -7,7 +7,8 @@
   isLiquidatable(b) = active and validators > 0 and (balance(b) < minimumLiquidationCollateral
                       or balance(b) < liquidationThresholdPeriod * burn)  (ClusterLib.isLiquidatableWithEB)
   getBalance reverts ClusterIsLiquidated for an inactive cluster; every view reverts IncorrectClusterState
-  when the tuple's hash differs from the stored word at the block (validateHashedCluster).
+  when the tuple's hash differs from the stored word at the block (validateHashedCluster);
+  getNetworkValidatorsCount = the validators of active clusters (ethDaoValidatorCount), from `Clusters`.
 
 The two parameters are read from the chain's own `params.GETTERS` stubs (`harness.stub_params`), so a
 parameter change on the fake chain changes the views exactly as it would on mainnet. `Clusters` writes
@@ -27,6 +28,7 @@ from checks.m3_views import (
     GET_BALANCE,
     GET_BURN_RATE,
     GET_NETWORK_EARNINGS,
+    GET_NETWORK_VALIDATORS_COUNT,
     GET_OPERATOR_EARNINGS,
     IS_LIQUIDATABLE,
     LIQUIDATE,
@@ -58,6 +60,8 @@ class LiquidationChain(FakeChain):
         self.views = views.lower()
         self.model: dict[bytes, list[tuple[int, int, int]]] = {}  # cid -> [(from block, settled balance, burn)]
         self.view_faults: dict[bytes, str] = {}  # cid -> "revert" | "empty" (fault injection)
+        self.dao_validators: list[tuple[int, int]] = []  # [(from block, ethDaoValidatorCount)]
+        self.hidden_validators = 0  # validators of clusters the inventory cannot see (completeness fault)
 
     # ---- model
 
@@ -80,7 +84,12 @@ class LiquidationChain(FakeChain):
         return int(FakeChain._eth_call(self, {"to": self.views, "data": "0x" + selector(GETTERS[name]).hex()},
                                        block), 16)
 
+    def add_dao_validators(self, delta: int) -> None:
+        now = self.dao_validators[-1][1] if self.dao_validators else 0
+        self.dao_validators.append((self.number, now + delta))
+
     def reorg(self, from_block: int) -> None:
+        self.dao_validators = [d for d in self.dao_validators if d[0] < from_block]
         for cid in self.model:
             self.model[cid] = [s for s in self.model[cid] if s[0] < from_block]
         super().reorg(from_block)
@@ -89,6 +98,10 @@ class LiquidationChain(FakeChain):
 
     def _eth_call(self, obj: dict, block: int) -> str:
         to, data = (obj.get("to") or "").lower(), obj.get("data", obj.get("input", "0x")).lower()
+        if to == self.views and data == "0x" + GET_NETWORK_VALIDATORS_COUNT.hex():
+            self.calls.append((to, data, block))
+            n = [v for b, v in self.dao_validators if b <= block]
+            return "0x" + u256((n[-1] if n else 0) + self.hidden_validators).hex()
         name = VIEW_SELECTORS.get(data[:10]) if to == self.views else None
         if name is None:
             return super()._eth_call(obj, block)
@@ -145,6 +158,7 @@ class Clusters:
         cid = cluster_id(owner, ops)
         st = self.state.setdefault(cid, {"owner": owner, "ops": tuple(ops), "count": 0, "nfi": 0, "index": 0,
                                          "active": True, "balance": 0, "burn": burn})
+        self.c.add_dao_validators(count + (0 if st["active"] else st["count"]))
         st.update(count=st["count"] + count, burn=burn, active=True)
         tx = self.c.new_tx(owner)
         cl = self._persist(cid, st, balance)
@@ -177,6 +191,7 @@ class Clusters:
         cid = cluster_id(owner, ops)
         st = self.state[cid]
         tx = self.c.new_tx("0x" + "11" * 20)
+        self.c.add_dao_validators(-st["count"])
         st["active"] = False
         cl = self._persist(cid, st, 0)
         self.c.emit(tx, "ClusterLiquidated", [_topic_addr(owner)], _enc(["uint64[]", "cluster"], [list(ops), cl]))

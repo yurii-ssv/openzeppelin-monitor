@@ -30,7 +30,10 @@ after downtime or at the very first sweep the age is a lower bound, and the aler
 
 UNKNOWN, never clean: a cluster with no validated tuple, or whose views revert or return no data, is
 not evaluated; a health message (`m3-unknown`, re-sent every health window) names it, and an open
-incident of it is re-reported at its last severity in a reorg run (kept open). Transport errors raise.
+incident of it is re-reported at its last severity in a reorg run (kept open). Every full sweep also
+checks that the inventory is complete: the validators of its active, validated ETH clusters must add up
+to `getNetworkValidatorsCount()` (a cluster missing from both the API and the logs would otherwise never be
+evaluated); a mismatch is the same health message. Transport errors raise.
 
 Reorg rule (README §6.2), table `m3_zone` and state `last_full_block`, identical for depth 1 and N:
 rows whose `onset_block` is above the ancestor A are deleted (their onset was observed on a deleted
@@ -47,7 +50,7 @@ import json
 import logging
 
 from checks.base import Check, Ctx, Every, Finding, NearSetEveryBlock, OnEvents
-from checks.m3_views import ClusterView, blocks_until_liquidatable, evaluate, short
+from checks.m3_views import ClusterView, blocks_until_liquidatable, evaluate, inventory_gap, short
 from checks.registry import register
 from eb_events import CLUSTER_KINDS
 
@@ -131,9 +134,11 @@ class M3LiquidationZone(Check):
         tracked = self.rows(ctx)
         must_report = set(tracked) | set(ctx.reorg_keys)
 
+        gap = None
         if full:
             inv = ctx.inventory(block)
             infos = {cid: c for cid, c in inv.clusters.items() if c.version == "ETH"}
+            gap = inventory_gap(ctx.rpc, self.views, infos.values())
             for cid in must_report:
                 infos.setdefault(cid, inv.clusters.get(cid))
             cached = set()
@@ -186,6 +191,8 @@ class M3LiquidationZone(Check):
             elif cid in must_report:
                 findings.append(self.resolved(ctx, block, cid, tracked.get(cid), st))
 
+        if gap:
+            unknown_rows.append(("inventory", "unknown: " + gap))
         if unknown_rows:
             text = (f"M3 cannot evaluate {len(unknown_rows)} ETH cluster(s) at block {block} (not treated as clean):\n"
                     + "\n".join(f"- {cid}: {st}"[:300] for cid, st in unknown_rows[:20]))

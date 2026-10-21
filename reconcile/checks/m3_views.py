@@ -26,6 +26,8 @@ GET_BURN_RATE = selector("getBurnRate" + CLUSTER_ARGS)
 GET_OPERATOR_EARNINGS = selector("getOperatorEarnings(uint64)")
 GET_NETWORK_EARNINGS = selector("getNetworkEarnings()")
 STAKING_ETH_POOL_BALANCE = selector("stakingEthPoolBalance()")
+# ProtocolStorage.ethDaoValidatorCount: the validators of active ETH clusters (inventory completeness)
+GET_NETWORK_VALIDATORS_COUNT = selector("getNetworkValidatorsCount()")
 # SSVClusters entry points whose reverts the failed-transaction inbox carries (M14)
 LIQUIDATE = {"liquidate": selector("liquidate" + CLUSTER_ARGS), "liquidateSSV": selector("liquidateSSV" + CLUSTER_ARGS)}
 
@@ -115,6 +117,25 @@ def evaluate(rpc, views: str, targets: list, block: int | None = None) -> tuple[
         except ValueError as exc:
             unknown[t.cluster_id] = str(exc)
     return views_out, unknown
+
+
+def inventory_gap(rpc, views: str, eth_infos, block: int | None = None) -> str | None:
+    """None when the validators of the active, storage-validated ETH clusters add up to the chain's own
+    `getNetworkValidatorsCount()`; otherwise why the inventory cannot be taken as complete (a cluster missing from
+    the API and the logs would otherwise never be evaluated: a missing input, not a clean one)."""
+    try:
+        count = word(rpc.call(views, GET_NETWORK_VALIDATORS_COUNT, block), "getNetworkValidatorsCount")
+    except RpcError as exc:
+        if exc.transport:
+            raise
+        return f"getNetworkValidatorsCount() reverted ({exc.data or exc})"
+    except ValueError as exc:
+        return str(exc)
+    listed = sum(c.cluster.validator_count for c in eth_infos if c.valid and c.cluster.active)
+    if listed != count:
+        return (f"inventory incomplete: its active ETH clusters hold {listed} validators, "
+                f"getNetworkValidatorsCount() is {count}")
+    return None
 
 
 def blocks_until_liquidatable(view: ClusterView, threshold_period: int, minimum_collateral: int) -> int | None:

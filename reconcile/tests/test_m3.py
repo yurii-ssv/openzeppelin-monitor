@@ -58,6 +58,7 @@ def test_onset_is_info_and_records_the_block(tmp_path):
     inc = open_incidents(w, "m3")[cid_hex()]
     assert inc["severity"] == "info" and evidence(w)["onset_block"] == crossing == chain.sealed
     assert outbox(w, "kind='open'")[0]["delivery"] == "discord"
+    assert not [r for r in outbox(w) if r["kind"] == "health"]  # complete inputs: no UNKNOWN noise
 
 
 def test_onset_benign_cluster_above_threshold_stays_silent(tmp_path):
@@ -274,7 +275,7 @@ def test_rpc_budget_full_sweep_and_near_set_run_350_clusters(tmp_path):
         cl.create(owner, OPS, balance=(THRESHOLD + 2 * BURN) if i < 5 else 10**18, mine=False)
     chain.mine()
     advance(w)
-    assert w.db.meta("run:m3")["rpc_calls"].get("eth_call", 0) <= 3 * 350
+    assert w.db.meta("run:m3")["rpc_calls"].get("eth_call", 0) <= 3 * 350 + 1  # + the completeness count
     assert len(w.checks["m3"].near_set) == 5
     builds = []
     real = w.inventory.get
@@ -407,6 +408,19 @@ def test_unknown_unvalidated_tuple_is_reported_not_resolved(tmp_path):
     assert any(r["key"].startswith("health:m3-unknown") for r in outbox(w))
 
 
+def test_unknown_incomplete_inventory_is_health_on_every_full_sweep(tmp_path):
+    chain, w, cl = setup(tmp_path)
+    cl.create(balance=10**18)
+    advance(w)
+    assert not [r for r in outbox(w) if r["key"].startswith("health:m3-unknown")]  # complete: silent
+    chain.hidden_validators = 3  # the chain counts validators of a cluster neither the API nor the logs list
+    chain.mine()
+    w.clock.advance(600)
+    advance(w)
+    (h,) = [r for r in outbox(w) if r["key"].startswith("health:m3-unknown")]
+    assert "inventory incomplete" in h["text"] and "getNetworkValidatorsCount() is 4" in h["text"]
+
+
 def test_same_block_withdraw_then_deposit_uses_the_end_of_block_tuple(tmp_path):
     chain, w, cl = setup(tmp_path)
     cl.create(balance=THRESHOLD + 1_000 * BURN)
@@ -444,6 +458,20 @@ def test_burn_rate_increase_without_an_event_is_caught_by_the_full_sweep(tmp_pat
     chain.mine()
     advance(w)
     assert sent(w, "m3") == [("open", "info")]
+
+
+def test_full_sweep_interval_holds_while_the_near_set_runs_every_block(tmp_path):
+    chain, w, cl = setup(tmp_path)
+    cl.create(balance=THRESHOLD + 200 * BURN)  # near: the check runs at every block from now on
+    cl.create(OWNER2, OPS2, balance=THRESHOLD + 20_000 * BURN)
+    advance(w)
+    cl.set_burn(OWNER2, OPS2, burn=2 * BURN)  # far cluster: no event, only the full sweep can see it
+    for _ in range(5):
+        chain.mine()
+        w.clock.advance(120)
+        advance(w)
+    assert set(open_incidents(w, "m3")) == {cid_hex(OWNER2, OPS2)}
+    assert w.db.meta("run:m3")["reasons"] == ["block"]  # found by a near-set run that was due for a full sweep
 
 
 def test_missing_views_setting_is_a_startup_error(tmp_path):

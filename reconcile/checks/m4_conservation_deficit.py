@@ -18,7 +18,8 @@ reported as evidence only. This is the public-view equation of `evidences/#89748
 
 Inputs and UNKNOWN: cluster tuples are storage-validated (`ctx.inventory`, D9); `lastOperatorId` is
 StorageData member 8 of the proxy. A view that reverts or returns no data, an ETH cluster without a validated
-tuple, no ETH cluster at all, or operators referenced by clusters beyond `lastOperatorId` make the liability
+tuple, no ETH cluster at all, an inventory whose active ETH validators do not add up to
+`getNetworkValidatorsCount()`, or operators referenced by clusters beyond `lastOperatorId` make the liability
 sum incomplete (a lower bound): a deficit of the lower bound still pages (it can only be larger), a surplus
 of an incomplete sum is UNKNOWN — a health message (`m4-unknown`), never a resolution; an open deficit
 incident is re-reported (kept open). Transport errors raise (the run is retried).
@@ -40,6 +41,7 @@ from checks.m3_views import (
     MAIN_LAST_OPERATOR_ID,
     STAKING_ETH_POOL_BALANCE,
     encode_cluster_args,
+    inventory_gap,
     word,
 )
 from checks.registry import register
@@ -90,6 +92,9 @@ def scan(rpc, inventory, views: str, proxy: str, block: int | None = None) -> di
     active = [c for c in eth_clusters if c.valid and c.cluster.active]
     if not eth_clusters:
         gaps.append("no ETH cluster in the inventory")
+    gap = inventory_gap(rpc, views, eth_clusters, block)
+    if gap:
+        gaps.append(gap)
     last_op = rpc.storage(proxy, [MAIN_LAST_OPERATOR_ID], block)[0]
     referenced = max((op for c in eth_clusters for op in c.operator_ids), default=0)
     if referenced > last_op:
