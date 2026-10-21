@@ -12,5 +12,6 @@ from checks import m5_eb_desync  # noqa: F401, E402
 # --- CP2c: wallets and supply (M12, M8 floor)
 
 # --- CP2d: cluster integrity and capacity (M1, M2)
+from checks import m1_stale_tuple, m2_operator_capacity  # noqa: F401, E402
 
 # --- CP2e: legacy SSV (M6, M7)
