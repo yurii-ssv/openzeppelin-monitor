@@ -13,12 +13,12 @@ Task contract: [plan.md §8 CP1B](../../plan.md) · Attempt log: [attempts.md](a
 | Step | Status | Latest evidence | Exact next action |
 |---|---|---|---|
 | S1 baseline: venv, V0.9 re-run (30 passed) | DONE | [attempt-1](attempts.md#attempt-1) | — |
-| S2 framework modules (checks/, alerts, notify, inbox, inventory, params, metrics, scheduler, migrations) | NOT STARTED | — | write modules |
-| S3 M5 port to `checks/m5_eb_desync.py`, scenarios kept | NOT STARTED | — | — |
-| S4 fakechain extensions + `test_framework.py` | NOT STARTED | — | — |
-| S5 V1B.1–V1B.9, V1B.11 + falsifiers | NOT STARTED | — | — |
-| S6 V1B.10 fork e2e (LIVE) | NOT STARTED | — | — |
-| S7 docs, status line, handoff | NOT STARTED | — | — |
+| S2 framework modules (checks/, alerts, notify, inbox, inventory, params, metrics, scheduler, migrations) | DONE | [attempt-2](attempts.md#attempt-2) | — |
+| S3 M5 port to `checks/m5_eb_desync.py`, scenarios kept | DONE | [attempt-2](attempts.md#attempt-2), V1B.6 | — |
+| S4 fakechain extensions + `test_framework.py` + `harness.py` | DONE | [attempt-2](attempts.md#attempt-2) | — |
+| S5 V1B.1–V1B.9, V1B.11 + falsifiers | DONE | [attempt-3](attempts.md#attempt-3) | — |
+| S6 V1B.10 fork e2e (LIVE) | DONE (PASS on anvil fork of block 26,240,643) | [attempt-3](attempts.md#attempt-3) | — |
+| S7 docs, status line, handoff | DONE | this file | Codex QA |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -27,5 +27,15 @@ On unexpected semantic failure (a spec rule that cannot be satisfied, a chain fa
 ## Completion handoff (≤ 250 words, also sent as the `worker_done` summary)
 
 ```text
-(filled at completion)
+Task / live dispatch: task_3a2ee3e27b00 / ctx_98a50f4c4736 (run_96be3e0c7302)
+Assignment outcome: completed; all owned rows have an outcome, none red.
+Base -> resulting commit: 4fbb9f1 -> code aaf5c25 (records commit on top = lane head, reported in worker_done) on mtabasco/ms-cp1b.
+Actual changed paths: reconcile/** and docker-compose.reconcile.yaml (+ workers/cp1b/**, CP1B status line); no deletions outside reconcile (Worker.sweep, in-file Rpc/DB/notifiers moved to modules).
+Verification: V1B.1 62 passed/0 skipped; V1B.2 ruff clean; V1B.3 1; V1B.4 2; V1B.5 4; V1B.6 32 (all 26 pre-existing names identical); V1B.7 6; V1B.8 curl OK, 5 required series; V1B.9 LIVE 1,908 API rows, 25/25 tuples validated; V1B.10 LIVE anvil PASS x5; V1B.11 README present. NOT RUN: image build (CP3), --telegram.
+Falsifiers: V1B.4f red (two-check collision), V1B.7f red (2 inbox tests); restored, porcelain 0.
+Log anchor: workers/cp1b/attempts.md#attempt-3.
+New findings: (1) spec M5 warn/page/info grading differs from the preserved precedent (page on first confirmed) -> coordinator/Marco; (2) env names now MAINNET_RPC_URL/TELEGRAM_*/DISCORD_WEBHOOK_INFO -> CP1A .env.example, CP3; (3) F10 MEASURED; (4) two wrong selector comments at the pin (informational).
+Pending human input: M5 severity decision (non-blocking).
+Next owner: Codex QA on the lane head.
+Preservation: everything committed; reconcile/.venv untracked (ignored).
 ```
