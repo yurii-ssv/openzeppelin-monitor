@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 import pytest
 from fixtures_wallets import (
     FUNDER,
@@ -411,3 +413,284 @@ def test_m13_reorg_below_an_older_top_up_keeps_it(tmp_path):
     chain.reorg(later)
     step(w, chain)
     assert [k for _, k, _ in sent(w)] == ["open"] and open_keys(w) == [f"{RETIRED_SLOT4}:{fork}"]
+
+
+# ---------------------------------------------------------------- repair 1: generalised audit (README §6.2)
+
+
+def test_m13_reorg_removing_a_top_up_and_its_drain_stays_silent(tmp_path):
+    """(c) the evidence of an ALREADY RESOLVED key leaves the chain (top-up and drain both above the ancestor): no
+    page, no second resolution, no row, nothing open."""
+    chain, w, fork = _top_up_then(tmp_path)
+    step(w, chain)
+    drain(chain)
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"] and open_keys(w) == []
+    chain.reorg(fork)
+    step(w, chain, blocks=3)
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"] and open_keys(w) == []
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m13_topup").fetchone()[0] == 0 and w.db.meta("reorg:m13") is None
+
+
+def test_m13_reorg_run_that_cannot_re_read_raises_keeps_the_marker_and_survives_a_restart(tmp_path):
+    """(b)+(d) the re-read at the ancestor fails: the run rolls back (rows, incident and marker kept, nothing
+    re-paged), also in a restarted process; once the RPC answers, the orphan top-up resolves by the §6.2 rule."""
+    chain, w, fork = _top_up_then(tmp_path)
+    step(w, chain)
+    chain.reorg(fork)
+    chain.fail_methods.add("eth_getBalance")
+    with pytest.raises(RpcError):
+        step(w, chain)
+    assert w.db.meta("reorg:m13") is not None and open_keys(w) == [f"{RETIRED_SLOT4}:{fork}"]
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m13_topup").fetchone()[0] == 1
+    _, w2 = wallet_worker(tmp_path, ["m13"], chain=chain, start_block=w.cfg.start_block,
+                          activation_block=w.cfg.activation_block, clock=w.clock)
+    with pytest.raises(RpcError):
+        step(w2, chain, seconds=6 * 3600)
+    assert w2.db.meta("reorg:m13") is not None and [k for _, k, _ in sent(w2)] == ["open"]
+    chain.fail_methods.clear()
+    step(w2, chain)
+    assert [k for _, k, _ in sent(w2)] == ["open", "resolved"] and open_keys(w2) == []
+    assert REORG_TEXT in outbox(w2, "kind='resolved'")[0]["text"] and w2.db.meta("reorg:m13") is None
+
+
+def _open_then_m13_fails(tmp_path, steps=3):
+    chain, w = setup(tmp_path)
+    top_up(chain)
+    b = chain.number
+    step(w, chain)
+    (seen,) = [r[0] for r in w.db.conn.execute("SELECT last_seen_block FROM incidents WHERE state='open'")]
+    chain.fail_methods.add("eth_getBalance")
+    for _ in range(steps):
+        with pytest.raises(RpcError):
+            step(w, chain)
+    chain.fail_methods.clear()
+    return chain, w, b, seen
+
+
+def test_m13_reorg_re_evaluates_an_open_top_up_last_seen_below_the_ancestor(tmp_path):
+    """An open top-up NOT in ctx.reorg_keys (m13 failed for a few steps after it paged) is still evaluated by the
+    reorg run on the new chain: a drain there resolves it with the value-left text; nothing is re-paged."""
+    chain, w, b, seen = _open_then_m13_fails(tmp_path)
+    fork = chain.number - 1
+    assert fork - 1 > seen
+    chain.reorg(fork)
+    drain(chain)
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"] and open_keys(w) == []
+    res = outbox(w, "kind='resolved'")[0]["text"]
+    assert "Value LEFT" in res and "NOT an all-clear" in res and REORG_TEXT not in res
+
+
+def test_m13_reorg_keeps_an_open_top_up_last_seen_below_the_ancestor_without_a_second_page(tmp_path):
+    chain, w, b, seen = _open_then_m13_fails(tmp_path)
+    chain.reorg(chain.number - 1)
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open"] and open_keys(w) == [f"{RETIRED_SLOT4}:{b}"]
+    assert w.db.meta("reorg:m13") is None
+
+
+def test_m13_short_batch_response_raises_never_a_partial_read(tmp_path):
+    """(g) partial responses: fewer eth_getBalance results than reads is an RPC error (never a skipped block)."""
+    chain, w = setup(tmp_path)
+    top_up(chain)
+    batch = w.rpc.batch
+    w.rpc.batch = lambda calls: batch(calls)[:-1] if calls and calls[0][0] == "eth_getBalance" else batch(calls)
+    with pytest.raises(RpcError, match="results for"):
+        step(w, chain, blocks=3)
+    assert sent(w) == [] and w.db.conn.execute("SELECT COUNT(*) FROM m13_topup").fetchone()[0] == 0
+    w.rpc.batch = batch
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open"]
+
+
+def test_m13_two_top_ups_in_one_block_are_one_page_with_the_sum(tmp_path):
+    """(e) same-block ordering (QA independent case): one key, the summed delta; then the value-left wording."""
+    chain, w = setup(tmp_path)
+    top_up(chain, value=eth(0.1))
+    top_up(chain, value=eth(0.2))
+    step(w, chain)
+    (row,) = outbox(w, "kind='open'")
+    assert "+0.300000 ETH" in row["text"]
+    drain(chain, value=eth(0.3))
+    step(w, chain)
+    assert "NOT an all-clear" in outbox(w, "kind='resolved'")[0]["text"]
+
+
+def test_m13_reorg_below_the_baseline_reads_the_new_chain_from_the_ancestor(tmp_path):
+    """(c) m13 enabled on a running worker's database, then a reorg deletes its baseline block: the address is
+    re-read at the ancestor and (A, checkpoint] of the new chain is read, so a top-up there pages (conservative:
+    value reached the retired key after the ancestor; the baseline block itself is not stored)."""
+    chain = WalletChain()
+    chain.set_balance(FUNDER, eth(100))
+    chain.mine()
+    chain, w0 = wallet_worker(tmp_path, [], chain=chain)  # the worker runs without m13 first
+    for _ in range(3):
+        chain.mine()
+        advance(w0)
+    fork = chain.number
+    chain.mine(2)
+    _, w = wallet_worker(tmp_path, ["m13"], chain=chain, start_block=w0.cfg.start_block,
+                         activation_block=w0.cfg.activation_block, clock=w0.clock)
+    advance(w)
+    assert {r[0] for r in w.db.conn.execute("SELECT block FROM m13_watch")} == {chain.sealed} and sent(w) == []
+    chain.reorg(fork)
+    top_up(chain)
+    step(w, chain, blocks=2)
+    assert sent(w) == [("page", "open", f"{RETIRED_SLOT4}:{fork}")] and w.db.meta("reorg:m13") is None
+
+
+# ---------------------------------------------------------------- repair 1: deterministic adversarial sweep
+# Seeded cases (40): random direct/internal top-ups, partial and full drains, several transfers in one block, RPC
+# outages, restarts and 0..7 h clock jumps, then one reorg 1..24 blocks below the checkpoint (beyond the
+# confirmation window), sometimes with a crash between its detection and the check's run and an RPC outage in the
+# reorg run, a replacement chain that re-includes some of the deleted transfers (same or another block), adds new
+# ones and is shorter or longer. Oracle: the final canonical chain read block by block from the baseline.
+# Invariants: no open incident without supporting canonical evidence and no dropped page for surviving evidence
+# (open keys = the oracle's unresolved top-ups; every canonical top-up paged at least once); no resolve without
+# positive proof (after the reorg: a value-left resolution only for a canonical drain, an evidence-left one only
+# for a key the canonical chain does not have); no page for orphaned evidence after the reorg (re-alerts
+# included); no window anchored on stale data (m13_watch at the checkpoint with its canonical balance); no event
+# lost between sweeps (m13_topup rows = the oracle's top-ups, with their balances); nothing pending, healthy.
+
+
+class M13Sweep:
+    ADDRS = (RETIRED_SLOT4, RETIRED_LIQUIDATOR)
+
+    def __init__(self, tmp_path, seed, confirmations):
+        self.rng = random.Random(f"cp2c-m13:{seed}:{confirmations}")
+        self.tmp, self.c = tmp_path, confirmations
+        chain = self.chain = WalletChain()
+        chain.set_balance(FUNDER, eth(1000))
+        chain.set_balance(RETIRED_SLOT4, eth(0.01))
+        chain.mine(1 + confirmations)
+        self.start = chain.sealed - confirmations  # the first checkpoint: the baseline run
+        self.clock = None
+        self.w = self.worker()
+        self.w.step()
+        (self.baseline,) = {r[0] for r in self.w.db.conn.execute("SELECT block FROM m13_watch")}
+        self.orphans: list[tuple] = []  # transfers of the deleted blocks: (kind, address, value) for re-inclusion
+
+    def worker(self):
+        _, w = wallet_worker(self.tmp, ["m13"], chain=self.chain, start_block=self.start,
+                             activation_block=self.start, confirmations=self.c,
+                             **({"clock": self.clock} if self.clock else {}))
+        self.clock = w.clock
+        return w
+
+    def transfers(self, n, record=False):
+        rng, chain = self.rng, self.chain
+        for _ in range(n):
+            a = rng.choice(self.ADDRS)
+            r = rng.random()
+            if r < 0.3:
+                v = eth(rng.choice((0.05, 0.1, 0.25)))
+                top_up(chain, a, v) if rng.random() < 0.5 else chain.internal_transfer(a, v)
+                kind = ("in", a, v)
+            elif r < 0.55 and chain.balance_now(a) > eth(0.01):
+                full = rng.random() < 0.5
+                v = chain.balance_now(a) - eth(0.001) if full else chain.balance_now(a) // 3
+                drain(chain, a, v)
+                kind = ("out", a, v)
+            else:
+                continue
+            if record:
+                self.orphans.append(kind)
+
+    def wstep(self, fail=False):
+        if fail:
+            self.chain.fail_methods.add("eth_getBalance")
+        self.w.step()
+        self.chain.fail_methods.discard("eth_getBalance")
+
+    def run(self):
+        rng, chain = self.rng, self.chain
+        for _ in range(rng.randint(6, 14)):  # history before the fork
+            self.transfers(rng.randint(0, 2))
+            chain.mine(rng.randint(1, 3))
+            self.clock.advance(rng.choice((12, 60, 3600, 6 * 3600 + 1)))
+            if rng.random() < 0.15:
+                self.w = self.worker()  # restart
+            self.wstep(fail=rng.random() < 0.15)
+        self.wstep()
+        # the blocks the reorg deletes: 1..24 of them from `fork`, with recorded transfers, seen (paged) by the
+        # worker at its checkpoint
+        fork = chain.number
+        for _ in range(rng.randint(1, 24)):
+            self.transfers(rng.randint(0, 2), record=True)
+            chain.mine()
+        chain.mine(self.c)
+        self.wstep()
+        self.depth = self.w.checkpoint()["block"] - fork + 1
+        pre = self.w.db.conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM outbox").fetchone()[0]
+        # the replacement chain: shorter or longer, some deleted transfers re-included, new ones
+        chain.reorg(fork)
+        for kind, a, v in self.orphans:
+            if rng.random() < 0.5:
+                if rng.random() < 0.5:
+                    chain.mine()
+                if kind == "in":
+                    top_up(chain, a, v)
+                elif chain.balance_now(a) > v:
+                    drain(chain, a, v)
+        self.transfers(rng.randint(0, 2))
+        chain.mine(rng.randint(1, 4))
+        if rng.random() < 0.3:  # crash between the reorg's detection and the check's run
+            self.w.check_reorg()
+            self.w = self.worker()
+        if rng.random() < 0.3:  # the reorg run cannot read: rolled back, retried
+            self.wstep(fail=True)
+            assert self.w.db.meta("reorg:m13") is not None
+        for _ in range(rng.randint(1, 4)):
+            self.transfers(rng.randint(0, 1))
+            chain.mine()
+            self.clock.advance(rng.choice((12, 6 * 3600 + 1)))
+            self.wstep()
+        self.clock.advance(6 * 3600 + 1)  # every open incident re-alerts: none may be an orphan
+        chain.mine()
+        self.wstep()
+        return pre
+
+    def oracle(self, cp):
+        """Top-ups (address, block) -> (before, after, resolved_block) read from the canonical chain."""
+        out = {}
+        for a in self.ADDRS:
+            prev = self.chain._balance(a, self.baseline)
+            for b in range(self.baseline + 1, cp + 1):
+                bal = self.chain._balance(a, b)
+                for (ta, tb), (before, after, res) in out.items():
+                    if ta == a and res is None and bal <= before:
+                        out[(ta, tb)] = (before, after, b)
+                if bal > prev:
+                    out[(a, b)] = (prev, bal, None)
+                prev = bal
+        return out
+
+
+@pytest.mark.parametrize("confirmations", [0, 2])
+@pytest.mark.parametrize("seed", range(20))
+def test_m13_adversarial_reorg_sweep(tmp_path, seed, confirmations):
+    s = M13Sweep(tmp_path, seed, confirmations)
+    pre = s.run()
+    assert s.depth >= 1
+    w, cp = s.w, s.w.checkpoint()["block"]
+    truth = s.oracle(cp)
+    keys = {f"{a}:{b}": v for (a, b), v in truth.items()}
+    assert open_keys(w) == sorted(k for k, (_, _, res) in keys.items() if res is None)
+    paged = {k for sev, kind, k in sent(w) if kind == "open"}
+    assert set(keys) <= paged, "a canonical top-up was never paged"
+    inc_key = {r[0]: r[1] for r in w.db.conn.execute("SELECT id, key FROM incidents")}
+    for r in outbox(w, f"rowid > {pre} AND kind NOT IN ('health', 'digest')"):
+        k = inc_key[r["incident_id"]]
+        if r["kind"] == "resolved" and REORG_TEXT in r["text"]:
+            assert k not in keys, f"evidence-left resolution of a canonical top-up {k}"
+        elif r["kind"] == "resolved":
+            assert k in keys and keys[k][2] is not None, f"value-left resolution without a canonical drain: {k}"
+        else:
+            assert k in keys, f"{r['kind']} for orphaned evidence {k}"
+    rows = {f"{r[0]}:{r[1]}": (int(r[2]), int(r[3]), r[4])
+            for r in w.db.conn.execute("SELECT address, block, before, after, resolved_block FROM m13_topup")}
+    assert rows == keys
+    for a, b, bal in w.db.conn.execute("SELECT address, block, balance FROM m13_watch"):
+        assert b == cp and int(bal) == s.chain._balance(a, cp)
+    assert w.degraded() == [] and w.db.meta("reorg:m13") is None

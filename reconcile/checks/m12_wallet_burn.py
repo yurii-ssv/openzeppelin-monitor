@@ -26,9 +26,15 @@ which is untrusted: each candidate is verified on chain (transaction by hash: se
 sender, block, `gasUsed`, `effectiveGasPrice`; the block hash is the canonical one; block ≤ checkpoint), and the
 set is complete only if the verified nonces are contiguous up to `eth_getTransactionCount(w, checkpoint)` (the
 first backfill also proves the nonce just before the window, or nonce 0). An API failure, a page budget overrun or
-a nonce gap makes the spend **UNKNOWN**: the runway and daily-spend keys are not evaluated (a `m12-spend` health
-message once it has lasted `unknown_grace_s`, so a Blockscout indexing lag of a few blocks stays quiet) (their open incidents stay as they are; balance keys still are), nothing is advanced, retried at the next
-run; in a reorg run that must re-report such a key, the run raises (README §6.2). Never "no spend".
+a nonce gap makes the spend **UNKNOWN**: the runway and daily-spend keys are not evaluated (their open incidents
+stay as they are; balance keys still are; a `m12-spend` health message once it has lasted `unknown_grace_s`, so a
+Blockscout indexing lag of a few blocks stays quiet), nothing is advanced, retried at the next run. Never "no
+spend". In a run with reason `reorg` an UNKNOWN spend **raises**, whatever `ctx.reorg_keys` holds (README §6.2
+item 4): the persisted spend (benign evaluations included), open incidents last seen at or below the ancestor and
+keys resolved on the deleted blocks all depend on the new chain's transaction set, so the run rolls back, the
+`reorg:m12` marker stays and it is retried every step (balance keys of that run with it; `check-error` health,
+`healthy: false`). A new chain with no transaction of the wallet above the ancestor needs no listing: the nonce at
+the checkpoint equals the nonce re-read at the ancestor.
 
 **State and reorgs** (README §6.1/§6.2). `m12_tx` (verified transactions in the window) and `m12_sync`
 (`synced_block`, `next_nonce`, `history_from`) are derived from blocks: in the run with reason `reorg` (ancestor
@@ -70,7 +76,10 @@ def raw_batch(ctx: Ctx, method: str, params: list[list], blocks: list[int] = ())
     if not params:
         return []
     ctx.rpc.counts[method] += len(params)
-    return ctx.rpc.rpc.batch([(method, p) for p in params])
+    res = ctx.rpc.rpc.batch([(method, p) for p in params])
+    if not isinstance(res, list) or len(res) != len(params):  # a partial answer is an error, never fewer items
+        raise RpcError(f"{method}: {len(res) if isinstance(res, list) else 'no'} results for {len(params)} calls")
+    return res
 
 
 def _int(value, what: str) -> int:
@@ -243,9 +252,9 @@ class M12WalletBurn(Check):
                 self.sync(ctx, w.address, block)
                 m = self.metrics(ctx, w.address, bal, block)
             except SpendUnknown as exc:
-                keys = {f"{w.address}:runway", f"{w.address}:daily-spend"} & ctx.reorg_keys
-                if keys:  # the reorg run must re-report these keys (README §6.2 item 4)
-                    raise RuntimeError(f"m12 cannot re-evaluate {sorted(keys)} after the reorg: {exc}") from exc
+                if ctx.reorg_ancestor is not None:  # README §6.2 item 4, whatever ctx.reorg_keys holds
+                    raise RuntimeError(f"m12 cannot re-measure the spend of {w.address} on the new chain after the "
+                                       f"reorg (ancestor {ctx.reorg_ancestor}): {exc}") from exc
                 since = ctx.state(f"unknown_since:{w.address}")
                 if since is None:
                     since = ctx.clock()
