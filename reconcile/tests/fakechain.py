@@ -5,6 +5,13 @@ _bulkRemoveValidator, SSVClusters._updateClusterBalanceInternal, liquidate,
 reactivate, migrateClusterToETH), independently of eb_model.py. It emits ABI-encoded
 logs and writes the raw storage words the worker reads, so the worker's decoder,
 RPC client, database, replay and alerting run unmodified against it.
+
+Generic helpers for any check (checks/README.md "Test helpers"):
+  chain.emit_event(kind_or_topic0, topics, data, address)   inject any log
+  chain.stub_call(to, data_or_selector, result=… | revert=…) eth_call answers, effective from the pending block
+  chain.set_balance(address, wei)                           eth_getBalance, effective from the pending block
+  chain.add_tx(sender, to, input, value)                    a mined transaction for eth_getTransactionByHash
+  FakeClock                                                 a controllable clock for Worker(clock=…)
 """
 
 from __future__ import annotations
@@ -15,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eb_events import TOPIC0  # noqa: E402
-from eb_reconcile import Rpc, RpcError  # noqa: E402
+from rpc import Rpc, RpcError  # noqa: E402
 from eb_storage import (  # noqa: E402
     Cluster,
     cluster_eb_slot,
@@ -72,6 +79,10 @@ class FakeChain:
         self.down = False
         self.drop_logs_in: tuple[int, int] | None = None  # silently omit logs in this range (truncation bug)
         self.senders: dict[str, str] = {}
+        self.txs: dict[str, dict] = {}  # tx hash -> {from, to, input, value, gas, blockNumber}
+        self.call_stubs: dict[tuple[str, str], list[tuple[int, str, str]]] = {}  # (to, data) -> [(from, kind, hex)]
+        self.balances: dict[str, list[tuple[int, int]]] = {}  # address -> [(from block, wei)]
+        self.calls: list[tuple[str, str, int]] = []  # every eth_call (to, data, block) the chain answered
 
     def hash(self, n: int) -> str:
         return "0x%02x%062x" % (self.salt.get(n, 0), n)
@@ -96,6 +107,56 @@ class FakeChain:
             "transactionIndex": hex(self.tx_index), "transactionHash": tx, "removed": False,
         })
         self.log_index += 1
+
+    def emit_event(self, kind: str, topics: list[str], data: bytes = b"", address: str = PROXY,
+                   tx: str | None = None) -> str:
+        """Inject any log; `kind` is an eb_events name or a raw 0x topic0. Returns the tx hash."""
+        tx = tx or self.new_tx("0x" + "ee" * 20)
+        topic0 = kind if kind.startswith("0x") else TOPIC0[kind]
+        self.logs.append({
+            "address": address.lower(), "topics": [topic0] + topics, "data": "0x" + data.hex(),
+            "blockNumber": hex(self.number), "blockHash": self.hash(self.number), "logIndex": hex(self.log_index),
+            "transactionIndex": hex(self.tx_index), "transactionHash": tx, "removed": False,
+        })
+        self.log_index += 1
+        return tx
+
+    def stub_call(self, to: str, data: str | bytes, result: bytes | str | None = None,
+                  revert: bytes | str | None = None) -> None:
+        """Answer eth_call to `to` whose calldata equals `data` (or starts with it when `data` is a
+        4-byte selector) from the pending block on: return `result`, or revert with `revert` data."""
+        data = data if isinstance(data, str) else "0x" + data.hex()
+        kind, val = ("revert", revert) if revert is not None else ("result", result if result is not None else b"")
+        val = val if isinstance(val, str) else "0x" + val.hex()
+        self.call_stubs.setdefault((to.lower(), data.lower()), []).append((self.number, kind, val.lower()))
+
+    def set_balance(self, address: str, wei: int) -> None:
+        self.balances.setdefault(address.lower(), []).append((self.number, wei))
+
+    def add_tx(self, sender: str, to: str, input: str, value: int = 0) -> str:
+        h = self.new_tx(sender)
+        self.txs[h] = {"hash": h, "from": sender, "to": to, "input": input, "value": hex(value), "gas": hex(500_000),
+                       "blockNumber": hex(self.number)}
+        return h
+
+    def _eth_call(self, obj: dict, block: int) -> str:
+        to, data = obj["to"].lower(), obj.get("data", obj.get("input", "0x")).lower()
+        self.calls.append((to, data, block))
+        entries = self.call_stubs.get((to, data)) or self.call_stubs.get((to, data[:10])) or []
+        live = [e for e in entries if e[0] <= block]
+        if not live:
+            raise ValueError(f"no eth_call stub for {to} {data[:10]} at {block}")
+        _, kind, val = live[-1]
+        if kind == "revert":
+            raise Revert(val)
+        return val
+
+    def _balance(self, address: str, block: int) -> int:
+        val = 0
+        for b, wei in self.balances.get(address.lower(), []):
+            if b <= block:
+                val = wei
+        return val
 
     def write(self, slot: int, value: int) -> None:
         self.writes.append((self.number, slot, value))
@@ -123,6 +184,9 @@ class FakeChain:
         try:
             res = self._handle(m, p)
             return {"jsonrpc": "2.0", "id": req["id"], "result": res}
+        except Revert as exc:
+            return {"jsonrpc": "2.0", "id": req["id"],
+                    "error": {"code": 3, "message": "execution reverted", "data": exc.data}}
         except ValueError as exc:
             return {"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32000, "message": str(exc)}}
 
@@ -161,10 +225,36 @@ class FakeChain:
         if m == "eth_getStorageAt":
             return hex(self.storage(int(p[1], 16), self._blk(p[2])))
         if m == "eth_getTransactionByHash":
+            if p[0] in self.txs:
+                return self.txs[p[0]]
             return {"from": self.senders.get(p[0], "0x" + "0" * 40)}
         if m == "eth_getCode":
             return "0x"
+        if m == "eth_call":
+            return self._eth_call(p[0], self._blk(p[1]))
+        if m == "eth_getBalance":
+            return hex(self._balance(p[0], self._blk(p[1])))
         raise ValueError(f"unsupported method {m}")
+
+
+class Revert(Exception):
+    def __init__(self, data: str):
+        super().__init__(data)
+        self.data = data
+
+
+class FakeClock:
+    """Controllable time for Worker(clock=…): starts at `start`, moves only with advance()."""
+
+    def __init__(self, start: float = 1_800_000_000.0):
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> float:
+        self.now += seconds
+        return self.now
 
 
 class FakeRpc(Rpc):
