@@ -308,7 +308,7 @@ M13 retired-key balance watch (D10): every block (or every N blocks, config) rea
 
 ### CP2d — Cluster integrity and capacity (M1, M2)
 
-**Status:** NOT STARTED. **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M1, M2, `evidences/#91419/report-family-stale-event-scan.ts`, `evidences/#88326/report-operator-capacity-impact.ts`.
+**Status:** IMPLEMENTED — AWAITING QA on lane head `c03fb05e0905cad37778d23380e0fd9bf4a5e1ea` (branch `mtabasco/ms-cp2d`; implementation `7cf0bf1`); [worker record](workers/cp2d/plan.md). **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M1, M2, `evidences/#91419/report-family-stale-event-scan.ts`, `evidences/#88326/report-operator-capacity-impact.ts`.
 Rules: M1 per transaction: group tuple-carrying events by cluster id; for groups ≥ 2 validate the last tuple with `SSVNetworkViews.isLiquidated` at that block; mismatch → warn with the earliest validating tuple as the repair tuple; inventory hash mismatch (`unknown` status) feeds the same incident; re-poison after a repair → page; poisoned and liquidatable → page; inbox `IncorrectClusterState` reverts from our senders → warn. Fixtures: at least 10 real multi-event receipts recorded from mainnet (built LIVE once, replayed GATED). M2 per operator with legacy validators: hard (`ethValidatorCount + cluster.validatorCount > limit`) → warn; early (headroom − legacy < 900, config) → info, warn if public; velocity (24 h registrations > headroom) → info; inbox `ExceedValidatorLimitWithData` on `migrateClusterToETH`/`reactivate` → warn.
 **Stop:** V2d rows; timebox 2 days.
 
