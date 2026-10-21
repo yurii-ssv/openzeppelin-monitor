@@ -406,3 +406,26 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - Observed UTC: 2026-10-21T17:45Z. CP2a status `msg_d156c4ba5a65` (condition of event-0031): LIVE read-only on publicnode at block 26241393: proxy ETH 425.460945991392730800; 548 active ETH clusters (storage-validated, 0 gaps) 209.330794185673930800; operator earnings (2,352 ids) 7.502480915190600000; `getNetworkEarnings` 208.627670890070600000; `stakingEthPoolBalance` 208.603988997805600000. Interpretation A liabilities 425.460945990935130800 → surplus +457,600,000 wei (≥ 0, 4.6e-10 ETH: the invariant is tight but not violated); B (A + pool) → surplus −208.603988997348 ETH (false deficit). The M4 interpretation is therefore evidenced; spec M4 to be amended at closure. Note for CP4: the surplus is ~0 by construction, so M4's "deficit > 0" threshold must be exact (no tolerance widening).
 - CP2b (`msg_c5ee4c74798d`) and CP2c (`msg_66abd83c6806`) reported the same frozen-test collision already fixed by ruling v2.1 (500abe4); both told to merge the integration branch again and not hand-edit frozen tests.
+
+<a id="event-0038-cp2a-qa1"></a>
+## Event 0038 — CP2a independent QA attempt 1: FAIL
+
+- Observed UTC: 2026-10-21T14:30:24Z (host clock). Actor: Codex GPT-6.1-Sol high, workspace-write / automatic approval review; task `task_15e1c0e3a918`, dispatch `ctx_31ca1746c190`.
+- Frozen input: `7211819c1b0f5ebd612c35dd45cc9f4549554c59`; worktree `ms-qa-cp2a`, branch `mtabasco/ms-qa-cp2a`, initial porcelain empty. Three inherited frozen-test files match integration exactly (bd531b4 + 500abe4); no other unauthorized frozen CP1B file edited.
+- Action and outcome: independent remeasurement and falsification; verdict **FAIL**, CP2a status **QA FAILED**; [durable report and complete reproducer appendices](qa/cp2a-attempt-1.md). Six findings: M3 API omission falsely resolves an active computed-zero page; M14 UNKNOWN canonical re-inclusion falsely resolves during a reorg and consumes the retry; M14 uses ETH views for legacy liquidateSSV; 7,200 produced blocks do not equal 24 hours; rolling hit count is anchored at the last hit; a later same-block top-up masks an earlier qualifying attack.
+
+| Verification | Exact command / action | Exit / counts / result |
+|---|---|---|
+| V2a.1 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_m3.py` (then independent commands for test_m4.py and test_m14.py) | 0 / 35; 0 / 25; 0 / 29 passed; spec acceptance FAIL from independent probes |
+| V2a.2 | same interpreter, three explicit monitor files, `-k thresholds_from_chain` | 0; 10 passed, 79 deselected; independent N/N2 boundary cases also pass |
+| V2a.3 | same three files, `-k restart` | 0; 4 passed, 85 deselected |
+| V2a.4 | same three files, `-k rpc_budget`; independent 350-cluster inventories | 0; 3 passed, 86 deselected; independent eth_call counts M3=1051, M4=393, M14=4 per entry |
+| V2a.5 | scratch `mutate.py` and `mutate_own.py` preserved in report | runner exits 0; all 15+3 mutants pytest exit 1, all byte-restored; restored 89-test monitor control exits 0 |
+| V2a.6 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | 0; 329 passed in 11.66 s; 0, clean |
+| V2a.7 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_m14.py -k v2a7` | 0; 9 passed, 20 deselected; complete spec correlation FAIL (legacy and later same-block top-up) |
+| Independent attacks | `PYTHONPATH=reconcile/tests:reconcile reconcile/.venv/bin/python -m pytest -q -s /private/tmp/cp2a-qa-7211819/test_independent.py` | 1; 7 failed / 28 passed, six findings; exact depth-one reorgs, shorter chains ± restart, liquidation reorg, no direct incident alerts, exact wei, routing/cadence controls pass |
+| LIVE M4 | independent public read at `https://ethereum-rpc.publicnode.com`, block 26241506; script+raw JSON in report | 0; 548 active ETH, validators 58762=58762, A surplus 457800000 wei; adding pool gives B surplus -208603988997347800000 wei; pinned source/ABI independently supports counting network once |
+
+- Claims/limits: original historical M3 LIVE scan not rerun (supplementary, budget avoids a second full traversal); fresh M4 LIVE substitutes the old exact-block snapshot; CP3 fork/composed tests remain CP3. Required owned V rows all run; no silent outcomes. No redundant full-suite rerun.
+- Preservation: only report, CP2a Status line and this appended event changed; venv is authorized/untracked, scratch outside repo. No implementation repair, mainnet transaction, secret access, or real alert delivery. Report contains repo proof and durable commands.
+- Next owner: coordinator / fresh repair worker; six findings remain. FAIL is a successful QA assignment; report commit on QA branch only, no push.
