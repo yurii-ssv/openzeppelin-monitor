@@ -44,8 +44,13 @@ def make_worker(tmp_path, stubs=None, *, only=None, chain=None, clock=None, noti
         "inventory": {"api_url": None},
     }
     raw.update(over)
-    if only is None and stubs is None and "checks" not in over:
-        only = ("m5",)
+    if only is None and stubs is None:
+        # registered lane checks are built only when a test names them in `checks=` (or via `only=`)
+        configured = {cid: dict(c) for cid, c in raw.get("checks", {}).items()}
+        for cid in registry.REGISTRY:
+            if cid != "m5" and cid not in configured:
+                configured[cid] = {"enabled": False}
+        raw["checks"] = configured
     if only is not None:
         checks_cfg = {cid: dict(c) for cid, c in raw.get("checks", {}).items()}
         for cid in registry.REGISTRY:
