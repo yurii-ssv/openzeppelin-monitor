@@ -17,7 +17,7 @@ id, `active` (the condition holds at the checkpoint) and `evidence_block` (where
 
 | Episode state at this run | Finding(s) |
 |---|---|
-| active | its finding (opens / keeps / escalates / re-sends on a new `revision`) |
+| active | its finding (opens / keeps / escalates / re-sends on a new `revision`); an earlier episode of the same key that occurred and healed without being reported (after the baseline) is sent first |
 | healed, reported and still open in the book | `resolve=True` with the episode's resolution text; preceded by its finding when it changed (new `revision`) since it was reported, so a change that appeared and healed between two sweeps is still sent |
 | healed, never reported, `evidence_block` > baseline | its finding then `resolve=True` (reported once, e.g. after downtime); not for a clean evaluation (`occurred=False`) |
 | healed, never reported, at or below the baseline | nothing (history before the check's first run) |
@@ -326,6 +326,10 @@ class EpisodeBook:
             active = [e for e in eps if e.active]
             if active:
                 cur = active[-1]
+                for e in eps:  # an earlier episode of the key that occurred and healed unseen: sent first
+                    if (e is not cur and e.episode not in rows and e.occurred and e.evidence_block > base
+                            and e.revision != cur.revision):
+                        out.append(self._finding(e))
                 out.append(self._finding(cur))
                 self._store(cur, ctx.block, closed=False)
                 for e in eps:  # older episodes of the same key are covered by the active one

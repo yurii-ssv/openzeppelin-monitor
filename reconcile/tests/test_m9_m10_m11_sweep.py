@@ -19,6 +19,7 @@ checks), and the message history is checked at the end:
 from __future__ import annotations
 
 import copy
+import json
 import random
 
 import pytest
@@ -163,6 +164,7 @@ class Sweep:
         self.log = []
         self.fresh = 0
         self.min_fork = 0
+        self.bad_build = False
         self.snaps = [(self.oc.c.number, copy.deepcopy(self.state()))]
         mine = self.oc.c.mine
 
@@ -247,7 +249,7 @@ class Sweep:
 
     def act(self):
         oc, rng = self.oc, self.rng
-        kind = rng.choice(["ok", "ok", "dissent", "dissent", "dissent", "skip", "skip", "fail", "late", "tie", "split",
+        kind = rng.choice(["ok", "ok", "dissent", "dissent", "skip", "skip", "fail", "late", "tie", "split", "build",
                            "rotate_open", "rotate_between", "dup_transient", "dup_persist", "stall", "downtime"])
         self.log.append(("act", kind))
         self.min_fork = oc.c.number  # no reorg below the round being voted (its blockNum would be in the future)
@@ -257,12 +259,15 @@ class Sweep:
         if ref <= oc.latest:
             oc.c.mine()
             ref = oc.c.number - 1
-        if kind == "ok":
-            oc.round(ref=ref, voters=tuple(slots))
+        bad = {3: 1} if self.bad_build else {}  # slot 3 on another tree build: dissents whenever it votes
+        if kind == "build":
+            self.bad_build = not self.bad_build
+        elif kind == "ok":
+            oc.round(ref=ref, voters=tuple(slots), variants=bad)
         elif kind == "dissent":
             oc.round(ref=ref, voters=tuple(slots), variants={rng.choice([3, 3, 1]): 1})
         elif kind == "skip":
-            oc.round(ref=ref, voters=tuple(s for s in slots if s != 3))
+            oc.round(ref=ref, voters=tuple(s for s in slots if s != 3), variants=bad)
         elif kind in ("fail", "late", "tie"):
             oc.vote(ref, slots[0])
             self.maybe_step()
@@ -368,11 +373,14 @@ class UpdaterSweep:
         self.log.append(("step", blocks, seconds, round(mode, 2)))
         before = open_keys(u.w, "m11")
         resolved_before = len(sent(u.w, "m11", "kind='resolved'"))
+        row = u.w.db.conn.execute("SELECT evidence FROM incidents WHERE check_id='m11' AND key='state-mismatch' "
+                                  "AND state='open'").fetchone()
+        self.reported = [m["cluster"] for m in json.loads(row[0])["mismatches"]] if row else []
         api_mode = self.rng.random()
         removed = {}
         if api_mode < 0.15:
             u.api.down = True  # (counted as partial below: nothing may resolve on it)
-        elif api_mode < 0.3:  # partial: one leaf missing
+        elif api_mode < 0.4:  # partial: one leaf missing
             cid = self.rng.choice(u.cids)
             if cid in u.api.leaves:
                 removed[cid] = u.api.leaves.pop(cid)
@@ -392,7 +400,7 @@ class UpdaterSweep:
         finally:
             u.api.down = False
             u.api.leaves.update(removed)
-        self.check(before, resolved_before, partial=api_mode < 0.3)  # down or one leaf missing
+        self.check(before, resolved_before, partial=api_mode < 0.4, down=api_mode < 0.15, removed=set(removed))
 
     def closed_rounds(self):
         u = self.u
@@ -400,7 +408,7 @@ class UpdaterSweep:
         now = max(u.c.ts(cp), u.w.clock() - 2 * 12)
         return [r for r in self.rounds if r["commit"] <= cp and now > u.c.ts(r["commit"]) + 3600], cp
 
-    def check(self, before, resolved_before, partial):
+    def check(self, before, resolved_before, partial, down, removed):
         u = self.u
         got = open_keys(u.w, "m11")
         if (u.w.db.meta("run:m11") or {}).get("at") != u.w.clock():
@@ -432,11 +440,16 @@ class UpdaterSweep:
             assert False, self.trace("the latest closed round has a counted revert but no revert-rate incident")
         for r in sent(u.w, "m11", "kind='resolved'")[resolved_before:]:
             if r["ikey"] == "state-mismatch" and REORG_TEXT not in r["text"]:
-                # positive proof: the API answered every cluster at this step and they match the chain
-                assert not partial and all(u.api.leaves.get(c) == self.eb for c in u.cids), self.trace(
-                    "state-mismatch resolved without a complete matching answer")
+                # positive proof: the API answered every reported cluster at this step and it matches the chain
+                assert self.reported and not down and all(c not in removed and u.api.leaves.get(c) == self.eb
+                                                          for c in self.reported), self.trace(
+                    "state-mismatch resolved without a matching answer for every reported cluster")
         if "state-mismatch" in got:
-            assert self.longest_mismatch >= 2, self.trace("state-mismatch open without a mismatch older than a round")
+            run = longest = 0
+            for r in self.rounds:
+                run = run + 1 if r["bad_seen"] else 0
+                longest = max(longest, run)
+            assert longest >= 2, self.trace("state-mismatch open without a mismatch at two consecutive roots")
         if partial and (u.w.db.meta("check:m11:zero_proof") or {}).get("result", {}).get("unknown"):
             assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api%'").fetchone(), \
                 self.trace("partial proof answer without a health message")
@@ -463,8 +476,6 @@ class UpdaterSweep:
         ref = u.commit()
         rnd = {"commit": u.c.sealed, "ref": ref, "txs": [], "reverts": 0, "bad_seen": bool(self.bad)}
         self.rounds.append(rnd)
-        self.mismatch_rounds = self.mismatch_rounds + 1 if self.bad else 0
-        self.longest_mismatch = max(self.longest_mismatch, self.mismatch_rounds)
         if kind in ("ours", "revert"):
             u.update(0, eb=32 + 1 + ref % 7, sender=self.updater)
             rnd["txs"].append({"block": u.c.sealed, "sender": self.updater, "updater": self.updater, "ok": True})
@@ -503,14 +514,15 @@ class UpdaterSweep:
         self.step(1)
 
     def run(self, n):
-        self.eb, self.bad, self.mismatch_rounds, self.longest_mismatch = 32, None, 0, 0
+        self.eb, self.bad = 32, None
         self.floor = self.u.c.number
         for _ in range(n):
             self.act()
             self.step(self.rng.choice([0, 1, 305, 310]), seconds=self.rng.choice([0, 0, 120]))
+            self.step(self.rng.choice([1, 26]), seconds=self.rng.choice([0, 300]))
         self.step(310)
 
 
-@pytest.mark.parametrize("seed", range(16))
+@pytest.mark.parametrize("seed", range(20))
 def test_sweep_m11(tmp_path, seed):
-    UpdaterSweep(tmp_path, seed).run(12)
+    UpdaterSweep(tmp_path, seed).run(16)

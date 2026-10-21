@@ -909,5 +909,6 @@ def test_a_failed_round_added_and_healed_between_two_sweeps_is_still_sent(tmp_pa
     oc.c.elapse(160)  # the worker is not stepping: b fails ...
     oc.round()  # ... and a newer round commits
     tick(w, oc, 1)
-    kinds = [(r["kind"], str(b) in r["text"]) for r in sent(w, "m9") if r["ikey"] == "failed-round"]
+    kinds = [(r["kind"], f"blockNum {b}" in r["text"] or f", {b}" in r["text"]) for r in sent(w, "m9")
+             if r["ikey"] == "failed-round"]
     assert kinds == [("open", False), ("update", True), ("resolved", True)]

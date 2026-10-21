@@ -319,3 +319,19 @@ def test_unreadable_parameters_keep_the_duplicate_page(tmp_path):
     oc.c.emit_event("QuorumUpdated", [], u256(7500))
     tick(w, oc, 1)
     assert open_keys(w, "m10") == {}
+
+
+def test_an_earlier_duplicate_of_the_same_address_healed_between_sweeps_is_sent_before_the_active_one(tmp_path):
+    """Found by the adversarial sweep (class 5): two duplicate assignments of one address between two sweeps, the
+    first healed, the second still active: both are sent (the first opens the incident, the second updates it)."""
+    oc, w = setup(tmp_path)
+    oc.replace(2, SLOTS[1], mine=False)
+    oc.replace(2, NEW, mine=False)
+    oc.c.mine()
+    first = oc.c.sealed
+    oc.replace(3, SLOTS[1])
+    second = oc.c.sealed
+    tick(w, oc, 1)
+    rows = [(r["kind"], f"at block {first}" in r["text"], f"at block {second}" in r["text"]) for r in sent(w, "m10")]
+    assert rows == [("open", True, False), ("update", False, True)]
+    assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"}

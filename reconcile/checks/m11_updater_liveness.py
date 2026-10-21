@@ -444,7 +444,7 @@ class M11UpdaterLiveness(Check):
                   f"{fmt_mismatches(aged)}; {len(newest['unknown'])} not comparable."),
             subject={"ref_block": ref}, revision=digest,
             evidence={"mismatches": aged[:50], "since_ref": since, "unknown": newest["unknown"][:50],
-                      "checked": newest["checked"]},
+                      "checked": newest["checked"], "compared_again": [] if aged else sorted(reported)},
             resolution=(f"Leaf comparison at blockNum {ref}: every reported cluster ({len(reported)}) was compared "
                         f"again and matches its leaf (or is no longer an active ETH cluster)."))], False
 
