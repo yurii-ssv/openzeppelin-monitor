@@ -51,7 +51,7 @@ plain=$(jq -r '.. | objects | select(.type? == "plain") | .value' "$CFG"/trigger
 
 # S3 -- V0.3 secret-shaped strings anywhere under deploy/.
 if grep -rEq 'discord\.com/api/webhooks/[0-9]+/|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}' "$ROOT/deploy"; then
-  fail "S3 webhook- or token-shaped string under deploy/ (files: $(grep -rElc 'discord\.com/api/webhooks/[0-9]+/|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}' "$ROOT/deploy" | sed "s#$ROOT/##" | tr '\n' ' '))"
+  fail "S3 webhook- or token-shaped string under deploy/ (files: $(grep -rEl 'discord\.com/api/webhooks/[0-9]+/|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}' "$ROOT/deploy" | sed "s#$ROOT/##" | tr '\n' ' '))"
 fi
 
 # S4 -- triggers.

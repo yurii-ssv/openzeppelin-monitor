@@ -3287,7 +3287,7 @@
     "transactions": [
       {
         "status": "Success",
-        "expression": "from != 0x16A503C901615E6e21AA78cFcaFf11822fc2b617 && gas_used > 0"
+        "expression": "from != 0x16A503C901615E6e21AA78cFcaFf11822fc2b617"
       }
     ],
     "functions": [
