@@ -30,6 +30,9 @@ Spec: [`docs/ssv-specs/monitoring-service-spec.md`](../../docs/ssv-specs/monitor
 | D7 | Workers run through Orca (Claude implementers, Codex QA); the coordinator proves the Orca loop before the first real dispatch (CP0.0). Fallback if the loop cannot be driven from this terminal: implementers as Claude subagents with worktree isolation and `worktree.baseRef = "head"`, QA still Codex through `orca agent launch`. | Marco (QA on Codex), coordinator (mechanics) | 2026-10-21 |
 | D8 | Legacy-cluster inventory for M6/M7 comes from SSV API v4 (`migrated=false`) reconciled with logs; the subgraph is a one-time cross-check, not a dependency. | Coordinator design choice; verify in CP2e | 2026-10-21 |
 | D9 | Cluster tuples from the SSV API are untrusted input: every tuple used for a view call is validated against the stored cluster hash (M1 detector). | Spec §4, reconcile precedent | 2026-10-21 |
+| D10 | M13 coverage: the OpenZeppelin Monitor covers direct transactions only (CP1A). Incoming value to the retired keys (`0x3A98…`, `0x4BC6…`) is additionally covered by a worker per-block balance-delta watch (CP2c, option A) → page. ACCEPTED GAP (Marco): attacker/consolidation-address INTERNAL calls and constructor interactions with SSV contracts or our wallets, and within-block transfers netting to zero, are not detected (public RPC has no trace API); documented in `deploy/README.md` and the CP2c README. Spec M13 row 3 is amended accordingly at closure. | Marco | 2026-10-21 |
+| D11 | Discord routing (middle option): collapse the six `*_SUCCESS` triggers (cluster, dao, liquidation, operator, oracle, validator) onto `DISCORD_WEBHOOK_INFO`; keep per-type webhooks for the six `*_FAILED` triggers, `ORACLE_DISSENT`, `DAO_SAFE_FAILED`, `LARGE_ETH_TRANSFER`. Applied in CP1A repair 3. | Marco | 2026-10-21 |
+| D12 | Wave 2 approved (CP2a–e, Opus high, cap 4 running + CP2e queued; the CP1A repair counts as wave 1). | Marco | 2026-10-21 |
 
 ## 3. Measured-facts ledger (F rows)
 
@@ -230,7 +233,7 @@ Every row is run on its own (no `&&` chains credited), with exit code and counts
 | V2x.5 | Falsifier per monitor, named in the attempt (e.g. `>` → `>=` on N; drop the distinct-slot count; swap burn-rate units) | the named test reddens; restore; clean tree | survives |
 | V2x.6 | `… -m pytest -q reconcile/tests` and `ruff check reconcile` | whole suite green | regression in another lane's file (must not happen; disjoint writes) |
 
-Lane-specific rows: CP2a V2a.7 M14 correlates an inbox revert with `ClusterDeposited` below one block of burn in the same or previous block; CP2b V2b.7 "no RootCommitted for 9 h" fires from the clock, not from an event; CP2c V2c.7 runway computed both from trailing spend and from current base fee; CP2d V2d.7 at least 10 recorded mainnet multi-event receipts replay through M1 with the expected validate/no-validate result and the repair tuple identified; CP2e V2e.7 legacy inventory from API `migrated=false` agrees with the log-derived set at one block.
+Lane-specific rows: CP2a V2a.7 M14 correlates an inbox revert with `ClusterDeposited` below one block of burn in the same or previous block; CP2b V2b.7 "no RootCommitted for 9 h" fires from the clock, not from an event; CP2c V2c.7 runway computed both from trailing spend and from current base fee; CP2d V2d.7 at least 10 recorded mainnet multi-event receipts replay through M1 with the expected validate/no-validate result and the repair tuple identified; CP2c V2c.8 M13 balance watch: a fake-chain top-up of either retired key (direct and via an internal transfer from a helper contract) pages at the checkpoint, a zero-delta block stays silent, a reorg that removes the top-up resolves/never re-pages (README §6.2), restart does not duplicate, an RPC error raises; CP2e V2e.7 legacy inventory from API `migrated=false` agrees with the log-derived set at one block.
 
 ### CP3 — Integration, compose, fork e2e, soak start
 
@@ -300,7 +303,8 @@ Rules: a round is keyed by `blockNum`; `WeightedRootProposed` without `RootCommi
 
 **Status:** NOT STARTED. **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M12, M8, D3, D4.
 Rules: balances of `0x16A5…` and `0x0431…` every 5 min; spend from receipts of their transactions (`gasUsed × effectiveGasPrice`), trailing 7-day average and a base-fee-based projection; runway < 14 d warn, < 7 d page, balance < 0.15 ETH page, daily spend > 0.04 ETH warn for the oracle wallet; < 0.2 ETH warn and < 0.05 ETH page for the liquidator. M8 floor: `cSSV.totalSupply()` < 2 × the DAO Safe's cSSV balance measured at start → warn.
-**Stop:** V2c rows; timebox 1 day.
+M13 retired-key balance watch (D10): every block (or every N blocks, config) read `eth_getBalance` of `0x3A98…` and `0x4BC6…` at the checkpoint block; any increase vs the previously stored balance → page with the delta and the transactions in the block that touch the address (direct or via receipt logs, best effort); first observation stores a baseline silently; reorg-safe per README §6; a missing/empty RPC result is an error, never "no change".
+**Stop:** V2c rows (plus V2c.8 below); timebox 1 day.
 
 ### CP2d — Cluster integrity and capacity (M1, M2)
 
