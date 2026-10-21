@@ -88,3 +88,34 @@ Other rows: thresholds_from_chain `test_m9::test_thresholds_from_chain_active_sl
 - Deviations and findings: (1) **M11 comparison latency**: 530 sequential proof GETs ≈ 285 s inside one check run (one DB transaction; the worker loop waits) — weekly and on zero-update rounds only; owner CP3 (concurrency or a smaller timeout) / Marco. (2) spec M9 "absent from the committed root" also fires for a persistently dissenting slot (replay: `absent:3` next to `dissent:3`): by the spec's wording; Marco may want it scoped to non-voting slots. (3) Catch-up semantics: M11 reports the updater's current state (a zero round healed during downtime is not reported); M9/M10 report healed episodes after the baseline once. (4) Failed rounds are one incident per run of failures (re-sent per round) instead of one per round.
 - NOT RUN: none of the owned rows.
 - Next action: records commit, status line, worker_done.
+
+<a id="attempt-4"></a>
+## Attempt 4 — repair 1 (QA attempt 1 FAIL, F1–F8)
+
+- Observed UTC: 2026-10-21T14:55Z–15:45Z
+- Task / Dispatch: `task_5b0bbc8b8e34` / `ctx_edbc5b0b243a` (run `run_96be3e0c7302`), worker `term_df241ade-a8c6-4971-a87c-3d75ad64dee3`
+- Frozen start head: `a1e4775d8e6eda545460b34c9ee961d77c27001f` (porcelain 0); code head after repair: `92a7a3c84c5fd358285f3fcbf8f0fa86c52b81cb`
+- Action and concrete outcome: fixes, regressions, state table, sweep and decisions in [plan.md § Repair 1](plan.md#repair-1-qa-attempt-1-fail--fresh-implementer). QA Appendix A extracted and run on the start head: exit 1, 11 failed / 14 passed (= the report).
+- `git merge --no-edit plan/monitoring-service`: CONFLICT in `plans/monitoring-service/execution-log.md` (not writable for this lane) → `git merge --abort`, tree clean; the integration branch differs only in documents; `qa/DEFECT-CLASSES.md` read with `git show`.
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| V2x.1 M9 / M10 / M11 | `bash plans/monitoring-service/workers/cp2b/evidence/verify.sh` (each row its own pytest) | exit 0: 60 / 23 / 59 passed, 0 skipped | local | `evidence/verification.repair1.log` |
+| V2x.2 thresholds_from_chain | same script | exit 0: 2 / 1 / 1 | local | same |
+| V2x.3 restart | same script | exit 0: 3 / 2 / 5 | local | same |
+| V2x.4 rpc_budget | same script | exit 0: 1 / 1 / 1 (M9: 0 eth_call, ≤ 3 headers per sweep, 0 on a clock-only sweep; M10: 0 RPC; M11: senders once, eth_call ≤ 350) | local | same |
+| V2b.7 | same script, `-k from_the_clock` | exit 0, 1 passed | local | same |
+| qa1 regressions | same script, `-k qa1` per file | exit 0: 8 / 1 / 7 | local | same |
+| adversarial sweep | `… reconcile/tests/test_m9_m10_m11_sweep.py` | exit 0, 44 passed | local | same |
+| QA Appendix A as published | extracted by the script from `qa/cp2b-attempt-1.md` | exit 1, 23 passed / 2 failed: the two reproducers whose setup predates F6 (fail at their own setup assertion; ported adapted, plan.md decision 4) | local | same |
+| V2x.6 | `… reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | exit 0, 426 passed (240 CP1B unchanged + 186 lane); ruff exit 0 | local | same |
+| RED on frozen / GREEN now | frozen code (`git archive a1e4775 reconcile`) + repaired tests, see file header | frozen: 87 failed / 99 passed (incl. 36 sweep cases); 39 new tests RED there, 20 new tests GREEN there (new coverage of rows that were right, QA controls); repaired head: all pass | local | `evidence/red_green_repair1.txt` |
+| V2x.5 falsifiers (repair 1) | `bash plans/monitoring-service/workers/cp2b/evidence/falsify_repair1.sh` | 15 mutations (F1-retry, F1-proof, F2-order, F3-split, F3-sameslot, F4-events, F5-before, F6-age, F7-consecutive, F8-clock, F8-slots, S-superseded, SWEEP-m9, SWEEP-m10, SWEEP-m11): every mutated test exit 1, every restored exit 0, no `reconcile/` path in porcelain; a fresh bytecode cache per process | local | `evidence/falsifiers_repair1.log` |
+| LIVE M9 record replay (saved dump, no network) | `reconcile/.venv/bin/python …/evidence/live_replay.py …/evidence/outage_2026_08_logs.json 400` | exit 0; 89 logs, 21 rounds, 13 commits; m9: failed-round page resolved, cadence page resolved, dissent:3 page open, absent:3 warn open, **six `split` warns** (immediate two-root warnings of the failed outage rounds, F3) each resolved; m10 none; 89 messages (75 before) | local | `evidence/outage_2026_08_replay.repair1.out.json` |
+| LIVE M9/M10 current rounds (saved dump) | same with `live_recent_logs.json` | exit 0; 12 logs, 3 rounds, 3 commits; 0 incidents, 0 messages | local | `evidence/live_recent_replay.repair1.out.json` |
+
+| LIVE M11 weekly comparison (network, read-only) | `reconcile/.venv/bin/python …/evidence/live_m11_leaves.py https://ethereum-rpc.publicnode.com` (runs the repaired `compare_leaves`) | exit 0; block 26,241,891, latest blockNum 26,239,590 = API referenceBlock; 530 active ETH clusters, 0 stale tuples, 530 compared, **1 mismatch** (cluster `0xc6d52a5b…574b`, owner `0x5ce6430e…15bd`: on-chain EB 230,930 vs leaf 231,442), 0 unknown; 530 eth_call + 531 eth_getStorageAt; 291.6 s. The same root compared 0 mismatches at 14:23Z (worker) and 14:4xZ (QA): the cluster's on-chain EB moved after the root, i.e. a mismatch younger than one round — exactly what F6 does not warn on; the next root's re-comparison decides | ethereum-rpc.publicnode.com + SSV API v4 + ssv-oracle proof API, 2026-10-21T15:34Z | `evidence/live_m11_leaves.repair1.out` |
+
+- Earlier falsifiers F9-clock (its anchor `age = ctx.clock() - mark["at"]` no longer exists: the clock estimate was replaced by chain time; its successor is F8-clock) and F11-window (`blocks_for` removed; successor F8-slots) are retired; F9-streak, F10-open and F-book-reorg anchors still exist and were not re-run separately (their tests are in the green V2x.1 rows).
+- NOT RUN: archive re-fetch of the 2026-08 outage logs and of the current rounds (the saved dumps were replayed; the QA re-fetched them on 2026-10-21 and matched them byte for byte); the anvil-fork M9 scenario is CP3 (V3.8).
+- Next action: records commit, worker_done; fresh Codex QA.
