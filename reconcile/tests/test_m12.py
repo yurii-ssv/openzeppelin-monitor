@@ -199,14 +199,88 @@ def test_m12_runway_from_trailing_spend_and_from_current_base_fee(tmp_path):
 
 
 def test_m12_runway_trailing_spend_drives_when_the_base_fee_fell(tmp_path):
-    """The week was paid at 5 gwei (4.5 days of runway); the base fee is back at 1.15 gwei (19.4 days): the
-    trailing computation pages."""
-    chain, w, _ = setup(tmp_path, gas_price=gwei(5))
+    """The week was paid at a 5 gwei base fee (4.5 days of runway); the base fee is back at 1.15 gwei (19.4 days):
+    the trailing computation pages."""
+    chain = WalletChain(start_block=100_000, base_fee=gwei(5))
+    chain.set_balance(ORACLE, eth(5))
+    chain.set_balance(LIQUIDATOR, eth(1))
+    chain.mine()
+    spend_history(chain)
+    chain.set_balance(ORACLE, eth(0.3454))
+    chain.mine()
+    chain.set_base_fee(gwei(1.15))
+    chain.mine(300)
+    chain, w = wallet_worker(tmp_path, ["m12"], chain=chain, checks={"m12": {"unknown_grace_s": 0}})
     advance(w)
     ev = evidence(w, f"{ORACLE}:runway")
     assert 4.4 < float(ev["runway_trailing_days"]) < 4.5 and 19.3 < float(ev["runway_base_fee_days"]) < 19.5
+    assert ev["avg_priority_fee_wei"] == "0" and ev["tip_source"] == "observed over 14 txs"
     (row,) = outbox(w, "severity='page'")
     assert "from trailing spend" in row["text"]
+
+
+@pytest.mark.parametrize("tip_mode, low, high", [("observed", 18.9, 19.1), ("none", 555, 570)])
+def test_m12_base_fee_projection_includes_the_observed_priority_fee(tmp_path, tip_mode, low, high):
+    """Measured 2026-10-21: the oracle wallet pays a fixed 1 gwei priority fee over a ~0.035 gwei base fee. The
+    projection adds the window's gas-weighted tip ("observed", default); the spec-literal base fee alone ("none")
+    would project ≈ 1.035 / 0.035 ≈ 30× the runway."""
+    chain = WalletChain(start_block=100_000, base_fee=gwei(0.035))
+    chain.set_balance(ORACLE, eth(5))
+    chain.set_balance(LIQUIDATOR, eth(1))
+    chain.mine()
+    spend_history(chain, gas_price=gwei(1.035))
+    fees = 14 * (15_500_000 // 2) * gwei(1.035)
+    chain.set_balance(ORACLE, fees * 19 // 7)  # 19 days at the trailing rate
+    chain.mine()
+    chain, w = wallet_worker(tmp_path, ["m12"], chain=chain, checks={"m12": {"projection_tip": tip_mode}})
+    advance(w)
+    ev = evidence(w, f"{ORACLE}:runway")
+    assert 18.99 < float(ev["runway_trailing_days"]) < 19.01
+    assert low < float(ev["runway_base_fee_days"]) < high
+    assert float(ev["avg_priority_fee_wei"]) == (gwei(1) if tip_mode == "observed" else 0)
+
+
+def test_m12_observed_tip_can_only_make_the_check_louder(tmp_path):
+    """Coordinator condition (2): the alarm takes the lower runway and the observed tip is >= 0, so "observed"
+    is never quieter than "none". The week was paid at 0.035 gwei base + 1 gwei tip (trailing runway 16 days,
+    silent); the base fee is now 0.5 gwei: base fee alone → 33 days (silent), base fee + observed tip → 11 days
+    (warn)."""
+    runs = {}
+    for mode in ("none", "observed"):
+        chain = WalletChain(start_block=100_000, base_fee=gwei(0.035))
+        chain.set_balance(ORACLE, eth(5))
+        chain.set_balance(LIQUIDATOR, eth(1))
+        chain.mine()
+        spend_history(chain, gas_price=gwei(1.035))
+        chain.set_balance(ORACLE, 14 * (15_500_000 // 2) * gwei(1.035) * 16 // 7)  # 16 days at the trailing rate
+        chain.mine()
+        chain.set_base_fee(gwei(0.5))
+        chain.mine(300)
+        d = tmp_path / mode
+        d.mkdir()
+        chain, w = wallet_worker(d, ["m12"], chain=chain, checks={"m12": {"projection_tip": mode}})
+        advance(w)
+        m = w.checks["m12"].last[ORACLE]
+        runs[mode] = (float(m["runway_trailing_days"]), float(m["runway_base_fee_days"]),
+                      [s for s, k, _ in alerts(w) if k == f"{ORACLE}:runway"])
+    assert 15.9 < runs["none"][0] == runs["observed"][0] < 16.1
+    assert 32 < runs["none"][1] < 34 and 10.5 < runs["observed"][1] < 11.5
+    assert runs["none"][2] == [] and runs["observed"][2] == ["warn"]
+
+
+def test_m12_empty_tip_sample_uses_the_configured_fallback_never_zero(tmp_path):
+    """Coordinator condition (4): no verified transaction in the window → the fallback tip, flagged."""
+    chain = WalletChain(start_block=100_000)
+    chain.set_balance(ORACLE, eth(1))
+    chain.set_balance(LIQUIDATOR, eth(1))
+    chain.mine()
+    chain, w = wallet_worker(tmp_path, ["m12"], chain=chain, checks={"m12": {"fallback_tip_wei": gwei(2)}})
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert m["avg_priority_fee_wei"] == gwei(2) and m["tip_source"].startswith("fallback_tip_wei")
+    assert m["runway_base_fee_days"] is None  # no gas used in the window: nothing to project
+    with pytest.raises(SystemExit, match="fallback_tip_wei is required"):
+        wallet_worker(tmp_path / "x", ["m12"], checks={"m12": {"fallback_tip_wei": 0}})
 
 
 def test_m12_base_fee_is_the_mean_of_the_last_base_fee_blocks(tmp_path):

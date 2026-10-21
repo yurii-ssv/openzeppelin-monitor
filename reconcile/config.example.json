@@ -65,7 +65,8 @@
     },
     "m12": {
       "oracle_wallet": "0x16A503C901615E6e21AA78cFcaFf11822fc2b617",
-      "liquidator_wallet": "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0"
+      "liquidator_wallet": "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0",
+      "fallback_tip_wei": 1000000000
     },
     "m8": {
       "cssv": "0xe018D31F120A637828F46aFD6c64EC099d960546",

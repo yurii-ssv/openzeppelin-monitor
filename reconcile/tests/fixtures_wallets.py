@@ -43,7 +43,7 @@ def eth(x: float) -> int:
     return int(round(x * ETH))
 
 
-M12_CFG = {"oracle_wallet": ORACLE, "liquidator_wallet": LIQUIDATOR}
+M12_CFG = {"oracle_wallet": ORACLE, "liquidator_wallet": LIQUIDATOR, "fallback_tip_wei": 10**9}  # 1 gwei, 2026-10-21
 M8_CFG = {"cssv": CSSV, "seed_holder": DAO_SAFE}
 M13_CFG = {"addresses": {RETIRED_SLOT4: "old oracle slot 4 + EB updater (key leaked)",
                          RETIRED_LIQUIDATOR: "old liquidator (drained)"}}

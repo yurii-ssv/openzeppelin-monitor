@@ -7,7 +7,10 @@ Every `interval_s` (5 min) at the checkpoint block:
   transactions included): trailing `window_blocks` (7 days) and last `day_blocks` (24 h), per day by the
   blocks' timestamps;
 - runway = balance ÷ trailing 7-day average daily spend, and balance ÷ (average daily gas × current base fee,
-  the mean of the last `base_fee_blocks` blocks' `baseFeePerGas`); the shorter one drives the alert (V2c.7).
+  the mean of the last `base_fee_blocks` blocks' `baseFeePerGas`, plus the wallet's own gas-weighted priority fee
+  over the window, `effectiveGasPrice − baseFeePerGas` of each verified transaction's block; `projection_tip:
+  "none"` drops it); the shorter one drives the alert (V2c.7). Measured 2026-10-21: the oracle wallet pays a fixed
+  1 gwei tip over a 0.03–0.36 gwei base fee, so the base fee alone would project a runway 3× too long.
 
 | Key | Rule (thresholds are D4 decisions: `defaults`, overridable) | Severity |
 |---|---|---|
@@ -142,7 +145,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS m12_tx (
     wallet TEXT NOT NULL, tx_hash TEXT NOT NULL, block INTEGER NOT NULL, block_hash TEXT NOT NULL,
     nonce INTEGER NOT NULL, gas_used TEXT NOT NULL, gas_price TEXT NOT NULL, fee TEXT NOT NULL,
-    status INTEGER NOT NULL, PRIMARY KEY (wallet, tx_hash));
+    status INTEGER NOT NULL, base_fee TEXT NOT NULL, PRIMARY KEY (wallet, tx_hash));
 CREATE INDEX IF NOT EXISTS m12_tx_block ON m12_tx (wallet, block);
 CREATE TABLE IF NOT EXISTS m12_sync (
     wallet TEXT PRIMARY KEY, synced_block INTEGER NOT NULL, next_nonce INTEGER NOT NULL,
@@ -152,7 +155,8 @@ CREATE TABLE IF NOT EXISTS m12_sync (
 
 def evidence_of(m: dict) -> dict:
     """Spend metrics as JSON evidence: integers as strings, ratios to 6 significant digits."""
-    return {k: (str(v) if isinstance(v, int) else (None if v is None else f"{float(v):.6g}")) for k, v in m.items()}
+    return {k: (str(v) if isinstance(v, int) else v if v is None or isinstance(v, str) else f"{float(v):.6g}")
+            for k, v in m.items()}
 
 
 def _eth(wei: int | Fraction) -> str:
@@ -182,6 +186,10 @@ class M12WalletBurn(Check):
         "window_blocks": 50_400,  # trailing average: 7 days of 12 s slots (per day by the blocks' timestamps)
         "day_blocks": 7_200,  # daily spend: the last 24 h
         "base_fee_blocks": 300,  # "current base fee": mean over the last hour (eth_feeHistory, at most 1024)
+        "projection_tip": "observed",  # + the window's gas-weighted priority fee ("none": base fee only)
+        # Required with "observed": the tip used when the window has no verified transaction (dated value in
+        # config.example.json; never 0)
+        "fallback_tip_wei": None,
         "blockscout_url": "https://eth.blockscout.com",
         "max_pages": 40,  # Blockscout pages per wallet per run (50 items each); beyond: UNKNOWN, retried
         "http_timeout_s": 20,
@@ -200,6 +208,12 @@ class M12WalletBurn(Check):
                 raise SystemExit(f"checks.m12.{k} must be a positive integer, got {c[k]!r}")
         if c["day_blocks"] > c["window_blocks"] or c["base_fee_blocks"] > 1024:
             raise SystemExit("checks.m12: need day_blocks <= window_blocks and base_fee_blocks <= 1024")
+        if c["projection_tip"] not in ("observed", "none"):
+            raise SystemExit(f"checks.m12.projection_tip must be 'observed' or 'none', got {c['projection_tip']!r}")
+        if c["projection_tip"] == "observed" and (not isinstance(c["fallback_tip_wei"], int)
+                                                  or c["fallback_tip_wei"] <= 0):
+            raise SystemExit(f"checks.m12.fallback_tip_wei is required with projection_tip 'observed' (a positive "
+                             f"wei value), got {c['fallback_tip_wei']!r}")
         self.wallets = [
             Wallet("oracle", c["oracle_wallet"].lower(), "oracle slot 4 + EB updater", None,
                    c["oracle_balance_page_wei"], c["oracle_runway_warn_days"], c["oracle_runway_page_days"],
@@ -294,7 +308,8 @@ class M12WalletBurn(Check):
                 sev = "warn"
         text = (f"balance {_eth(m['balance_wei'])}; trailing 7-day spend {_eth(m['avg_daily_spend_wei'])}/day → "
                 f"runway {_days(m['runway_trailing_days'])}; at the current base fee "
-                f"{float(m['base_fee_wei']) / 1e9:.3f} gwei × {float(m['avg_daily_gas']) / 1e6:.2f} Mgas/day → "
+                f"{float(m['base_fee_wei']) / 1e9:.3f} gwei + observed priority fee "
+                f"{float(m['avg_priority_fee_wei']) / 1e9:.3f} gwei × {float(m['avg_daily_gas']) / 1e6:.2f} Mgas/day → "
                 f"runway {_days(m['runway_base_fee_days'])}")
         key = f"{w.address}:runway"
         if sev is None:
@@ -359,9 +374,9 @@ class M12WalletBurn(Check):
             conn.execute("DELETE FROM m12_tx WHERE wallet=?", (wallet,))
         conn.executemany(
             "INSERT OR REPLACE INTO m12_tx (wallet, tx_hash, block, block_hash, nonce, gas_used, gas_price, fee, "
-            "status) VALUES (?,?,?,?,?,?,?,?,?)",
+            "status, base_fee) VALUES (?,?,?,?,?,?,?,?,?,?)",
             [(wallet, t["hash"], t["block"], t["block_hash"], t["nonce"], str(t["gas_used"]), str(t["gas_price"]),
-              str(t["gas_used"] * t["gas_price"]), t["status"]) for t in window.values()])
+              str(t["gas_used"] * t["gas_price"]), t["status"], str(t["base_fee"])) for t in window.values()])
         conn.execute("INSERT INTO m12_sync (wallet, synced_block, next_nonce, history_from) VALUES (?,?,?,?) "
                      "ON CONFLICT(wallet) DO UPDATE SET synced_block=excluded.synced_block, "
                      "next_nonce=excluded.next_nonce, history_from=CASE WHEN ? THEN excluded.history_from "
@@ -424,7 +439,12 @@ class M12WalletBurn(Check):
                          "gas_price": _int(rc["effectiveGasPrice"], "effectiveGasPrice"),
                          "status": _int(rc.get("status", "0x1"), "status")})
         canon = headers(ctx, [t["block"] for t in good]) if good else {}
-        return [t for t in good if canon[t["block"]]["hash"].lower() == t["block_hash"]]
+        out = []
+        for t in good:
+            hdr = canon[t["block"]]
+            if hdr["hash"].lower() == t["block_hash"]:
+                out.append({**t, "base_fee": _int(hdr.get("baseFeePerGas"), f"baseFeePerGas of block {t['block']}")})
+        return out
 
     def metrics(self, ctx: Ctx, wallet: str, bal: int, block: int) -> dict:
         c = self.config
@@ -434,20 +454,31 @@ class M12WalletBurn(Check):
         span_w, span_d = ts[block] - ts[lo_w], ts[block] - ts[lo_d]
         if span_w <= 0 or span_d <= 0:
             raise SpendUnknown(f"non-increasing block timestamps ({lo_w}: {ts[lo_w]}, {block}: {ts[block]})")
-        rows = ctx.db.conn.execute("SELECT block, gas_used, fee FROM m12_tx WHERE wallet=? AND block > ? AND "
-                                   "block <= ?", (wallet, lo_w, block)).fetchall()
+        rows = ctx.db.conn.execute("SELECT block, gas_used, fee, base_fee FROM m12_tx WHERE wallet=? AND block > ? "
+                                   "AND block <= ?", (wallet, lo_w, block)).fetchall()
         fees_w = sum(int(r[2]) for r in rows)
         gas_w = sum(int(r[1]) for r in rows)
         fees_d = sum(int(r[2]) for r in rows if r[0] > lo_d)
+        burnt_w = sum(int(r[1]) * int(r[3]) for r in rows)
         fee_now = base_fee(ctx, c["base_fee_blocks"])
+        # the wallet's priority fee (effectiveGasPrice - the block's base fee), gas-weighted over the window; with
+        # no transaction in the window, the configured fallback (flagged); never below 0, so the projection with a
+        # tip is never more optimistic than the base fee alone
+        if c["projection_tip"] == "none":
+            tip, tip_source = Fraction(0), "none (base fee only)"
+        elif gas_w:
+            tip, tip_source = max(Fraction(fees_w - burnt_w, gas_w), Fraction(0)), f"observed over {len(rows)} txs"
+        else:
+            tip, tip_source = Fraction(c["fallback_tip_wei"]), "fallback_tip_wei (no transaction in the window)"
         avg_spend = Fraction(fees_w * 86_400, span_w)
         avg_gas = Fraction(gas_w * 86_400, span_w)
-        projected = avg_gas * fee_now
+        projected = avg_gas * (fee_now + tip)
         return {
             "balance_wei": bal, "window_blocks": c["window_blocks"], "day_blocks": c["day_blocks"],
             "window_txs": len(rows), "window_fees_wei": fees_w, "window_gas": gas_w, "window_seconds": span_w,
             "avg_daily_spend_wei": avg_spend, "avg_daily_gas": avg_gas, "day_spend_wei": Fraction(fees_d * 86_400, span_d),
-            "base_fee_wei": fee_now, "projected_daily_spend_wei": projected,
+            "base_fee_wei": fee_now, "base_fee_blocks": c["base_fee_blocks"], "avg_priority_fee_wei": tip,
+            "tip_source": tip_source, "projected_daily_spend_wei": projected,
             "runway_trailing_days": Fraction(bal) / avg_spend if avg_spend else None,
             "runway_base_fee_days": Fraction(bal) / projected if projected else None,
         }
