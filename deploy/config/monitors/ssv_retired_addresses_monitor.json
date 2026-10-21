@@ -10,19 +10,13 @@
     },
     {
       "address": "0x4BC656B34De23896fa6069C9862F355b740401aF"
-    },
-    {
-      "address": "0xaeE058cCA5EED5470b4b48c159045b7C25ddb80f"
-    },
-    {
-      "address": "0x0144aE2456FbCF38Ba11e4ECF25F03A80A69F134"
     }
   ],
   "match_conditions": {
     "transactions": [
       {
         "status": "Any",
-        "expression": "value > 0"
+        "expression": "(to == 0x3A98EE5f80268Ed91F8A5880d93468b76a9F3bB4 OR to == 0x4BC656B34De23896fa6069C9862F355b740401aF) AND value > 0"
       }
     ],
     "functions": [],

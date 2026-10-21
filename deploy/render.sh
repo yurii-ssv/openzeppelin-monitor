@@ -10,7 +10,9 @@
 # - substitutes the one allow-listed placeholder ${TELEGRAM_CHAT_ID} in the Telegram triggers'
 #   chat_id (a plain string in the Monitor schema, so it cannot be an environment reference).
 #   Message bodies contain ${transaction.hash}-style tokens that are left untouched;
-# - unless --no-check, runs `openzeppelin-monitor --check` against the rendered config, with
+# - unless --no-check, first runs deploy/check-abi.sh on the rendered config (every monitor event /
+#   function signature and expression parameter must exist in its ABI; the Monitor's own --check
+#   never compares them), then runs `openzeppelin-monitor --check` against the rendered config, with
 #   placeholder values for any environment variable the config references that is unset in this
 #   shell (--check only validates shape; real values are read at run time). The binary's own exit
 #   code is not a gate (it exits 0 even when validation fails), so render.sh requires its
@@ -89,6 +91,8 @@ if ! $CHECK; then
   echo "Rendered $OUT (check skipped)"
   exit 0
 fi
+
+"$ROOT/deploy/check-abi.sh" --config-dir "$OUT" || { echo "render: ABI/expression check failed" >&2; exit 1; }
 
 [ -x "$BIN" ] || { echo "Build first: cargo build --release --locked (expected $BIN)" >&2; exit 1; }
 if [ -n "$missing" ] && $STRICT; then

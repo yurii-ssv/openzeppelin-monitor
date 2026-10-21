@@ -11,7 +11,7 @@
       "disable_web_preview": true,
       "message": {
         "title": "Retired Address Alert",
-        "body": "M13 PAGE: value movement on a compromised or retired address.\nValue: ${transaction.value} wei\nFrom: ${transaction.from}\nTo: ${transaction.to}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
+        "body": "M13 PAGE: incoming value on a retired address (a stale top-up would be stolen).\nValue: ${transaction.value} wei\nFrom: ${transaction.from}\nTo: ${transaction.to}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
       }
     }
   }

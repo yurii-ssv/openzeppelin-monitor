@@ -15,7 +15,14 @@
 #   S5  networks: every RPC is an environment reference; the first (weight 100) is MAINNET_RPC_URL;
 #       max_past_blocks > 0; recovery_config complete
 #   S6  monitors: unique names; every triggers[] entry resolves to a defined trigger key;
-#       every network slug resolves; trigger_conditions scripts exist; addresses non-empty
+#       every network slug resolves; trigger_conditions scripts exist; addresses non-empty;
+#       networks[] non-empty; match_conditions present with at least one non-empty
+#       events/functions/transactions list (an empty set matches every transaction)
+#   S7  deploy/check-abi.sh on the same config dir: every event/function signature and
+#       expression parameter exists in the monitor's ABI (the Monitor's own --check does not)
+# Inputs are validated first: a missing or empty --config-dir (no monitors, triggers or networks),
+# a missing --root or deploy/ directory, a failing secret scan and a failing sibling script are all
+# failures, never "OK". Counts come from the checked directory only.
 # Exit 0 only if every assertion holds. Prints one FAIL line per violation.
 set -uo pipefail
 
@@ -23,8 +30,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CFG=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --config-dir) CFG=${2:?}; shift 2 ;;
-    --root) ROOT=${2:?}; shift 2 ;;
+    --config-dir) [ $# -ge 2 ] || { echo "checker: --config-dir needs a directory" >&2; exit 2; }; CFG=$2; shift 2 ;;
+    --root) [ $# -ge 2 ] || { echo "checker: --root needs a directory" >&2; exit 2; }; ROOT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -33,6 +40,16 @@ command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
 
 errors=0
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
+
+# S0 -- inputs exist and are not empty (before anything is counted or scanned).
+[ -d "$ROOT" ] || { echo "FAIL: S0 --root $ROOT is not a directory"; echo "checker: 1 failure(s)"; exit 1; }
+[ -d "$ROOT/deploy" ] || fail "S0 --root $ROOT has no deploy/ directory to scan"
+[ -d "$CFG" ] || { fail "S0 --config-dir $CFG is not a directory"; echo "checker: $errors failure(s)"; exit 1; }
+for d in monitors triggers networks; do
+  [ -d "$CFG/$d" ] || { fail "S0 $CFG/$d is missing"; continue; }
+  [ -n "$(find "$CFG/$d" -maxdepth 1 -name '*.json' -print -quit)" ] || fail "S0 $CFG/$d has no .json files"
+done
+[ $errors -eq 0 ] || { echo "checker: $errors failure(s)"; exit 1; }
 emit() { # emit <prefix> <multi-line messages>: one FAIL per non-empty line
   local line
   while IFS= read -r line; do [ -z "$line" ] || fail "$1 $line"; done <<<"$2"
@@ -46,12 +63,20 @@ done
 [ $errors -eq 0 ] || { echo "checker: $errors failure(s)"; exit 1; }
 
 # S2 -- V0.6 plain-value scan.
-plain=$(jq -r '.. | objects | select(.type? == "plain") | .value' "$CFG"/triggers/*.json "$CFG"/networks/*.json)
+plain=$(jq -r '.. | objects | select(.type? == "plain") | .value' "$CFG"/triggers/*.json "$CFG"/networks/*.json) \
+  || fail "S2 plain-value scan could not run (jq failed)"
 [ -z "$plain" ] || fail "S2 plain value present in triggers/networks ($(printf '%s\n' "$plain" | wc -l | tr -d ' ') value(s); not printed)"
 
-# S3 -- V0.3 secret-shaped strings anywhere under deploy/.
-if grep -rEq 'discord\.com/api/webhooks/[0-9]+/|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}' "$ROOT/deploy"; then
-  fail "S3 webhook- or token-shaped string under deploy/ (files: $(grep -rEl 'discord\.com/api/webhooks/[0-9]+/|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}' "$ROOT/deploy" | sed "s#$ROOT/##" | tr '\n' ' '))"
+# S3 -- V0.3 secret-shaped strings anywhere under deploy/ (and the checked config dir). grep exit
+# 0 = found, 1 = none, anything else = the scan itself failed, which is a failure, not a pass.
+secret_re='discord\.com/api/webhooks/[0-9]+/|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}'
+scan_dirs=("$ROOT/deploy")
+case "$CFG/" in "$ROOT/deploy/"*) ;; *) scan_dirs+=("$CFG") ;; esac
+secret_files=$(grep -rElI "$secret_re" "${scan_dirs[@]}" 2>&1); rc=$?
+if [ $rc -eq 0 ]; then
+  fail "S3 webhook- or token-shaped string (files: $(printf '%s\n' "$secret_files" | sed "s#$ROOT/##" | tr '\n' ' '))"
+elif [ $rc -ne 1 ]; then
+  fail "S3 secret scan failed (grep exit $rc): $secret_files"
 fi
 
 # S4 -- triggers.
@@ -114,6 +139,11 @@ dupmon=$(jq -r '.name' "$CFG"/monitors/*.json | sort | uniq -d)
 for f in "$CFG"/monitors/*.json; do
   rel=${f#"$ROOT"/}
   [ "$(jq '.addresses | length' "$f")" -gt 0 ] || fail "S6 $rel has no addresses"
+  [ "$(jq '(.networks // []) | length' "$f")" -gt 0 ] || fail "S6 $rel has no networks"
+  jq -e '(.match_conditions | type) == "object"
+         and ([.match_conditions.events, .match_conditions.functions, .match_conditions.transactions]
+              | map(select(type == "array") | length) | add // 0) > 0' "$f" >/dev/null \
+    || fail "S6 $rel has no match_conditions with a non-empty events/functions/transactions list"
   for t in $(jq -r '.triggers[]?' "$f"); do
     printf '%s\n' "$trigger_keys" | grep -qx "$t" || fail "S6 $rel references undefined trigger '$t'"
   done
@@ -126,8 +156,15 @@ for f in "$CFG"/monitors/*.json; do
   done
 done
 
+# S7 -- ABI membership (sibling script; its own failure lines are passed through).
+abi_out=$("$(dirname "$0")/check-abi.sh" --config-dir "$CFG" 2>&1) || {
+  printf '%s\n' "$abi_out" | sed 's/^/S7 /'
+  fail "S7 deploy/check-abi.sh failed"
+}
+
 if [ $errors -ne 0 ]; then
   echo "checker: $errors failure(s)"
   exit 1
 fi
-echo "checker: OK ($(ls "$CFG"/monitors/*.json | wc -l | tr -d ' ') monitors, $(printf '%s\n' "$trigger_keys" | wc -l | tr -d ' ') triggers, $(ls "$CFG"/networks/*.json | wc -l | tr -d ' ') network)"
+count() { find "$CFG/$1" -maxdepth 1 -name '*.json' | wc -l | tr -d ' '; }
+echo "checker: OK ($(count monitors) monitors, $(printf '%s\n' "$trigger_keys" | wc -l | tr -d ' ') triggers, $(count networks) network)"
