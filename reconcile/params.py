@@ -4,6 +4,9 @@ Read through SSVNetworkViews (ISSVViews at the pin) plus one proxy storage word,
 The worker reloads them, and calls every check's `prepare`, when the scan stores a parameter event
 (eb_events.PARAM_KINDS, spec M15). Values are ints; `oracles` maps active oracle id -> address.
 
+A failed read invalidates the values (`invalidate`): until a later read succeeds, every parameter
+access raises `ParamsUnavailable`, so no check evaluates with values the chain may have changed.
+
   reconcile/.venv/bin/python reconcile/params.py --probe --rpc "$MAINNET_RPC_URL"   # LIVE read
 """
 
@@ -38,17 +41,38 @@ def selector(signature: str) -> bytes:
     return keccak(signature.encode())[:4]
 
 
+class ParamsUnavailable(Exception):
+    """The live parameters could not be read since the last change: no value may be used."""
+
+
 class Params:
-    """Attribute and item access to the last loaded values; `block` is where they were read."""
+    """Attribute and item access to the last loaded values; `block` is where they were read.
+
+    After a failed read `ok` is False, `error` says why, `block` still names the last good read and
+    every access to a value raises ParamsUnavailable until a read succeeds."""
 
     def __init__(self, views: str | None, proxy: str):
         self.views, self.proxy = views, proxy
         self.values: dict = {}
         self.block: int | None = None
+        self.error: str | None = None
 
     @property
     def enabled(self) -> bool:
         return bool(self.views)
+
+    @property
+    def ok(self) -> bool:
+        """False while the values are invalid (the last read failed)."""
+        return self.error is None
+
+    def invalidate(self, error: str) -> None:
+        self.values, self.error = {}, error
+
+    def _check(self) -> None:
+        if self.error is not None:
+            raise ParamsUnavailable(f"live parameters unavailable (last good read at block {self.block}): "
+                                    f"{self.error}")
 
     def load(self, chain, block: int) -> dict:
         names = list(GETTERS)
@@ -64,19 +88,24 @@ class Params:
         values["oracles"] = {i: "0x" + a[12:32].hex() for i, a in zip(ids, addrs)}
         latest, min_blocks = decode_latest_committed(chain.storage(self.proxy, [EB_LATEST_COMMITTED], block)[0])
         values["min_blocks_between_updates"] = min_blocks
-        self.values, self.block = values, block
+        self.values, self.block, self.error = values, block, None
         return values
 
     def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        self._check()
         try:
             return self.__dict__["values"][name]
         except KeyError:
             raise AttributeError(f"parameter {name!r} is not loaded") from None
 
     def __getitem__(self, name):
+        self._check()
         return self.values[name]
 
     def get(self, name, default=None):
+        self._check()
         return self.values.get(name, default)
 
 

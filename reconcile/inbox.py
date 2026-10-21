@@ -3,6 +3,9 @@
 The Monitor appends one JSON line per matched failed transaction to `data/inbox/failed-tx.jsonl`,
 mounted read-only in the worker. The worker:
   - reads complete lines from a byte offset kept in `meta` (a trailing partial line waits),
+  - raises InboxUnavailable when the configured file is missing or unreadable: the worker reports that
+    as monitor health, never as an empty inbox (an existing empty file is a valid, empty inbox; the
+    deployment creates it before the Monitor's first append),
   - restarts from offset 0 when the file shrinks or is replaced (log rotation),
   - de-duplicates on (tx_hash, block_hash),
   - resolves the revert selector with `eth_call` of the same transaction at `block - 1`
@@ -15,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 import urllib.request
 from dataclasses import dataclass
 
@@ -106,6 +110,10 @@ ERRORS = {
 }
 
 
+class InboxUnavailable(OSError):
+    """The configured inbox file is missing or cannot be read."""
+
+
 @dataclass(frozen=True)
 class InboxEntry:
     id: int
@@ -165,20 +173,28 @@ class Inbox:
     # ---- reading
 
     def read(self) -> tuple[int, list[str]]:
-        """Ingest new complete lines; returns (new entries, malformed lines). Must run inside a transaction."""
+        """Ingest new complete lines; returns (new entries, malformed lines). Must run inside a transaction.
+        Raises InboxUnavailable (nothing written) when the file is missing, not a regular file or unreadable."""
         try:
             st = os.stat(self.path)
-        except FileNotFoundError:
-            return 0, []
+            if not stat.S_ISREG(st.st_mode):
+                raise IsADirectoryError(f"not a regular file: {self.path}")
+        except OSError as exc:
+            raise InboxUnavailable(f"failed-transaction inbox {self.path} cannot be read: "
+                                   f"{type(exc).__name__}: {exc.strerror or exc}") from exc
         pos = self.db.meta("inbox:offset", {"offset": 0, "inode": None})
         offset = pos["offset"]
         if st.st_size < offset or (pos["inode"] is not None and pos["inode"] != st.st_ino):
             log.info("inbox %s shrank or was replaced (size %d < offset %d); re-reading from 0",
                      self.path, st.st_size, offset)
             offset = 0
-        with open(self.path, "rb") as fh:
-            fh.seek(offset)
-            chunk = fh.read()
+        try:
+            with open(self.path, "rb") as fh:
+                fh.seek(offset)
+                chunk = fh.read()
+        except OSError as exc:
+            raise InboxUnavailable(f"failed-transaction inbox {self.path} cannot be read: "
+                                   f"{type(exc).__name__}: {exc.strerror or exc}") from exc
         end = chunk.rfind(b"\n") + 1
         new, bad = 0, []
         for raw in chunk[:end].splitlines():

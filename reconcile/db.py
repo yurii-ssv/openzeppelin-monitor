@@ -76,11 +76,14 @@ def migrate(conn: sqlite3.Connection) -> int:
         legacy_m5 = "incidents" in tables and "cluster_id" in _columns(conn, "incidents")
         if legacy_m5:
             conn.execute("ALTER TABLE incidents RENAME TO m5_incidents")
+        legacy_outbox = "outbox" in tables and "receipt" not in _columns(conn, "outbox")
         if "outbox" in tables:
             have = _columns(conn, "outbox")
             for col in OUTBOX_ADDED_COLUMNS:
                 if col.split()[0] not in have:
                     conn.execute(f"ALTER TABLE outbox ADD COLUMN {col}")
+        if legacy_outbox:
+            _normalise_legacy_outbox(conn)
         for stmt in SCHEMA:
             conn.execute(stmt)
         if legacy_m5:
@@ -95,6 +98,20 @@ def migrate(conn: sqlite3.Connection) -> int:
         conn.execute("ROLLBACK")
         raise
     return found
+
+
+def _normalise_legacy_outbox(conn) -> None:
+    """Pre-framework rows keep their key, text and retry state. Severities take the framework names
+    (critical -> page, warning -> warn), so they route like any other message; the pre-framework worker
+    wrote the transport receipt into `delivery` once sent, which becomes `receipt` (`delivery` is the
+    route). Unsent rows keep `delivery` NULL: the worker routes them by severity at delivery."""
+    for old, new in SEVERITY_FROM_LEGACY.items():
+        if old != new:
+            conn.execute("UPDATE outbox SET severity=? WHERE severity=?", (new, old))
+    conn.execute(
+        "UPDATE outbox SET receipt=delivery, delivery=CASE WHEN delivery LIKE 'telegram:%' THEN 'telegram' END "
+        "WHERE sent_at IS NOT NULL AND delivery IS NOT NULL")
+    conn.execute("UPDATE outbox SET delivery=NULL WHERE sent_at IS NULL")
 
 
 def _backfill_m5(conn) -> None:

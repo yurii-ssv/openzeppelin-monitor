@@ -14,9 +14,12 @@ The worker is read-only against the chain. Each step:
    advances a durable checkpoint (`eth_getLogs` in bounded windows; a window the RPC rejects is split,
    and an error is never read as "no logs").
 2. Ingests new lines of the failed-transaction inbox and resolves their revert selectors
-   (`eth_call` at `block − 1`, Blockscout as fallback).
+   (`eth_call` at `block − 1`, Blockscout as fallback). A configured inbox file that is missing or
+   unreadable is a monitor-health alert, never an empty inbox (create the empty file at deployment).
 3. Reloads the live parameters after a parameter event (spec M15), then runs every due check
    (interval, event, inbox, near-set-per-block) and turns its findings into incidents and outbox rows.
+   A failed read invalidates the parameters (checks that read them do not run) and is retried every
+   step; see [checks/README.md §5.1](checks/README.md).
 4. Re-alerts open incidents (page 6 h, warn 24 h), sends the daily digest, delivers the outbox.
 
 | Module | Role |
@@ -68,7 +71,9 @@ Switch to `"live"` after the record-only soak. The first start backfills from `s
 v2.0.0 activation, 24,920,727): about 1.2M blocks, a few minutes on an RPC that accepts 50k-block
 `eth_getLogs` windows. State lives in `reconcile/data/` (override with `EB_RECONCILE_DATA_DIR`); on
 Linux, make that directory writable by uid 10001. A database written by the pre-framework worker is
-migrated in place on start (its open M5 incidents keep their ids and are not re-sent).
+migrated in place on start (its open M5 incidents keep their ids and are not re-sent; messages it
+queued but had not sent keep their keys, take the framework severity names and are delivered on their
+severity's route).
 
 Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --config <file>`):
 
@@ -81,7 +86,9 @@ Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --con
 Metrics: `ssv_watch_checkpoint_block`, `ssv_watch_lag_blocks`, `ssv_watch_open_incidents{check,severity}`,
 `ssv_watch_outbox_undelivered`, `ssv_watch_outbox_failing`, `ssv_watch_check_last_run_seconds{check}`,
 `ssv_watch_check_last_run_block{check}`, `ssv_watch_check_errors_total{check}`,
-`ssv_watch_rpc_consecutive_failures`, `ssv_watch_inbox_entries{state}`.
+`ssv_watch_rpc_consecutive_failures`, `ssv_watch_inbox_entries{state}`,
+`ssv_watch_input_unavailable{input="params"|"inbox"}`. `<db_path>.status.json` has `healthy: false`
+while a step fails or a configured input (parameters, inbox) cannot be read.
 
 LIVE probes (read-only): `.venv/bin/python inventory.py --probe --rpc <url>` (API v4 pages, ≥ 5 sampled
 tuples validated against storage) and `.venv/bin/python params.py --probe --rpc <url>`.

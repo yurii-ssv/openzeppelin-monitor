@@ -5,10 +5,11 @@ The worker is read-only against the chain. Each step:
   1. checks for a reorg below the checkpoint and rewinds (logs, cursors, inventory),
   2. scans confirmed SSVNetwork proxy logs into SQLite and advances a durable checkpoint
      (`eth_getLogs` in bounded windows; an error is never read as "no logs"),
-  3. ingests the Monitor's failed-transaction inbox and resolves revert selectors,
-  4. reloads live protocol parameters after a parameter event, then runs every due check
-     (interval, event, inbox and near-set-per-block schedules) and turns its findings into
-     incidents and outbox messages,
+  3. ingests the Monitor's failed-transaction inbox and resolves revert selectors (a configured inbox
+     that cannot be read is monitor health, never an empty input),
+  4. reloads live protocol parameters after a parameter event (a failed read invalidates them and is
+     retried every step), then runs every due check (interval, event, inbox and near-set-per-block
+     schedules) and turns its findings into incidents and outbox messages,
   5. re-alerts open incidents, sends the daily digest, delivers the outbox.
 Checks live in checks/ (interface: checks/README.md); M5 (#94775) is checks/m5_eb_desync.py.
 
@@ -41,10 +42,10 @@ from checks.base import Ctx, Every, NearSetEveryBlock, OnEvents, OnInbox
 from checks.m5_eb_desync import audit  # noqa: F401 - re-exported (CLI, tests)
 from db import DB  # noqa: F401 - re-exported
 from eb_events import PARAM_KINDS, TOPIC0, decode_log
-from inbox import Inbox
+from inbox import Inbox, InboxUnavailable
 from inventory import API_DEFAULT, InventoryCache
 from notify import RecordOnly, Telegram, make_notifier  # noqa: F401 - re-exported
-from params import Params
+from params import Params, ParamsUnavailable
 from rpc import Chain, Rpc, RpcError
 
 log = logging.getLogger("eb-reconcile")
@@ -282,12 +283,34 @@ class Worker:
         if self.inbox is None:
             return
         with self.db.tx():
-            new, bad = self.inbox.read()
+            try:
+                new, bad = self.inbox.read()
+            except InboxUnavailable as exc:
+                new, bad = 0, []
+                self._inbox_unavailable(exc)
+            else:
+                if self.db.meta("inbox:unavailable") is not None:
+                    log.info("inbox %s is readable again", self.inbox.path)
+                    self.db.set_meta("inbox:unavailable", None)
             for line in bad:
                 self.alerts.health("inbox-malformed", f"Malformed failed-tx inbox line skipped:\n{line}", dedup=line)
             self.inbox.resolve(self.rpc)
         if new:
             log.info("inbox: %d new failed transaction(s)", new)
+
+    def _inbox_unavailable(self, exc: InboxUnavailable) -> None:
+        """A configured inbox that cannot be read: health (once per outage, re-sent every health window)."""
+        down = self.db.meta("inbox:unavailable")
+        if down is None:
+            log.error("%s", exc)
+            down = {"since": self.clock(), "outage": self.db.meta("inbox:outages", 0) + 1}
+            self.db.set_meta("inbox:outages", down["outage"])
+        self.db.set_meta("inbox:unavailable", {**down, "error": str(exc)})
+        self.alerts.health(
+            "inbox-unavailable",
+            f"{exc}. Failed-transaction evidence is not ingested and checks scheduled OnInbox see no new "
+            f"entries until it is readable again (an existing empty file is a valid, empty inbox).",
+            dedup=f"inbox-unavailable:{self.inbox.path}:{down['outage']}", realert=True)
 
     # ---- scheduler
 
@@ -323,23 +346,33 @@ class Worker:
         return reasons
 
     def reload_params(self, block: int) -> None:
+        """Load the parameters at the first run and after a parameter event; retry every step after a failure.
+
+        A failed read invalidates the values (every access raises ParamsUnavailable) and drops every
+        check's `prepare`, so neither `ctx.params` nor a copy taken in `prepare` is used until a read
+        succeeds; the runs that need them fail without advancing their cursors and are retried."""
         if not self.params.enabled:
             return
         changed = self.params.block is not None and self.db.has_events_after(
             (self.params.block, END_OF_BLOCK), block, PARAM_KINDS)
-        if self.params.block is not None and not changed:
+        if self.params.ok and self.params.block is not None and not changed:
             return
+        recovered = not self.params.ok
         try:
             self.params.load(Chain(self.rpc, block, self.cfg.max_log_range), block)
-        except RpcError as exc:
-            if exc.transport:
+        except (RpcError, ValueError) as exc:
+            self.params.invalidate(f"read at block {block} failed: {exc}")
+            self.prepared.clear()
+            if isinstance(exc, RpcError) and exc.transport:
                 raise
+            log.error("live parameters unavailable: %s", self.params.error)
             with self.db.tx():
-                self.alerts.health("params", f"Live parameters could not be read at block {block}: {exc}",
+                self.alerts.health("params", f"Live parameters could not be read at block {block}: {exc}. Checks "
+                                   f"that read them do not run until a read succeeds (retried every step).",
                                    dedup=f"params:{exc}", realert=True)
             return
-        log.info("live parameters %s at block %d", "reloaded" if changed else "loaded", block)
-        if changed:
+        log.info("live parameters %s at block %d", "reloaded" if changed or recovered else "loaded", block)
+        if changed or recovered:
             for cid in self.checks:
                 self.pending[cid].add("params")
 
@@ -358,6 +391,9 @@ class Worker:
                 self.run_check(check, block, reasons)
             except RpcError as exc:
                 first_rpc_error = first_rpc_error or exc
+                self._run_failed(check, exc, health=False)
+            except ParamsUnavailable as exc:  # the "params" health message covers it; retried next step
+                log.warning("check %s skipped at block %d: %s", check.id, block, exc)
                 self._run_failed(check, exc, health=False)
             except Exception as exc:  # noqa: BLE001 - one broken check must not stop the others
                 log.exception("check %s failed at block %d", check.id, block)
@@ -414,8 +450,15 @@ class Worker:
         with self.db.tx():
             self.alerts.realert()
             if self.alerts.digest_due() and block >= self.cfg.start_block:
-                sections = {c.id: c.digest(self._ctx(c, block, {"digest"})) for c in self.checks.values()}
+                sections = {c.id: self._digest(c, block) for c in self.checks.values()}
                 self.alerts.digest(block, sections)
+
+    def _digest(self, check, block: int) -> list[str]:
+        try:
+            return check.digest(self._ctx(check, block, {"digest"}))
+        except Exception as exc:  # noqa: BLE001 - e.g. ParamsUnavailable; one check must not stop the digest
+            log.warning("digest of %s failed: %s", check.id, exc)
+            return [f"(digest unavailable: {type(exc).__name__}: {exc})"[:300]]
 
     # ---- delivery
 
@@ -427,10 +470,12 @@ class Worker:
             "SELECT * FROM outbox WHERE sent_at IS NULL AND next_attempt_at<=? ORDER BY created_at", (now,)
         ).fetchall()
         for r in rows:
+            # A row without a route (queued by the pre-framework worker, db.migrate) takes its severity's.
+            route = r["delivery"] or self.alerts.routes.get(r["severity"])
             try:
-                receipt = self.notifier.send(r["severity"], r["text"], r["key"], r["delivery"])
-                self.db.conn.execute("UPDATE outbox SET sent_at=?, receipt=? WHERE key=?",
-                                     (self.clock(), receipt, r["key"]))
+                receipt = self.notifier.send(r["severity"], r["text"], r["key"], route)
+                self.db.conn.execute("UPDATE outbox SET sent_at=?, receipt=?, delivery=? WHERE key=?",
+                                     (self.clock(), receipt, route, r["key"]))
             except Exception as exc:  # noqa: BLE001 - delivery errors must never stop the worker
                 attempts = r["attempts"] + 1
                 backoff = min(30 * 2 ** attempts, 1800)
@@ -458,16 +503,30 @@ class Worker:
                                    dedup="lag", realert=True)
 
     def status(self) -> dict:
+        inbox_down = self.db.meta("inbox:unavailable") if self.inbox is not None else None
         return {
             "identity": self.db.meta("identity"), "schema_version": self.db.meta("schema_version"),
             "checkpoint": self.checkpoint(), "lag_blocks": self.db.meta("lag_blocks"),
             "checks": {c: {**self.db.meta(f"run:{c}", {}), "state": self.db.meta(f"check:{c}:last_sweep")}
                        for c in self.checks},
             "params_block": self.params.block,
+            "params": {"enabled": self.params.enabled, "ok": self.params.ok, "block": self.params.block,
+                       "error": self.params.error},
+            "inbox": {"enabled": self.inbox is not None, "ok": not inbox_down,
+                      "path": self.inbox.path if self.inbox else None, "error": (inbox_down or {}).get("error")},
             "open_incidents": {f"{c}/{s}": n for c, s, n in self.db.conn.execute(
                 "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity")},
             "undelivered": self.db.conn.execute("SELECT COUNT(*) FROM outbox WHERE sent_at IS NULL").fetchone()[0],
         }
+
+    def degraded(self) -> list[str]:
+        """Inputs the checks need but cannot currently read (the step still succeeded)."""
+        out = []
+        if not self.params.ok:
+            out.append(f"live parameters unavailable: {self.params.error}")
+        if self.inbox is not None and (down := self.db.meta("inbox:unavailable")):
+            out.append(f"inbox unavailable: {down['error']}")
+        return out
 
     def write_status(self, healthy: bool, error: str | None = None) -> None:
         path = Path(self.cfg.db_path).with_suffix(".status.json")
@@ -484,7 +543,8 @@ class Worker:
             self.run_checks(force=force)
             self.rpc_failures = 0
             self.db.set_meta("rpc_failures", 0)
-            self.write_status(True)
+            problems = self.degraded()
+            self.write_status(not problems, "; ".join(problems) or None)
         except RpcError as exc:
             self.rpc_failures += 1
             self.db.set_meta("rpc_failures", self.rpc_failures)
@@ -495,6 +555,8 @@ class Worker:
                                        f"Checkpoint {self.checkpoint()['block']}.", dedup=f"rpc:{self.rpc_failures}",
                                        realert=True)
             self.write_status(False, str(exc))
+        inbox_down = self.inbox is not None and bool(self.db.meta("inbox:unavailable"))
+        self.db.set_meta("inputs_unavailable", {"params": not self.params.ok, "inbox": inbox_down})
         self.lag_check()
         self.housekeeping()
         self.deliver()

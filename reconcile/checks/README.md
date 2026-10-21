@@ -61,12 +61,17 @@ Rules:
 - **No hard-coded protocol parameters**: read `ctx.params` (live, reloaded on M15 events) or chain state.
   Thresholds that are decisions (D4, D5) are `defaults` keys, overridable in config. Dated spec values
   (§5 of the spec) belong in test fixtures only.
+- **Never use a parameter the framework could not refresh** (§5.1): read it from `ctx.params` in
+  `prepare` or `run`, let `params.ParamsUnavailable` propagate (never catch it, never fall back to a
+  default or a value persisted with `ctx.set_state`), and keep copies only in attributes set by `prepare`.
 - **A run is one database transaction**: `prepare` + `run` + applying the findings + advancing the
   cursors commit together, or not at all (an exception rolls everything back and the run is retried at
   the next step). Never call `db.tx()` inside a check.
 - **Exceptions**: an `RpcError` counts as an RPC failure of the step (the run is retried; the other
-  checks still run). Any other exception sends a `check-error` health message (re-sent every 6 h while
-  it persists) and increments `ssv_watch_check_errors_total{check}`; the other checks still run.
+  checks still run). `ParamsUnavailable` skips the run (rolled back, retried next step, counted in
+  `ssv_watch_check_errors_total{check}`; the framework's single `params` health message covers it).
+  Any other exception sends a `check-error` health message (re-sent every 6 h while it persists) and
+  increments `ssv_watch_check_errors_total{check}`; the other checks still run.
 - In-memory state is lost on restart; persist what matters in your own tables or with `ctx.set_state`.
   Override `on_reorg(ancestor)` to drop in-memory state derived from rewound blocks.
 
@@ -81,7 +86,7 @@ says which. Every run is at the current checkpoint block (intermediate blocks ar
 | `OnEvents({"Kind", …})` | a stored proxy event of one of these kinds is past the check's event cursor | `events` |
 | `OnInbox()` | resolved inbox entries are past the check's inbox cursor | `inbox` |
 | `NearSetEveryBlock()` | `self.near_set` (a set you maintain) is non-empty and the checkpoint advanced | `block` |
-| (framework) | a parameter event was scanned (after `prepare`) | `params` |
+| (framework) | a parameter event was scanned, or the parameters became readable again after a failed read (after `prepare`) | `params` |
 | (framework) | the chain was reorganised below the checkpoint | `reorg` |
 | (framework) | `once` / `step(force=True)` | `force` |
 
@@ -132,22 +137,56 @@ The route is stored in the outbox `delivery` column at enqueue; the transport re
 `ctx.health(kind, text, dedup, realert=False)` is for "this check cannot evaluate" conditions
 (missing data, an unexpected API shape), never for protocol findings.
 
+Framework health kinds a check never re-sends: `rpc` (consecutive RPC failures), `lag`, `reorg`,
+`check-error`, `params` (live parameters unreadable, §5.1), `inbox-unavailable` (configured inbox file
+missing or unreadable, §5.2), `inbox-malformed`. While `params` or `inbox-unavailable` holds, the
+worker status file (`<db>.status.json`) has `healthy: false` with the reason in `error` and in its
+`params` / `inbox` objects, and `ssv_watch_input_unavailable{input="params"|"inbox"}` is 1.
+
 ## 5. The context `ctx`
 
 | Field | Type / content |
 |---|---|
 | `ctx.check_id`, `ctx.block` | the check id; the checkpoint block of this run |
 | `ctx.rpc` | `rpc.Chain` pinned to `block`: `call(to, data) -> bytes`, `call_many([(to, data), …])`, `balance(addr)`, `balances([…])`, `storage(addr, [slots])`, `code(addr)`, `transaction(hash)`, `logs(address, [topic0, …], start, end=None)` (any contract, raw logs). A revert raises `RpcError` with `.data` = revert data. `ctx.rpc.counts` is a `Counter` of JSON-RPC calls made by this run (also stored as `rpc_calls` in `meta run:<id>`). |
-| `ctx.params` | live parameters at the last reload (`params.py`): `network_fee`, `network_fee_ssv`, `liquidation_threshold_period`, `liquidation_threshold_period_ssv`, `minimum_liquidation_collateral`, `minimum_liquidation_collateral_ssv`, `operator_fee_increase_limit`, `maximum_operator_fee`, `minimum_operator_eth_fee`, `validators_per_operator_limit`, `quorum_bps`, `cooldown_duration`, `active_oracle_ids` (4 ids, 0 = empty slot), `oracles` ({id: address}), `min_blocks_between_updates`; `ctx.params.block` = read block; `ctx.params.enabled` is False when `views` is not configured. Attribute or item access; ints, raw units (wei, blocks, bps). |
+| `ctx.params` | live parameters at the last successful reload (`params.py`; failed reads: §5.1): `network_fee`, `network_fee_ssv`, `liquidation_threshold_period`, `liquidation_threshold_period_ssv`, `minimum_liquidation_collateral`, `minimum_liquidation_collateral_ssv`, `operator_fee_increase_limit`, `maximum_operator_fee`, `minimum_operator_eth_fee`, `validators_per_operator_limit`, `quorum_bps`, `cooldown_duration`, `active_oracle_ids` (4 ids, 0 = empty slot), `oracles` ({id: address}), `min_blocks_between_updates`; `ctx.params.block` = read block; `ctx.params.enabled` is False when `views` is not configured; `ctx.params.ok` is False while the values are invalid (`ctx.params.error` says why). Attribute, item or `.get` access; ints, raw units (wei, blocks, bps). Access while invalid raises `params.ParamsUnavailable`. |
 | `ctx.inventory(block=None)` | `inventory.Inventory` at the block (cached per block): `.clusters` {`0x…` id: `ClusterInfo`}, `.operators` {op id: {"clusters", "validators"}} over validated clusters, `.invalid` (exist in storage, no candidate tuple validates — M1 input), `.stats()`. `ClusterInfo`: `cluster_id`, `owner`, `operator_ids`, `version` ("ETH" / "SSV" from storage; None = not in storage), `cluster` (`eb_storage.Cluster`, storage-validated, or None), `valid`, `legacy`, `tuple_source` ("logs" / "api"), `sources`, `api_migrated`, `api` (raw API row). API pages are refetched at most every `inventory.api_refresh_s`. |
 | `ctx.events()` | iterator of new stored `eb_events.Event`s of the subscribed kinds (empty without `OnEvents`) |
-| `ctx.inbox` | list of new resolved `inbox.InboxEntry`: `tx_hash`, `block_hash`, `block`, `sender`, `target`, `selector`, `function`, `monitor`, `observed_at`, `revert_selector` (`0x12e04c87`), `revert_name` (`IncorrectClusterState`, None if unknown), `revert_source` (`eth_call` / `blockscout` / `unresolved`) |
+| `ctx.inbox` | (§5.2) list of new resolved `inbox.InboxEntry`: `tx_hash`, `block_hash`, `block`, `sender`, `target`, `selector`, `function`, `monitor`, `observed_at`, `revert_selector` (`0x12e04c87`), `revert_name` (`IncorrectClusterState`, None if unknown), `revert_source` (`eth_call` / `blockscout` / `unresolved`) |
 | `ctx.config` | the check's resolved config (§7) |
 | `ctx.settings` | the whole worker config (read-only): `proxy`, `views`, `chain_id`, `start_block`, … |
 | `ctx.db` | `db.DB`: your own tables via `ctx.db.conn.execute(...)`; stored logs via `cluster_events(cid, upto)`, `latest_cluster_events()`, `events_after(cursor, upto, kinds)` |
 | `ctx.state(key, default)`, `ctx.set_state(key, value)` | small JSON state per check (`meta` key `check:<id>:<key>`) |
 | `ctx.clock()` | worker time (a `FakeClock` in tests): use it for every time rule |
 | `ctx.log`, `ctx.reasons`, `ctx.health(...)` | logger `eb-reconcile.<id>`; §3; §4 |
+
+### 5.1 Live parameters after a failed read
+
+The framework reads the parameters before the first run and again in the step that scans a parameter
+event (`eb_events.PARAM_KINDS`). When a read fails (a getter reverts, returns no data, or the RPC
+fails), the old values are **invalidated, not kept**:
+
+- every `ctx.params.<name>`, `ctx.params[name]` and `ctx.params.get(name, default)` raises
+  `params.ParamsUnavailable` (the default is not returned); `ctx.params.values` is `{}`;
+  `ctx.params.block` still names the last good read;
+- every check's `prepare` is due again, so a copy taken in `prepare` is refreshed or the run fails;
+- a run that raises `ParamsUnavailable` is rolled back (cursors do not advance, no incident changes)
+  and retried at the next step; checks that never read parameters keep running;
+- the worker sends one `params` health message (re-sent every `health_realert_s`), reports
+  `healthy: false`, and retries the read at every step;
+- the first successful read runs every check with reason `params` after `prepare`, as for an event.
+
+A threshold check therefore either evaluates with values read after the last parameter event or does
+not evaluate at all. Do not catch `ParamsUnavailable`, and never persist a parameter value as a fallback.
+
+### 5.2 Inbox availability
+
+An enabled inbox (`inbox.path` set) must exist as a regular, readable file. An existing empty file is a
+valid, empty inbox. A missing file, a directory or a read error is not "no failed transactions": the
+worker sends an `inbox-unavailable` health message (once per outage, re-sent every
+`health_realert_s`), reports `healthy: false`, and checks scheduled `OnInbox` receive only entries
+ingested before the outage (their other schedules still run). The deployment creates the empty
+file before the Monitor's first append (the worker mounts the inbox read-only).
 
 ## 6. Events
 
@@ -178,7 +217,7 @@ at its first start, without backfill). Events of other contracts are read with `
 only) ← `checks.<id>`. A key not in `defaults` or an unknown check id is a startup error. Every
 registered check is enabled unless `"enabled": false`. Other worker sections: `alerts` (mode, env
 names of secrets, label, explorer, `realert_s`, `routes`, `health_realert_s`, `digest_interval_s`,
-`record_path`), `inbox` (`path`, `blockscout`, `enabled`), `inventory` (`api_url` — null disables
+`record_path`), `inbox` (`path`, `blockscout`, `enabled`; a missing file is health, §5.2), `inventory` (`api_url` — null disables
 the API —, `api_refresh_s`), `metrics` (`enabled`, `host`, `port`). See `../config.example.json`.
 
 ## 8. Test helpers

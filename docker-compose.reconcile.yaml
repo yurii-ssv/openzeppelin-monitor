@@ -39,4 +39,5 @@ services:
       # Durable state (SQLite + WAL, checkpoint, incidents, outbox, inbox offset). Never /dev/null.
       - ${EB_RECONCILE_DATA_DIR:-./reconcile/data}:/data
       # The Monitor's failed-transaction inbox (plan §6), read-only: <monitor data>/inbox/failed-tx.jsonl.
+      # Create the file (empty) before the first start: a missing inbox is a monitor-health alert.
       - ${MONITOR_INBOX_DIR:-./data/inbox}:/inbox:ro

@@ -52,6 +52,9 @@ def render(conn: sqlite3.Connection, check_ids: list[str]) -> str:
            [({"check": c}, r.get("errors", 0)) for c, r in runs.items()])
     metric("ssv_watch_rpc_consecutive_failures", "gauge", "Consecutive failed worker steps.",
            [({}, meta("rpc_failures", 0))])
+    unavailable = meta("inputs_unavailable", {})
+    metric("ssv_watch_input_unavailable", "gauge", "1 while a configured input (live parameters, inbox) cannot be read.",
+           [({"input": k}, int(unavailable.get(k, False))) for k in ("params", "inbox")])
     inbox = conn.execute("SELECT COUNT(*), COALESCE(SUM(resolved = 0), 0) FROM inbox").fetchone()
     metric("ssv_watch_inbox_entries", "gauge", "Failed-transaction inbox entries by state.",
            [({"state": "total"}, inbox[0]), ({"state": "pending"}, inbox[1])])
