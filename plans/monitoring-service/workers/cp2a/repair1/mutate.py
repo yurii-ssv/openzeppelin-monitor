@@ -83,6 +83,15 @@ ROWS = [
     ("R11-silent", M14, 'revision=last["tx_hash"] if sev == "info" and new_hit else None',
      'revision=last["tx_hash"] if sev == "info" else None',
      [T14 + "test_qa1_m2_old_hits_expire_at_the_current_checkpoint"]),
+    # DEFECT-CLASSES.md gaps closed in repair 1
+    ("C5", M3, 'if ev.kind in ("RootCommitted", "OperatorFeeExecuted"):', 'if ev.kind == "RootCommitted":',
+     [T3 + "test_class5_fee_increase_onset_is_seen_at_its_block_even_if_healed_before_the_next_sweep"]),
+    ("C11-m3", M3, "        if not (1 <= c[\"n_blocks\"] <= c[\"n2_blocks\"]", "        if False and not (1 <= c[\"n_blocks\"] <= c[\"n2_blocks\"]",
+     [T3 + "test_class11_invalid_configuration_is_a_startup_error"]),
+    ("C11-m4", M4, '        if not config["interval_s"] > 0:', "        if False:",
+     [T4 + "test_class11_invalid_configuration_is_a_startup_error"]),
+    ("C11-m14", M14, '        if not (config["window_s"] > 0 and', '        if False and not (config["window_s"] > 0 and',
+     [T14 + "test_class11_invalid_configuration_is_a_startup_error"]),
     # the adversarial sweep alone catches each finding class
     ("S1-H1", M3, "            ident = self.identity(ctx, cid, tracked)", "            ident = None",
      [SW + "::test_m3_sweep"]),
