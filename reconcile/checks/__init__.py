@@ -14,3 +14,4 @@ from checks import m5_eb_desync  # noqa: F401, E402
 # --- CP2d: cluster integrity and capacity (M1, M2)
 
 # --- CP2e: legacy SSV (M6, M7)
+from checks import m6_legacy_coverage, m7_ssv_solvency  # noqa: F401, E402
