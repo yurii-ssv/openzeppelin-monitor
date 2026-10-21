@@ -2,12 +2,12 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-21T17:30Z
-- Last recorded event / last processed Orca delivery: event-0036 / delivery_abb17333021f (acked)
+- Updated at: 2026-10-21T18:10Z
+- Last recorded event / last processed Orca delivery: event-0039 / delivery_5db92534fc97 (acked)
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); QA worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` @ `9772b2d` (event-0010)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
-- Mode: **Wave 2 running (CP2a–d) + CP1A repair 3; CP2e queued — attended**
+- Mode: **Wave 2: CP2a, CP2b, CP2c, CP2e implementing; CP2d QA running; CP1A QA 4 running — attended**
 - Overall acceptance: pending
 - Current checkpoint: CP1A repair; CP2a–e (wave 2)
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
@@ -20,8 +20,8 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2a Liquidation (M3, M4, M14) | DISPATCHED (M4 interpretation A approved, event-0031; merging central test patch) | task `task_2d232c728871`/`ctx_c6e862b982c3`, opus/high | `96d1c32` | Claude Opus high | wait worker_done |
 | CP2b Oracle (M9, M10, M11) | DISPATCHED | task `task_13f583847d79`/`ctx_e0d798da26ac`, opus/high effective | `96d1c32` | Claude Opus high | wait worker_done |
 | CP2c Wallets (M12, M8 floor, M13 balance watch) | DISPATCHED | task `task_8384f0c7778e`/`ctx_113e2440cd8e`, opus/high effective | `96d1c32` | Claude Opus high | wait worker_done; V2c.8 added (D10) |
-| CP2d Cluster integrity (M1, M2) | DISPATCHED | task `task_aa8cd71dc363`/`ctx_f28f28892d56`, opus/high effective | `96d1c32` | Claude Opus high | wait worker_done |
-| CP2e Legacy SSV (M6, M7) | READY — QUEUED (task `task_78dba27a67d8` created, not started) | none | `96d1c32` | Claude Opus high | start when a wave-2 slot frees |
+| CP2d Cluster integrity (M1, M2) | IMPLEMENTED — QA RUNNING (lane head `588888b`) | impl `ctx_f28f28892d56` settled+released; QA dispatch in event-0039, codex approve-for-me verified | `588888b` | Codex gpt-6.1-sol high (QA) | wait worker_done; DEF-3 fork PoC deferred |
+| CP2e Legacy SSV (M6, M7) | DISPATCHED | task `task_78dba27a67d8`/`ctx_146d942c81b2`, opus/high effective; base `cbe0d03` | `cbe0d03` | Claude Opus high | wait worker_done |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
