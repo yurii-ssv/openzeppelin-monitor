@@ -21,6 +21,7 @@ Task contract: [plan.md §8 CP1B](../../plan.md) · Attempt log: [attempts.md](a
 | S7 docs, status line, handoff | DONE | this file | Codex QA |
 | R1 repair of QA attempt 1 (legacy outbox routing, stale params, missing inbox) | DONE (code `4819c9e`) | [repair-1](attempts.md#repair-1) | fresh Codex QA |
 | R2 repair of QA attempt 2 (reorg leaves orphan params) + reorg-state audit (README §6.1) + inbox GATE | DONE (code `7bf01b4`) | [repair-2](attempts.md#repair-2--qa-attempt-2-finding-fresh-implementer) | fresh Codex QA |
+| R3 repair of QA attempt 3 (orphan-only M5 cluster kept paging) + persisted-key audit + reorg re-find rule (README §6.2) + adversarial sweep | DONE (code `9101624`) | [repair-3](attempts.md#repair-3) | fresh Codex QA |
 
 Before long work: append intent and persist the current step. After work: append the measured command and result and update this checkpoint. On interruption: inspect processes, Git state and the latest attempt before retrying; an absent receipt is not proof an action did not run.
 
@@ -68,5 +69,19 @@ Mechanism: a reorg invalidates live params and every prepare copy (re-read at th
 Verification: QA Appendix A + B -k reorged_parameter_event red on bea73fd, green now (unmodified); new tests 14 red on bea73fd; V1B.1 102/0 skipped; .2 clean; .3 1; .4 2; .4f red/green; .5 4; .6 33; .7 6; .7f red/green; .8 curl OK; .10 LIVE PASS x5 (fork 26,240,956). NOT RUN: V1B.9 (inventory.py unchanged).
 Note: QA Appendix B partial-reload probe needs its inbox fixture to carry the canonical block hash (GATE).
 Log anchor: workers/cp1b/attempts.md#repair-2.
+Next owner: fresh Codex QA.
+```
+
+## Repair 3 handoff (≤ 250 words, also sent as the `worker_done` summary)
+
+```text
+Task / live dispatch: task_9a03e44ccd1f / ctx_6a127ac3b775 (run_96be3e0c7302)
+Assignment outcome: completed; QA attempt-3 HIGH repaired as a class; no QA assertion weakened.
+Base -> resulting commit: 7eb2df3 -> code 9101624 (records commit on top = lane head) on mtabasco/ms-cp1b.
+Changed paths: reconcile/{eb_reconcile,alerts}.py, checks/{base,m5_eb_desync}.py, checks/README.md, README.md, ruff.toml, tests/{qa3_orphan_repro,test_qa3_regressions,test_qa3_appendix_b,test_reorg_refind,test_reorg_sweep}.py (new); workers/cp1b/**; CP1B status line.
+Mechanism (coordinator-approved A): reorg re-find rule - in a reorg run ctx.reorg_keys = open incidents last seen above the ancestor; unreported -> resolved "evidence left the canonical chain" (info); re-alerts wait, healthy:false while pending; a check that cannot evaluate raises. M5 reorg run = full sweep over logs + persisted keys: vanished cluster forgotten, confirmed->latent resolved + latent, UNKNOWN kept, layout failure raises. Also fixed: latent de-escalation, digest.
+Verification: QA3 Appendix A 0/12 red on 7eb2df3, green now; Appendix B 31/31; new tests 18 red on frozen head; sweep 90 cases (69 red on frozen head, 0 now); V1B.1 240/0 skipped; .2 clean; .3 1; .4 2; .4f red/green; .5 4; .6 41; .7 6; .7f red/green; .8 curl OK; .10 LIVE PASS x5 (fork 26,241,130). NOT RUN: V1B.9 (inventory.py unchanged).
+Coordinator: amend plan §6 lifecycle + Ctx list per checks/README.md §6.2 end.
+Log anchor: workers/cp1b/attempts.md#repair-3.
 Next owner: fresh Codex QA.
 ```

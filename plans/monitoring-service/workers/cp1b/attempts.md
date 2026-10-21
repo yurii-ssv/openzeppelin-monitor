@@ -156,3 +156,60 @@ Rows found correct but untested now have tests (inventory cache depth 1/N, event
 - Interface additions for wave 2 (additive): `ctx.reorg_ancestor`; `prepare` also runs after a reorg; inbox entries arrive only at/below `ctx.block`.
 - Findings are not cleared here; a fresh Codex QA decides.
 - Resulting head: code `7bf01b4`; records commit on top (lane head, reported in worker_done).
+
+<a id="repair-3"></a>
+## Repair 3 — QA attempt 3 finding (fresh implementer)
+
+- Observed UTC: 2026-10-21 ≈12:40Z – 13:05Z (`date -u`; the frozen head was committed 12:37Z).
+- Task / Dispatch: `task_9a03e44ccd1f` / `ctx_6a127ac3b775` (run `run_96be3e0c7302`); worker terminal `term_b1708153-26ee-4591-85fb-92782ce945e8`; Claude Opus high (self-identifies as claude-opus-5-5).
+- Frozen start head: `7eb2df3d8b895ebcecc2011663796872bd1bbb99` (QA3 evidence commit on `e13e3c8`; `git rev-parse HEAD` confirmed; porcelain 0). Input: [QA attempt 3](../../qa/cp1b-attempt-3.md) §1, §2, Appendix A/B.
+- Code commit: `91016240c0e0ffa69e50d0308790a87b897e2ee7`.
+- Environment: `reconcile/.venv` (Python 3.12.15), anvil at `~/.foundry/bin`. Every pytest run `-p no:cacheprovider`; red/green and falsifier runs a fresh `PYTHONPYCACHEPREFIX`; frozen-head runs in a `git archive 7eb2df3 reconcile` extraction with only the new test files copied in.
+- Coordinator decision (Orca `ask`, answered **A approved** with five conditions): framework **reorg re-find rule** + additive `Ctx.reorg_keys`. Conditions honoured: (1) only reorg runs, only that check's open incidents with `last_seen_block > ancestor`, every other absence rule unchanged (`test_reorg_keys_are_only_incidents_last_seen_above_the_ancestor`); (2) a check that cannot evaluate raises or re-reports — tests for "returns nothing for a surviving key → resolved with the info message, re-opened and alerted at its next run" and "raises → rolled back, durable marker kept, retried"; (3) resolution text "Resolved because its evidence left the canonical chain: …", title `Evidence left the canonical chain: <title>`; (4) `checks/README.md` §4, §5, §6.1, new §6.2, including the exact plan §6 sentences amended; (5) the sweep runs M5 and a second check module (`Watch`).
+
+Class (brief: "persisted keyed state re-evaluated only when its key is enumerated from surviving data"). Every persisted key set, what now reconciles it after a reorg, and its test (full table: README §6.1):
+
+| Key set | Reconciled by | Status at 7eb2df3 → test |
+|---|---|---|
+| framework `incidents` (any check) | re-find rule: `ctx.reorg_keys`; unreported key resolved as evidence left the canonical chain; reported key kept (lower severity silent) | **wrong** (absence never resolves) → 6 `test_reorg_refind` framework tests |
+| re-alert schedule (`last_alert_at`) | closes with the incident; deferred while the check's reorg marker is pending and `last_seen_block > ancestor` | **wrong** (a failing reorg run let orphan incidents re-page) → `test_reorg_run_that_raises_keeps_incidents_marker_and_defers_realerts` |
+| health flag | `healthy: false` + `status.reorg_pending` while any reorg marker is pending | new → same test |
+| outbox, sent rows | historical by design (QA agreed) | — |
+| outbox, unsent rows of an orphaned incident | delivered in order, then the reorg resolution | by design → `test_undelivered_alert_of_an_orphaned_incident_is_followed_by_its_resolution` |
+| inbox `(tx_hash, block_hash)` dedupe / `canonical` / cursors | repair-2 GATE; delivered entry re-flagged, orphan counted; derived incidents re-derived from `canonical = 1` rows or closed by the rule | **wrong** for derived incidents → `test_inbox_derived_incidents_after_a_reorg` |
+| M5 `evaluations` | reorg run = full sweep over logs ∪ evaluations ∪ open `m5_incidents` ∪ `reorg_keys`; no log left → row deleted | **wrong** (QA3) → `test_m5_evaluation_of_a_cluster_whose_history_was_deleted_is_dropped`, QA3 A/B |
+| M5 `m5_incidents` + its framework incident, orphan-only cluster | `forget`: resolved, plain text | **wrong** (QA3) → `test_qa3_appendix_a_orphan_repro[0,12]`, `test_qa3_appendix_b::test_m5_orphan_only_cluster_incident_removed[0,12]` |
+| M5 confirmed/candidate whose confirming removal was deleted (latent on new chain) | resolved plainly + re-tracked as silent latent | **wrong, found here** (kept paging as confirmed; `test_m5_reorg_depth_n…` asserted the evaluation only) → `test_m5_reorg_removing_only_the_confirming_removal_resolves_plainly_and_tracks_latent` |
+| M5 UNKNOWN re-evaluation | re-reported (stays open) | new (else the rule would close it) → `test_m5_reorg_unknown_re_evaluation_keeps_the_incident_open` |
+| M5 layout guard failure in a reorg run | raises (retried, marker kept) | new → `test_m5_layout_guard_failure_in_the_reorg_run_raises_and_retries` |
+| M5 normal resolution of an incident first seen above the ancestor | text says its evidence left the canonical chain | new → `test_m5_reorg_resolution_of_an_incident_raised_on_deleted_blocks_says_so` |
+| M5 digest `last_full_evals` (memory) | reorg run is a full sweep | **wrong, found here** → `test_m5_reorg_run_is_a_full_sweep_so_the_digest_forgets_deleted_clusters` |
+| near-set caches, `ctx.set_state`, CP2 own tables | contract §2/§6.2: enumerate from persisted rows; `on_reorg` for memory | contract; pattern exercised by `Watch` / `FailedTxWatch` |
+
+Adversarial sweep `tests/test_reorg_sweep.py` (committed; 90 cases: depth 1–30 × confirmations 0/2/12, seed `reorg-sweep:<seed>:<c>`): M5 survivor / latent-then-orphan-removal / orphan-only clusters, inbox lines, fee change, 30 % injected parameter outage after the reorg (+6 h), re-inclusion on the new chain at a seeded block, new chain shorter or longer. Oracle = fresh worker on the final chain (and at each block a post-reorg page was enqueued). Measured over the 90 cases: reorg below the checkpoint 30/28/18 (c = 0/2/12), 49 re-find-rule resolutions, 44 M5 history-deleted resolutions, 52 M5 de-escalations, 410 post-reorg pages each verified against the oracle at its block, 302 post-reorg re-alerts. What the sweep found while being built: the latent de-escalation case and realerts during a pending reorg run (both fixed above); one oracle artefact (the gate's file-order hold made a block-pinned oracle lag a re-included tx; the oracle now reads only lines of blocks ≤ its block). Nothing else.
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| QA3 Appendix A red on frozen head | Appendix A, ROOT → this worktree, `PYTHONPYCACHEPREFIX=<s>/cache reconcile/.venv/bin/python <s>/orphan_repro.py 0` and `… 12` (before any edit) | exit **1** / **1**, `orphan-only cluster is still open and pages again` | local | — |
+| QA3 Appendix A green | same, `<s>/orphan_here.py 0` / `12` after the fix | exit **0** / **0**; incident and `m5_incidents` resolved, evaluations empty, outbox `open`, `health:reorg`, `resolved` (info), no realert after +21601 s | local | — |
+| QA3 Appendix B (unmodified, ROOT only) | `… pytest <s>/test_ind_here.py` | **31 passed** | local | — |
+| Ported copies | `diff` of `tests/qa3_orphan_repro.py`, `tests/test_qa3_appendix_b.py` vs the report's code blocks | only line 2 (`ROOT=`) differs | — | — |
+| New tests red on frozen head | extraction of `7eb2df3` + `test_qa3_regressions.py`, `qa3_orphan_repro.py`, `test_qa3_appendix_b.py`, `test_reorg_refind.py`; pytest those | **18 failed, 29 passed** (red: QA3 A×2, B orphan×2, all 14 refind tests then; the digest test added after: 1 failed). M5 reds are behavioural; the stub reds use the absent `ctx.reorg_keys` (check errors) as well as behaviour | local | — |
+| Sweep on frozen head | same extraction + `test_reorg_sweep.py` with `ctx.reorg_keys` → `getattr(ctx, "reorg_keys", frozenset())` | **69 failed, 21 passed** (62 "open incidents differ", realert pages for orphaned evidence) | local | — |
+| Mutation of each new mechanism | `<s>/mutate.py` (copy of the tree, one change, full suite, restore + byte compare) | re-find rule off: 36 sweep + 7 refind red; realert deferral off: 19 + 1; M5 `forget` off: 52 + 1; de-escalation off: 32 + 1; persisted keys off: 52 + 1; pending-reorg health off: 1; UNKNOWN re-report off: 1 | local | — |
+| V1B.1 | `reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests -rs` | exit 0; **240 passed**, 0 skipped (102 + 2 QA3 A + 31 QA3 B + 15 refind + 90 sweep) | local | — |
+| V1B.2 | `reconcile/.venv/bin/ruff check reconcile` | exit 0; All checks passed (new per-file ignores only for the two verbatim QA3 probes: E401, E402, E701, E702, F401, I001) | local | — |
+| V1B.3 | `… test_framework.py -k scheduler_dispatches_registered_check` | exit 0; 1 passed, 31 deselected | local | — |
+| V1B.4 | `… test_framework.py -k restart_idempotent` | exit 0; 2 passed, 30 deselected | local | — |
+| V1B.4f | `<s>/falsify.py` on `git archive HEAD`: `return ":".join((check, key))` → `return ":".join((key,))` | red 1 failed / 1 passed; restored byte-identical 2 passed | local | — |
+| V1B.5 | `… test_framework.py -k routing` | exit 0; 4 passed, 28 deselected | local | — |
+| V1B.6 | `… pytest -q reconcile/tests -k m5` | exit 0; **41 passed**, 199 deselected (33 + 6 `test_m5_*` refind + 2 QA3 B orphan); `test_worker.py`, `test_framework.py`, `test_reorg_state.py`, `test_qa*_regressions.py` unchanged since `7eb2df3` (`git diff --stat` empty) | local | — |
+| V1B.7 | `… test_framework.py -k inbox` | exit 0; 6 passed, 26 deselected | local | — |
+| V1B.7f | same runner: `"0x12e04c87"` → `"0x12e04c88"` | red 2 failed / 4 passed; restored byte-identical 6 passed; runner exit 0; worktree porcelain 0 | local | — |
+| V1B.8 | `reconcile/.venv/bin/python reconcile/tests/fake_once.py --port 30491 --hold 8`; `curl --max-time 2 -s http://127.0.0.1:30491/metrics` | server 0, curl 0; checkpoint 1011, lag 0, `open_incidents{check="m5",severity="page"} 1`, undelivered 0, `check_last_run_seconds{check="m5"}`, `input_unavailable` 0/0 | local, fake chain | scratch `metrics.txt` sha256 `0185c731d9c2abdf…` |
+| V1B.10 | `PATH=$HOME/.foundry/bin:$PATH FORK_RPC_URL=https://ethereum-rpc.publicnode.com PYTHONUNBUFFERED=1 reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py` | exit 0; fork **26,241,130**; **PASS ×5** (clean 640000; clean 1270000; latent 1270000/640000/630000; confirmed 640000/10000/630000, 63 matched, page → telegram; clean next root, info resolution → telegram); live params read; layout ok; anvil stopped (`curl … :8547` exit 7) | LIVE anvil fork, record mode | scratch `fork_e2e.out` sha256 `da7981f130dd9921…` |
+
+- NOT RUN: V1B.9 (LIVE inventory probe; `inventory.py` unchanged). V1B.11 is QA's inspection (README §2, §4, §5, §6.1, new §6.2).
+- `<s>` = this session's scratchpad (`/private/tmp/claude-501/…/scratchpad`).
+- Interface (coordinator-approved): `Ctx.reorg_keys` (additive); one exception to "absence never resolves" (reorg runs, reorg keys); re-alert deferral and `healthy: false` while a reorg run is pending. `Check`, `Finding`, schedules unchanged. Plan §6 amendment text: README §6.2 end.
+- Findings are not cleared here; a fresh Codex QA decides.
