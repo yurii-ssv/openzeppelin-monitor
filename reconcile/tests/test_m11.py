@@ -399,3 +399,27 @@ def test_missing_updater_source_is_a_startup_error(tmp_path):
 
 def test_restart_helper_is_the_shared_one():
     assert restart.__module__ == "fixtures_oracle"
+
+
+def test_empty_get_effective_balance_answer_fails_the_run(tmp_path):
+    from fixtures_oracle import VIEWS
+
+    from checks.m11_updater_liveness import GET_EB
+
+    u = world(tmp_path)
+    u.c.stub_call(VIEWS, GET_EB, b"")  # a node answering "0x" for the view
+    u.round(updates=())
+    u.close()
+    run = u.w.db.meta("run:m11")
+    assert run["errors"] >= 1 and "returned 0 bytes" in run["last_error"]
+    assert open_keys(u.w, "m11") == {}
+
+
+def test_empty_inventory_is_deferred_not_clean(tmp_path):
+    u = world(tmp_path, n=0)
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+    assert "no active ETH cluster" in incidents(u.w, "m11")[0]["body"]
+    assert u.w.db.meta("check:m11:full_state") is None
+    assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api-weekly%'").fetchone()

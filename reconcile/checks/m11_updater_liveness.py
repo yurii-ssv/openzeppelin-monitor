@@ -3,8 +3,9 @@
 Our updater sends `updateClusterBalance` after each `RootCommitted`, only for clusters whose on-chain EB differs
 from the leaf. A round's *window* is `[commit block, commit block + update_window_s]` (in blocks); a round is
 evaluated once its window has closed at the checkpoint. The updater address is `config.updater` or, when null,
-the live address of oracle slot `updater_slot` (spec: "sender 0x16A5…, the slot-4 key"), so a rotation of that
-slot moves the expectation without a code change.
+the address of oracle slot `updater_slot` (spec: "sender 0x16A5…, the slot-4 key"): the live one, and for a
+transaction before a stored `OracleReplaced` of that slot the address of its time, so a rotation moves the
+expectation without a code change and without re-judging older rounds.
 
 | Trigger (spec) | Key | Severity | Rule here |
 |---|---|---|---|
@@ -12,7 +13,7 @@ slot moves the expectation without a code change.
 | ... and the proof API shows clusters whose on-chain EB differs from the leaf | `liveness` | page | the zero round's leaves (`{proof_api}/proof/{clusterId}` at the same `referenceBlock`) vs `getEffectiveBalance` (Views) for every active ETH cluster with validators of the inventory; API unreachable: stays warn, says so, health message, retried |
 | two consecutive committed rounds with 0 updates | `liveness` | page | trailing zero rounds >= `zero_rounds_page` |
 | revert rate on our updates > 10 % in a round | `revert-rate` | warn | gated inbox `updateClusterBalance` rows from the updater inside the latest closed window / (those + successful updater txs); `StaleUpdate` reverts for a cluster another sender already updated to the same EB for that root are benign and excluded; `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox) |
-| weekly full-state leaf comparison | `state-mismatch` | warn | every `full_state_interval_s`, once the latest round's window has closed (the updater had its pass: a mismatch is then older than one round), the same comparison over all such clusters; API unreachable: DEFERRED (health message, retried every run, the open incident kept) |
+| weekly full-state leaf comparison | `state-mismatch` | warn | every `full_state_interval_s`, once the latest round's window has closed (the updater had its pass: a mismatch is then older than one round), the same comparison over all such clusters; API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED (health message, retried every run, the open incident kept) |
 
 `updateClusterBalance` from other senders -> info is the Monitor's (CP1A template). The senders of
 `ClusterBalanceUpdated` transactions are cached in `m11_senders` (tx hash -> sender, block); reorg rule: rows above
@@ -349,6 +350,8 @@ class M11UpdaterLiveness(Check):
         inv = ctx.inventory(block)
         clusters = [ci for _, ci in sorted(inv.clusters.items()) if ci.valid and ci.version == "ETH"
                     and ci.cluster.active and ci.cluster.validator_count > 0]
+        if not clusters:  # an empty inventory is a missing input, never "every cluster matches"
+            return {"checked": 0, "mismatches": [], "unknown": [], "error": "no active ETH cluster in the inventory"}
         base = self.config["proof_api"].rstrip("/")
         leaves, unknown, failures = {}, [], 0
         for ci in clusters:
@@ -369,7 +372,7 @@ class M11UpdaterLiveness(Check):
                 unknown.append({"cluster": ci.cluster_id, "reason": f"API at referenceBlock {body.get('referenceBlock')}"})
                 continue
             leaves[ci.cluster_id] = (ci, int(body["effectiveBalance"]))
-        if clusters and not leaves:
+        if not leaves:
             return {"checked": 0, "mismatches": [], "unknown": unknown,
                     "error": f"no leaf at blockNum {ref} for any of {len(clusters)} clusters"}
         items = list(leaves.values())
