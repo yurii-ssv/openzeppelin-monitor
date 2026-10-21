@@ -1,0 +1,8 @@
+[20:00:54] block 26242622; fetching SSV API pages
+[20:00:58] 1908 API rows; eth_getLogs 24920727..26242622
+[20:06:49] log source failed: HTTPError: HTTP Error 429: Too Many Requests
+[20:06:49] 0 logs, 0 clusters; storage versions
+[20:09:11] inventory of 1026 legacy rows
+[20:10:28] M6 evaluation
+[20:12:36] M7 ledger
+EXIT 2
