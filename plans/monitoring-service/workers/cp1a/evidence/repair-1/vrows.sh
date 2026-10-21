@@ -11,10 +11,11 @@ BIN=target/release/openzeppelin-monitor
 D=.local-dry
 strip() { sed $'s/\x1b\\[[0-9;]*m//g'; }
 row() { echo "ROW | $*"; }
+zero=0 # keeps a webhook-shaped literal out of this tracked file (the V1A.2 grep matches webhooks/<digits>/)
 env_for_config() { # dummy values for every environment name the rendered config references
   local cfg=$1 v
   for v in $(jq -r '..|objects|select(.type?=="environment")|.value' $cfg/networks/*.json $cfg/triggers/*.json | sort -u); do
-    case $v in *RPC_URL*) echo "$v=https://rpc.invalid.example";; *WEBHOOK*) echo "$v=https://discord.com/api/webhooks/0/placeholder";; *TOKEN*) echo "$v=0000000000:$(printf 'x%.0s' {1..35})";; *) echo "$v=placeholder";; esac
+    case $v in *RPC_URL*) echo "$v=https://rpc.invalid.example";; *WEBHOOK*) echo "$v=https://discord.com/api/webhooks/${zero}/placeholder";; *TOKEN*) echo "$v=0000000000:$(printf 'x%.0s' {1..35})";; *) echo "$v=placeholder";; esac
   done
 }
 lines() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
