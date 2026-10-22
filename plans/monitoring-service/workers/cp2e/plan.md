@@ -120,3 +120,65 @@ NOT RUN: V2e.7 / LIVE M6/M7 re-run (QA attempt 1 measured both at 26,246,821); s
 Notes: unstake-prefix empty-logs residual; drain-then-liquidate between sweeps (spec owner).
 Next: fresh Opus QA on the lane head.
 ```
+
+<a id="repair-2"></a>
+## Repair 2 — QA attempt 2 finding F1 (fresh implementer, Claude Opus high)
+
+- Live authority: Orca task `task_c706fd249b26`, dispatch `ctx_3a5d60dc1b12`. Model `claude-opus-5-5`, effort high.
+- Frozen start head: `8e07b0a814216dbbcf9e43bc5dfef1049c5d4107` (QA evidence commit on top of `6fafac6`), porcelain 0; venv `reconcile/.venv` present (Python 3.12.15). Read in full: `qa/cp2e-attempt-2.md` (F1, N1, N2, §2, ledger, Appendix A). Round policy: next QA capped, D15. Owner scope note applied: one narrow fix, its regressions, no mutation campaign. N1/N2 (NOTEs) not addressed. Not merged with `plan/monitoring-service` (allowed, not needed: the CP1B frozen files are identical there, QA §preflight; no shared file changed).
+- Changed paths (`git diff 8e07b0a --name-only`): `reconcile/checks/{m6_legacy_coverage,m7_ssv_solvency}.py` (guard + docstrings), `reconcile/tests/{test_m6,test_m7,fixtures_legacy}.py`, `workers/cp2e/**` (this section, attempts.md #attempt-6, `live_completeness.py` control, `evidence/repair2-*`), the CP2e status line in `plan.md`. No CP1B frozen file, no `qa/**`, no `execution-log.md`, no config key.
+
+### Design change (amends the repair-1 "Completeness (F1)" row)
+
+| Item | Repair-2 decision | Why |
+|---|---|---|
+| Empty API answer | `inventory_gap` adds a gap whenever the API answer lists **no cluster** (`from_api == 0`: zero API rows), whatever `pagination.total` (0, the true count, absent) and `daoValidatorCount` say. Behaviour on the gap unchanged: M6 `m6-unknown` health + summary/digest "UNKNOWN … lower bound"; M7 `unknown["inventory"]` → health, no baseline, open keys re-reported unchanged, upper-bound page logic unchanged | **Coordinator ruling** (repair-2 brief): an empty listing is always UNKNOWN; next to a proxy with legacy storage it is a degenerate answer. A self-consistent empty page (total 0) with no validators left on legacy clusters (dao 0, the natural end state of a surface that only shrinks) passed both repair-1 legs |
+| Scope of "empty" | zero **API rows**, not zero inventory entries: a listing whose only clusters come from the scanned logs while the API lists none is the same degenerate answer (every inert legacy cluster without a recent event is missing). Strictly stronger than "zero clusters" (`len(inv.clusters) == 0`); falsifier R4b shows the difference is tested | the ruling's reason applies unchanged; fail closed. On mainnet the API lists 1,908 clusters (ETH clusters included), so no false UNKNOWN |
+
+### State table — repair-2 re-pass (every persisted table/marker and every off-chain input)
+
+Same columns as the repair-1 table (a) empty, (b) error, (c) reorg 1 / N incl. an already resolved key, (d) restart between detection and handling, (e) same-block ordering, (f) window anchoring, (g) partial. Cells unchanged since repair 1 say "as R1" (the repair-1 table above, re-run green at this head). **R2** marks a cell that was wrong at `6fafac6` (regression red there, green now).
+
+| State / input | (a) empty | (b) error | (c) reorg, resolved key | (d) restart | (e) same block | (f) window | (g) partial |
+|---|---|---|---|---|---|---|---|
+| SSV API listing | **R2** self-consistent empty (total 0) next to inert legacy balances only (dao 0) → UNKNOWN, no baseline: `test_m7_q10_consistent_empty_api_with_inert_legacy_balance` (QA Q10 port), `test_m6_consistent_empty_api_with_only_inert_legacy_clusters_is_unknown` (digest says UNKNOWN), **R2** `test_m7_empty_api_listing_is_unknown_whatever_its_total[first-0]`; totals 1 / none at first run: as R1 (green on both) | as R1 (check-error, retried) | `…whatever_its_total[reorg-{0,1,None}]`: the reorg run meets an empty page → UNKNOWN, revision unchanged, nothing resolved; sweep fault `empty_total0` in both sweeps | **R2** `…whatever_its_total[lost_database-0]` (new data dir + consistent empty page); `after_baseline-*`: the `m7_legacy` id check (as R1) | n/a | rows cached ≤ `api_refresh_s`, total fresh per full run (as R1) | **R2** API empty while the scanned logs list a legacy cluster (dao 0 after its last removal) → gap: `test_m7_empty_api_next_to_a_cluster_from_the_logs_is_unknown`; short page with the true total, duplicates (QA Q2/Q13): as R1. **Residual (NOTE, owner coordinator):** a *non-empty* partial page whose `pagination.total` agrees with it, missing only inert legacy clusters, with dao matching, at a first run or on a new database — no on-chain count of legacy clusters exists (only validators), so neither leg can see it; the ruling scopes repair 2 to the empty answer |
+| SSV API `pagination.total` | absent → gap (as R1); **R2** 0 no longer makes an empty page complete | as R1 | read at every reorg run | stateless | n/a | fresh per run | non-integer/negative → gap (as R1) |
+| Storage `daoValidatorCount` | **R2** dao 0 no longer vouches for an empty page; dao ≠ listed → gap (as R1) | read error → raise, no clean summary (QA Q6, as R1) | read at the run block | stateless | n/a | pinned | as R1 |
+| Storage cluster slots, token, `lastOperatorId` | as R1 | as R1 | as R1 | stateless | n/a | pinned | as R1 |
+| Views `eth_call` | as R1 | as R1 | as R1 | n/a | n/a | pinned | as R1 |
+| Params | as R1 | as R1 | as R1 | as R1 | as R1 | as R1 | n/a |
+| Stored logs (framework scan) | as R1 | n/a | as R1 | as R1 | as R1 | as R1 | n/a |
+| eth_getLogs prefix (`check:m7:unstake_prefix`) | **NOTE N1 (QA, not in scope):** a lossy `[]` prefix can drive `outstanding_unstake` negative (Q11 still fails here, as on `6fafac6`); unreachable with the shipped config (`start_block == unstake_history_from`) | as R1 | as R1 | as R1 | as R1 | fixed range | as R1 |
+| `m6_clusters`, `m6_obs` | as R1 (the gap changes no row write) | n/a | as R1 | as R1 | n/a | as R1 | n/a |
+| M6 open incidents | a gap resolves nothing: `…consistent_empty…` asserts no page, sweep `empty_total0` asserts no resolve without proof | — | as R1 | as R1 | — | — | as R1 |
+| `check:m6:summary`, digest | **R2** consistent empty: `inventory_gap` set, digest "UNKNOWN: the legacy inventory is incomplete" (M6 twin above) | as R1 | as R1 | as R1 | n/a | as R1 | as R1 |
+| `m7_legacy` (ids) | first run / new database: empty table, so only the guard protects it — now an empty page is a gap (**R2** rows above) | n/a | as R1 | as R1 | n/a | n/a | as R1 |
+| M7 incidents `surplus-floor`, `surplus` | **R2** no baseline from an empty page (Q10); after recovery one baseline at the true surplus and the page (Q10 port second half) | as R1 | `…whatever_its_total[reorg-*]`, sweep `empty_total0` | `[lost_database-0]` | — | as R1 | upper-bound page unchanged (`incomplete_inventory_still_pages_…`, green) |
+| Inbox, proof API, Blockscout, block timestamps | not consumed by M6/M7 (n/a) | | | | | | |
+
+### Seeded adversarial sweep (extended)
+
+Both committed sweeps (seed `20261022`) gain the fault `empty_total0` (fixture `LegacyWorld.api_fault`: empty page with `pagination.total` 0): `test_m6_adversarial_sweep` 56 cases, `test_m7_adversarial_sweep` 64 cases; in the M7 `empty_total0` cases the legacy cluster is inert (count 0), so `daoValidatorCount` 0 agrees with the empty page — exactly F1's precondition — and the invariants (no resolve without positive proof, no open incident without supporting evidence, no dropped page for surviving evidence, no window anchored on stale data, no event lost between sweeps, never a second baseline) are asserted after every step. Honest limit: the sweep applies faults at the reorg run, after a baseline, where the `m7_legacy` id check already made the empty page UNKNOWN, so these cases are green on `6fafac6` too; F1's first-run / new-database shape is pinned by the parametrized class test `test_m7_empty_api_listing_is_unknown_whatever_its_total` (12 cases, 2 red on `6fafac6`).
+
+### Repair-2 completion handoff (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / live dispatch: task_c706fd249b26 / ctx_3a5d60dc1b12 (CP2e repair 2, Claude Opus high)
+Assignment outcome: QA cp2e-2 F1 repaired (one narrow fix); fresh capped QA (D15) required.
+Base -> resulting commit: 8e07b0a -> lane head in the CP2e status line (code tested at c37afc9)
+Changed paths: checks/{m6_legacy_coverage,m7_ssv_solvency}.py (inventory_gap + docstrings),
+  tests/{test_m6,test_m7,fixtures_legacy}.py, workers/cp2e/** (plan.md Repair 2, attempts.md #attempt-6,
+  live_completeness.py control, evidence/repair2-*, live-completeness-26247316.json), plan.md status.
+F1: an SSV API answer with zero clusters is an inventory gap whatever pagination.total / daoValidatorCount
+  say (coordinator ruling; zero API rows, so an API-empty + logs-only listing is a gap too) -> UNKNOWN,
+  no M7 baseline, upper-bound page unchanged.
+Regressions: Q10 port + M6 twin + 12-case empty-class test + logs-next-to-empty: 5 red on 6fafac6, green;
+  QA Q10 verbatim green; sweeps + fault empty_total0 (M6 56, M7 64 cases).
+Verification: V2x.1 101+114; V2x.2 3; V2x.3 5; V2x.4 2; reorg 21; sweep 120; V2x.6 455 passed, ruff clean;
+  11 falsifiers red->green (R4a/R4b new), porcelain 0.
+LIVE: guard at 26,247,316: 346 = 346, 1,908 = 1,908, gap none; 3 controls gap (incl. total 0).
+NOT RUN: V2e.7 / LIVE ledger (long rows; carried from QA attempt 1), older falsifiers listed in #attempt-6;
+  subgraph DEFERRED. N1/N2 not addressed (NOTEs). Residual NOTE: a non-empty partial page whose total agrees,
+  missing only inert legacy clusters, at a first run (no on-chain legacy-cluster count).
+Next: fresh Opus QA (capped, D15) on the lane head.
+```

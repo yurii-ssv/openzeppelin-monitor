@@ -146,3 +146,50 @@ Falsifiers (scratch `falsify.py`: one exact-string mutation → named test(s) �
 
 - Self-review notes: QF6d first survived again after `c87839c` (the history restored the deleted row, so the mutant became equivalent); the regression now also deletes `m6_obs`, then kills it. The `pagination.total` GET goes through the worker's InventoryCache (`ctx._inventory.__self__`: same base and transport as the listing; a Ctx without it is a gap, fail closed) — a read of a framework object, no write; CP3 may prefer to expose the total from `inventory.fetch_api_clusters` (frozen to this lane).
 - Resulting head: the CP2e status line in `plan.md` (this record's commit).
+
+<a id="attempt-6"></a>
+## Attempt 6 — repair 2 (QA attempt 2: F1)
+
+- Observed UTC: 2026-10-22T09:35Z – 09:55Z
+- Task / Dispatch: `task_c706fd249b26` / `ctx_3a5d60dc1b12` (fresh implementer, Claude Opus high, `claude-opus-5-5`)
+- Frozen start head: `8e07b0a814216dbbcf9e43bc5dfef1049c5d4107` (`git rev-parse HEAD`), porcelain 0; venv `reconcile/.venv` present (Python 3.12.15).
+- Design and state table: [plan.md § Repair 2](plan.md#repair-2).
+- Commits: `7d30c15` (regressions + fixture fault `empty_total0` + sweep fault, checks of `6fafac6` untouched), `0982836` (the fix: `inventory_gap` gap on an API answer without a single cluster; docstrings), `c37afc9` (LIVE script: `empty_total_0` control), then this record.
+
+RED on the frozen code (`7d30c15`: new tests, checks of `6fafac6`), [evidence/repair2-red-on-frozen-code.txt](evidence/repair2-red-on-frozen-code.txt): **5 failed, 210 passed** — `test_m6_consistent_empty_api_with_only_inert_legacy_clusters_is_unknown` (health 0 ≠ 1), `test_m7_q10_consistent_empty_api_with_inert_legacy_balance` (QA Q10 port: baseline `surplus 51 SSV`, `legacy cluster balances 0 (0 clusters)`), `test_m7_empty_api_listing_is_unknown_whatever_its_total[first-0]`, `[lost_database-0]` (a baseline of 101 SSV), `test_m7_empty_api_next_to_a_cluster_from_the_logs_is_unknown` (baseline 3 SSV, true −4 SSV); all assertion failures, none a collection error. Re-checked in a scratch copy (`git archive HEAD reconcile` + both checks from `6fafac6`): same 5 failed. Green at `0982836`.
+- QA Appendix A copied verbatim to scratch `probes2/test_qa2_m7.py` (+ the attempt-1 `conftest.py`): on the `6fafac6` checks Q10 and Q11 fail; at this head **Q10 passes**, Q11 (N1, NOTE, out of scope) still fails.
+
+| Verification ID | Exact command (`P=reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider`) | Exit / result | Head |
+|---|---|---|---|
+| V2x.1 M6 | `$P reconcile/tests/test_m6.py` | 0; 101 passed (45 + 56 sweep) | `c37afc9` |
+| V2x.1 M7 | `$P reconcile/tests/test_m7.py` | 0; 114 passed (50 + 64 sweep) | `c37afc9` |
+| V2x.2 | `$P reconcile/tests/test_m6.py reconcile/tests/test_m7.py -k thresholds_from_chain` | 0; 3 passed, 212 deselected | `c37afc9` |
+| V2x.3 | same files `-k restart` | 0; 5 passed, 210 deselected | `c37afc9` |
+| V2x.4 | same files `-k rpc_budget` | 0; 2 passed, 213 deselected (the fix adds no call) | `c37afc9` |
+| reorg | same files `-k reorg` | 0; 21 passed, 194 deselected | `c37afc9` |
+| sweep | same files `-k adversarial` | 0; 120 passed, 95 deselected | `c37afc9` |
+| V2x.6 | `$P reconcile/tests` | 0; **455 passed**, 0 skipped | `c37afc9` |
+| V2x.6 | `reconcile/.venv/bin/ruff check reconcile`; `ruff check --config reconcile/ruff.toml plans/monitoring-service/workers/cp2e/*.py` | 0; All checks passed | `c37afc9` |
+| config | `$P reconcile/tests/test_framework.py -k config_example` | 0; 1 passed, 31 deselected | `c37afc9` |
+| LIVE completeness (re-measured, guard changed) | `reconcile/.venv/bin/python plans/monitoring-service/workers/cp2e/live_completeness.py --rpc https://ethereum-rpc.publicnode.com --out <scratch>/live-completeness.json` | 0 (09:42:25Z–09:47:50Z); block **26,247,316**: InventoryCache 1,908 clusters (882 ETH, 1,026 legacy, 567 legacy active, 0 invalid, all from the API); `daoValidatorCount` **346** = listed **346**; `pagination.total` **1,908** = listing; **gap none** (the new leg is silent on mainnet: no false UNKNOWN); controls on the same block: empty page with the true total → gap (now also "listed no clusters"), **new** self-consistent empty page (total 0) → gap ("listed no clusters (pagination.total 0)" + dao 0 vs 346), one burning legacy row dropped → gap (306 vs 346; 1,907 of 1,908). [evidence/live-completeness-26247316.json](evidence/live-completeness-26247316.json) sha256 `d7c0bff4763e06c146d40914771822324e70cc342e3c7c89d842233f81bb4636` | `c37afc9` |
+| V2e.7, LIVE M6/M7 ledger | — | **NOT RUN** (owner scope: long rows; QA attempt 1 measured both at 26,246,821; the fix touches no V2e.7 / ledger logic, only the guard, re-measured LIVE above) | — |
+| Subgraph cross-check | — | DEFERRED (no `SSV_SUBGRAPH_API_KEY`; owner Marco) | — |
+
+Falsifiers (scratch `falsify.py`: one exact-string mutation → named test(s) → `git checkout -- <file>` → rerun → `git status --porcelain`), code of `c37afc9`, porcelain 0 after each:
+
+| ID | Mutation | Named test(s) | Mutated | Restored |
+|---|---|---|---|---|
+| R4a (new) | `if from_api == 0:` → `if False:` | Q10 port; M6 twin; logs-next-to-empty; `-k whatever_its_total` | 1 / 1 / 1 failed; 2 failed of 12 | all passed |
+| R4b (new) | `if from_api == 0:` → `if len(inv.clusters) == 0:` | `test_m7_empty_api_next_to_a_cluster_from_the_logs_is_unknown` | 1 failed | 1 passed |
+| F6a | `lag > warn_blocks` → `>=` | `test_m6_benign_liquidatable_exactly_half_window_stays_silent` | 1 failed | 1 passed |
+| F6b | drop `and vc > 0` | `test_m6_benign_zero_balance_without_validators_stays_silent` | 1 failed | 1 passed |
+| F6c | `self._rewind(db, ancestor)` → `pass` | `test_m6_reorg_forgets_a_clear_observation_on_deleted_blocks` | 1 failed | 1 passed |
+| F7a | claims without `outstanding` | `test_m7_unstake_request_burns_cssv_and_is_counted_until_withdrawn` | 1 failed | 1 passed |
+| F7b | `surplus < floor` → `<=` | `test_m7_benign_surplus_exactly_one_ssv_does_not_page` | 1 failed | 1 passed |
+| F7d | `if gone:` → `if False:` | `test_m7_legacy_cluster_missing_from_the_inventory_is_unknown_not_a_smaller_liability` | 1 failed | 1 passed |
+| R1b | `if listed_vc != dao:` → `if False:` | both `…_found_by_the_dao_validator_count` | 1 / 1 failed | passed |
+| R1c | `elif len(inv.clusters) < total:` → `elif False:` | both `-k listing_short_of_its_total` | 1 failed of 2 each | 2 passed each |
+| QA2-d | M7 `if gap:` → `if False:` | `test_m7.py` | 23 failed / 114 | 114 passed |
+
+NOT RUN this attempt (code on their path unchanged; green at their named tests): falsifiers F7c, QF6d, QF7b, R1a, R1d, R1e, R2a, R3a–c, QA2-a/b/c/e/f/g.
+- Resulting head: the CP2e status line in `plan.md` (this record's commit).
