@@ -75,3 +75,22 @@ two SWEEP3-m9-F2 $C/m9_oracle_quorum.py "$LONE_OLD" "$LONE_NEW" "$SELF_OLD" 'if 
 one SWEEP3-m11-RR $C/m11_updater_liveness.py 'stats.append((counted, benign, total, len(counted) / total if total else None))' \
   'stats.append((counted, benign, total, len(counted) / total if total else 0.0))' \
   $T/test_m9_m10_m11_sweep.py -k sweep_m11
+# found by the wider sweep / generalisation (repair 3)
+one R3-RR-attr $C/m11_updater_liveness.py '            if ref is not None:  # the round of the call' '            if False:  # the round of the call' \
+  $T/test_m11.py::test_r3_a_revert_counts_only_in_the_round_of_its_blocknum_when_windows_overlap \
+  $T/test_m11.py::test_r3_a_late_revert_for_the_older_root_counts_in_the_older_round_only
+one R3-RR-evidence $C/m11_updater_liveness.py 'evidence_block=max([c.block] + [r["block"] for r in counted]),' \
+  'evidence_block=c.block,' \
+  $T/test_m11.py::test_r3_reorg_orphaning_the_reverts_of_an_open_revert_rate_resolves_with_the_reorg_text
+one R3-dissent-evidence $C/m9_oracle_quorum.py 'evidence_block=self.settled_block(first), severity=sev,' \
+  'evidence_block=first.last_vote_block, severity=sev,' \
+  $T/test_m9.py::test_r3_reorg_removing_the_commit_that_settled_a_dissent_resolves_with_the_reorg_text
+one R3-failed-revision $C/m9_oracle_quorum.py 'revision=",".join(map(str, refs)),' 'revision=str(rnd.ref),' \
+  $T/test_m9.py::test_r3_a_lower_blocknum_failing_after_a_higher_one_is_sent_before_the_heal
+one R3-book-regrown $C/m9_oracle_common.py '        return (bool(r["closed"]) and e.occurred' '        return (False and e.occurred' \
+  $T/test_m9.py::test_r3_reorg_growing_an_already_resolved_failed_round_run_sends_the_new_member
+one R3-horizon-cap $C/m9_oracle_common.py '            h = min(h, max(at, int(nxt["timestamp"], 16) - 1))' '            h = h' \
+  $T/test_m9.py::test_r3_commit_seconds_before_the_deadline_in_an_unconfirmed_block_is_not_a_failed_round \
+  $T/test_m9.py::test_r3_seed_295_late_confirmed_votes_do_not_retract_an_attribution
+one SWEEP3-m9-horizon $C/m9_oracle_common.py '            h = min(h, max(at, int(nxt["timestamp"], 16) - 1))' '            h = h' \
+  $T/test_m9_m10_m11_sweep.py -k sweep_m9_m10

@@ -1407,3 +1407,53 @@ def test_r3_a_sender_lookup_failing_in_the_backward_walk_fails_the_run_closed(tm
     tick(u.w, u.oc, 1, seconds=300)
     new = sent(u.w, "m11")[rows:]
     assert [r["kind"] for r in new] == ["update"] and "for 9 committed round(s)" in new[0]["text"], _kinds(u.w)[rows:]
+
+
+def test_r3_a_revert_counts_only_in_the_round_of_its_blocknum_when_windows_overlap(tmp_path):
+    """Found by the repair-3 wider sweep (seed 37): round B commits 20 min after round A, inside A's 60 min window.
+    A reverted update for B's root counts in B only (decoded blockNum), never in A as well: B warns, A stays clean."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    a = u.round(updates=(0, 1))
+    u.c.mine(100)
+    b = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", b, i=2)
+    u.close()
+    titles = [r["text"].splitlines()[0] for r in sent(u.w, "m11") if r["ikey"] == "revert-rate"]
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"} and titles, _kinds(u.w)
+    assert all(f"blockNum {b}" in t for t in titles) and not any(f"blockNum {a}" in t for t in titles), titles
+
+
+def test_r3_a_late_revert_for_the_older_root_counts_in_the_older_round_only(tmp_path):
+    """The reverse: after B committed, the updater sends an update for A's (stale) root, which reverts
+    MustUseLatestRoot inside both windows: it counts in A (its blockNum), not in B."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    a = u.round(updates=(0,))
+    u.c.mine(100)
+    b = u.round(updates=(0, 1))
+    u.fail("MustUseLatestRoot", a, i=2)
+    u.close()
+    titles = [r["text"].splitlines()[0] for r in sent(u.w, "m11") if r["ikey"] == "revert-rate"]
+    assert titles and all(f"blockNum {a}" in t for t in titles) and not any(f"blockNum {b}" in t for t in titles), \
+        titles
+
+
+def test_r3_reorg_orphaning_the_reverts_of_an_open_revert_rate_resolves_with_the_reorg_text(tmp_path):
+    """README 6.2 for `revert-rate`: its evidence is the reverts (inbox rows), not the commit. A reorg beyond the
+    confirmation window orphans the reverted transaction's block (the commit survives): resolved with the reorg text,
+    not as "no longer observed"."""
+    u = UpdaterWorld(tmp_path, confirmations=2)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.c.mine(3)
+    fork = u.c.number
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    u.c.reorg(fork)
+    u.oc.stub()
+    u.c.mine(4)
+    tick(u.w, u.oc, 3)
+    res = [r["text"] for r in sent(u.w, "m11", "kind='resolved'") if r["ikey"] == "revert-rate"]
+    assert open_keys(u.w, "m11") == {} and len(res) == 1 and REORG_TEXT in res[0], (res, _kinds(u.w))

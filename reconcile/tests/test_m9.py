@@ -1470,3 +1470,26 @@ def test_r3_chain_halt_with_confirmations_waits_for_the_tail_control(tmp_path):
     tick(w, oc, 5)
     tick(w, seconds=9.5 * HOUR)
     assert open_keys(w, "m9") == {}
+
+
+def test_r3_reorg_removing_the_commit_that_settled_a_dissent_resolves_with_the_reorg_text(tmp_path):
+    """Found by the repair-3 wider sweep (seed 123): a dissent is attributed when its round settles, here by a later
+    round's commit that supersedes it (every vote of the round is older). A reorg beyond the confirmation window
+    removes that commit only: the round is open again (inside its 30 min) and the dissent's evidence, its
+    settlement, left the chain: resolved with the reorg text, not as "no longer observed"."""
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 3, variant=1)
+    oc.vote(ref, 1)
+    oc.vote(ref, 2)  # two slots for A, slot 3 for B: no quorum
+    oc.c.mine(2)
+    fork = oc.c.number
+    later = oc.round(voters=(1, 2, 4))  # a later blockNum commits: the round is settled (plurality A)
+    tick(w, oc, 3)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"}, open_keys(w, "m9")
+    oc.reorg(fork, latest=0, refs={later})
+    oc.c.mine(4)
+    tick(w, oc, 2)
+    res = [r["text"] for r in sent(w, "m9", "kind='resolved'") if r["ikey"] == "dissent:3"]
+    assert "dissent:3" not in open_keys(w, "m9") and len(res) == 1 and REORG_TEXT in res[0], (res, open_keys(w, "m9"))
