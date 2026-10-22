@@ -6,6 +6,7 @@ from checks.registry import REGISTRY, build, register  # noqa: F401
 from checks import m5_eb_desync  # noqa: F401, E402
 
 # --- CP2a: liquidation family (M3, M4, M14)
+from checks import m3_liquidation_zone, m4_conservation_deficit, m14_deposit_frontrun  # noqa: F401, E402
 
 # --- CP2b: oracle family (M9, M10, M11)
 

@@ -664,3 +664,41 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 ## Event 0065 — Owner scope note: QA without mutation testing
 
 - Marco: QA verifiers must not run mutation testing or other time-consuming tests; the aim is the initial version. Appended to qa/QA-CONTRACT.md; sent to the live QA dispatches (`ctx_e7ec763575a8` CP2a QA 3, `ctx_ba0224588278` CP2e QA 1); to be put in every later QA packet.
+<a id="event-0038-cp2a-qa1"></a>
+## Event 0038 — CP2a independent QA attempt 1: FAIL
+
+- Observed UTC: 2026-10-21T14:30:24Z (host clock). Actor: Codex GPT-6.1-Sol high, workspace-write / automatic approval review; task `task_15e1c0e3a918`, dispatch `ctx_31ca1746c190`.
+- Frozen input: `7211819c1b0f5ebd612c35dd45cc9f4549554c59`; worktree `ms-qa-cp2a`, branch `mtabasco/ms-qa-cp2a`, initial porcelain empty. Three inherited frozen-test files match integration exactly (bd531b4 + 500abe4); no other unauthorized frozen CP1B file edited.
+- Action and outcome: independent remeasurement and falsification; verdict **FAIL**, CP2a status **QA FAILED**; [durable report and complete reproducer appendices](qa/cp2a-attempt-1.md). Six findings: M3 API omission falsely resolves an active computed-zero page; M14 UNKNOWN canonical re-inclusion falsely resolves during a reorg and consumes the retry; M14 uses ETH views for legacy liquidateSSV; 7,200 produced blocks do not equal 24 hours; rolling hit count is anchored at the last hit; a later same-block top-up masks an earlier qualifying attack.
+
+| Verification | Exact command / action | Exit / counts / result |
+|---|---|---|
+| V2a.1 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_m3.py` (then independent commands for test_m4.py and test_m14.py) | 0 / 35; 0 / 25; 0 / 29 passed; spec acceptance FAIL from independent probes |
+| V2a.2 | same interpreter, three explicit monitor files, `-k thresholds_from_chain` | 0; 10 passed, 79 deselected; independent N/N2 boundary cases also pass |
+| V2a.3 | same three files, `-k restart` | 0; 4 passed, 85 deselected |
+| V2a.4 | same three files, `-k rpc_budget`; independent 350-cluster inventories | 0; 3 passed, 86 deselected; independent eth_call counts M3=1051, M4=393, M14=4 per entry |
+| V2a.5 | scratch `mutate.py` and `mutate_own.py` preserved in report | runner exits 0; all 15+3 mutants pytest exit 1, all byte-restored; restored 89-test monitor control exits 0 |
+| V2a.6 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | 0; 329 passed in 11.66 s; 0, clean |
+| V2a.7 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_m14.py -k v2a7` | 0; 9 passed, 20 deselected; complete spec correlation FAIL (legacy and later same-block top-up) |
+| Independent attacks | `PYTHONPATH=reconcile/tests:reconcile reconcile/.venv/bin/python -m pytest -q -s /private/tmp/cp2a-qa-7211819/test_independent.py` | 1; 7 failed / 28 passed, six findings; exact depth-one reorgs, shorter chains ± restart, liquidation reorg, no direct incident alerts, exact wei, routing/cadence controls pass |
+| LIVE M4 | independent public read at `https://ethereum-rpc.publicnode.com`, block 26241506; script+raw JSON in report | 0; 548 active ETH, validators 58762=58762, A surplus 457800000 wei; adding pool gives B surplus -208603988997347800000 wei; pinned source/ABI independently supports counting network once |
+
+- Claims/limits: original historical M3 LIVE scan not rerun (supplementary, budget avoids a second full traversal); fresh M4 LIVE substitutes the old exact-block snapshot; CP3 fork/composed tests remain CP3. Required owned V rows all run; no silent outcomes. No redundant full-suite rerun.
+- Preservation: only report, CP2a Status line and this appended event changed; venv is authorized/untracked, scratch outside repo. No implementation repair, mainnet transaction, secret access, or real alert delivery. Report contains repo proof and durable commands.
+- Next owner: coordinator / fresh repair worker; six findings remain. FAIL is a successful QA assignment; report commit on QA branch only, no push.
+
+## Event (lane-local, numbered by the coordinator at merge) — CP2a independent QA attempt 2: FAIL
+
+- Observed UTC: 2026-10-21T15:46Z (host clock). Actor: Claude Opus 5.5 (`claude-opus-5-5`), effort high (D13); task `task_f41dfe954f70`, dispatch `ctx_bde5259c7350`.
+- Frozen input: `115433386803855934525d73628b65ae6252c86a` (repair 1); worktree `ms-qa-cp2a-2`, branch `mtabasco/ms-qa-cp2a-2`, initial porcelain empty. Inherited frozen-test files identical to `bd531b4`+`500abe4`; no other CP1B file edited; new `test_liquidation_sweep.py` accepted.
+- Outcome: verdict **FAIL**, CP2a **QA FAILED**; [report](qa/cp2a-attempt-2.md). H1: M14 drops a hit and resolves it as "no front-running hit remains on the canonical chain" after a reorg onto a shorter chain lowers the checkpoint below a surviving failed-liquidation block (inbox row reset to NULL, hit deleted, never re-delivered). M1: one dust deposit that reverts three racing liquidations warns (ruling on "three times" requested). Notes N1–N4. Attempt-1 H1–H3, M1–M3 confirmed fixed; H3 path unreachable at the pin (source + LIVE `deposit` on legacy clusters reverts `IncorrectClusterVersion`, publicnode block 26,241,936).
+- Measurements: 479 passed, ruff clean; V2x.1 52/29/58; V2x.2 5/2/3; V2x.3 3/1/3; V2x.4 1/1/1 (independent 350-cluster: M3 1,051/1,050/1,051 eth_call, M14 4 per entry); V2a.7 9; sweep 100; falsifiers 41/41 + 3 own red, restored, porcelain empty; attempt-1 Appendix A 35 passed (7 failed on `098c2cd`); 39/51 new cases and 63/100 sweep cases red on `098c2cd`; independent probes 2 failed / 20 passed. M4 unchanged except one config guard; M4 LIVE not re-run by instruction.
+- Preservation: only the report, the CP2a Status line and this event; venv authorized/untracked; scratch `/tmp/cp2a-qa2`. No implementation repair, mainnet transaction, secret or real alert. Next owner: coordinator / fresh repair worker.
+
+## Event (lane-local, numbered by the coordinator at merge) — CP2a independent QA attempt 3: PASS WITH NOTES
+
+- Observed UTC: 2026-10-22T08:45Z (host clock). Actor: Claude Opus 5.5 (`claude-opus-5-5`), effort high (D13); task `task_3a589013815e`, dispatch `ctx_e7ec763575a8`. Capped round (third QA of the lane).
+- Frozen input: `2b434cf99a9d33371039cd93ab273f4de852fee3` (repair round 2); worktree `ms-qa-cp2a-3`, branch `mtabasco/ms-qa-cp2a-3`, initial porcelain empty. Inherited frozen-test files identical to `bd531b4`+`500abe4`; no other CP1B file edited.
+- Outcome: verdict **PASS WITH NOTES**, CP2a **VERIFIED**; [report](qa/cp2a-attempt-3.md). No BLOCKING finding. NOTE N-A: the repair-2 M3 hold keeps an onset from a chain that a lagging node hid being replaced, and can warn early on an overstated age (reproducer red on `2b434cf`, green on `92d8ff9`). NOTE N-B: M14 reads a missing `transactionIndex` as "deposit first" (info, labelled). Carried N-C–N-F.
+- Measurements: 555 passed, ruff clean; V2x.1 59/33/73; V2x.2 5/2/3; V2x.3 4/2/5; V2x.4 1/1/1 (independent 350-cluster incl. held reorg runs: M3 1,051, M4 393 eth_call); V2a.7 9; sweep 150; QA2 probes 22 passed (H1, M1 red on `92d8ff9`); QA1 App. A 35; 25/26 new cases and 61/150 sweep red on `92d8ff9` (set identical to `repair2/red-on-frozen.txt`); falsifiers 60/60 + QA2 3/3 red, restored (run before the owner's no-mutation note; no further mutations). M4 LIVE not run (owner: no long LIVE; equation unchanged).
+- Preservation: only the report, the CP2a Status line and this event; venv authorized/untracked; scratch `/tmp/cp2a-qa3`. No implementation repair, network call, secret or real alert. Next owner: coordinator (merge; route N-A, N-B).
