@@ -33,7 +33,7 @@ Not in `reconcile/checks/README.md` (frozen). Module docstrings are the authorit
 
 | Check | Schedule | Keys and severities | Inputs |
 |---|---|---|---|
-| `m12` `checks/m12_wallet_burn.py` | `Every(interval_s=300)` | `<oracle>:balance` page < 0.15 ETH; `<oracle>:runway` warn < 14 d, page < 7 d (lower of trailing-spend and base-fee+observed-tip runways); `<oracle>:daily-spend` warn > 0.04 ETH; `<liquidator>:balance` warn < 0.2, page < 0.05 (D4 thresholds are `defaults`) | `eth_getBalance`; Blockscout v2 candidates verified by `eth_getTransactionByHash` + `eth_getTransactionReceipt` + canonical header, nonce contiguity to `eth_getTransactionCount`; headers (timestamps, `baseFeePerGas`); `eth_feeHistory` |
+| `m12` `checks/m12_wallet_burn.py` | `Every(interval_s=300)` | `<oracle>:balance` page < 0.15 ETH; `<oracle>:runway` warn < 14 d, page < 7 d (lower of trailing-spend and base-fee+observed-tip runways); `<oracle>:daily-spend` warn > 0.04 ETH; `<liquidator>:balance` warn < 0.2, page < 0.05 (D4 thresholds are `defaults`) | `eth_getBalance`; Blockscout v2 candidates verified by `eth_getTransactionByHash` + `eth_getTransactionReceipt` + canonical header, nonce contiguity to `eth_getTransactionCount`; headers (timestamps, `baseFeePerGas`); `eth_feeHistory`; **repair 3:** windows by chain time (`window_s` 7 d, `day_s` 24 h before the evaluated block's timestamp; header search), `eth_feeHistory` must cover the whole sample (else a check error), `m12_tx` keeps `prune_margin_blocks` (256) below the window |
 | `m8` `checks/m8_supply_floor.py` | `Every(300)` | `supply-floor` warn when `cSSV.totalSupply()` < 2 × the DAO Safe's cSSV balance (measured at start, re-measured daily), or = 0 | `eth_call` `totalSupply()`, `balanceOf(seed_holder)` |
 | `m13` `checks/m13_retired_keys.py` | `NearSetEveryBlock` + `Every(60)` | `<address>:<block>` page per top-up; resolved when the value LEFT (plainly "not an all-clear") or by the §6.2 rule when a reorg removed it | `eth_getBalance` at every block of (last, checkpoint] (cap `max_blocks_per_run` 256, beyond: bounded sample + `m13-gap` health); attribution: full block + `eth_getBlockReceipts` (best effort); **repair 2:** a non-archive RPC that refuses old state for `state_fallback_after` (3) consecutive runs → the newest `state_window_blocks` (64, then ÷4) are read against the last balance + `m13-state` health naming the unread range |
 
@@ -218,5 +218,85 @@ Generalised state table + accepted/limits: workers/cp2c/plan.md#repair-2.
 Sweep: M13 200 cases with regrow, restart-while-pending, <=1 page per canonical top-up; wide 1,400 extra cases green.
 Verification: V2x.1 111/65/270; V2x.2 2/1/1; V2x.3 2/2/7; V2c.7 16; V2c.8 270; V2x.6 686 passed, ruff clean; V2x.5 21/21; LIVE publicnode F2 recovers at run 3 with m13-state. NOT RUN: V2x.4, LIVE M12/M8, anvil.
 Pending human input: OG2 should be an archive RPC (M13 degrades loudly otherwise).
+Next owner: fresh QA on the lane head.
+```
+
+<a id="repair-3"></a>
+## Repair 3 — late Codex QA attempt 2 F1–F2 (fresh implementer, 2026-10-22)
+
+- Live authority: Orca task `task_d8441a07b246`, dispatch `ctx_30d9cb9479da`, run `run_96be3e0c7302`, worker terminal `term_e7a11e68-f722-4021-b5d7-a80944721fbb`, coordinator `term_89e2fa6f-482b-4551-995f-1f0e41c726a2`. Requested Claude Opus high (self-identifies as claude-opus-5-5; the coordinator's start receipt is authoritative).
+- Frozen start head: `git rev-parse HEAD` = `f779b459bfb4faffd028c9c1b320aa5f1720372a` (QA import on `945fd4d`), status clean, `reconcile/.venv` working (686 passed). Read `qa/cp2c-attempt-2-codex.md` in full and `DEFECT-CLASSES.md` (`plan/monitoring-service`). Reproducer `qa/cp2c-attempt-2-codex-test_new.py` on `f779b45`: **6 failed, 11 passed** (as reported). No merge of `plan/monitoring-service` (not needed: no shared file changed).
+- Commits: code + tests `e15e341`, falsifiers `ab84934`, restart regression `8e5cbc9`, docstring `b1b1486`, docs on top. Changed: `checks/m12_wallet_burn.py`, `tests/test_m12.py`, `test_m8.py`, `test_m13.py` (ports only), `workers/cp2c/{plan,attempts,falsify}`, plan.md CP2c status. `m8_*.py`, `m13_*.py`, `fixtures_wallets.py`, `config.example.json` unchanged (new M12 settings have defaults; the example sets none of them). No frozen file touched.
+
+### Fixes
+
+| Finding | Root cause | Fix | Regression (RED on `f779b45` → GREEN) |
+|---|---|---|---|
+| F1 windows by block count | `window_blocks` 50,400 / `day_blocks` 7,200 selected the rows; the timestamp span only normalised them (a missed slot diluted, an older tx stayed in) | settings `window_s` 604,800 / `day_s` 86,400; each window = blocks with a timestamp in (T − seconds, T], T = the evaluated block's timestamp; lower bound = the last block with timestamp ≤ T − seconds, found by a header search (12 s-slot guess, gallop down, alternating interpolation/bisection, every probe strictly between its neighbours or `SpendUnknown`); per day = spend × 86,400 ÷ window seconds (exactly 7 d / 24 h; a window reaching below block 0 uses the chain's age: test chains only). `window_blocks`/`day_blocks` are now unknown keys (config error, fail loud) | QA ports `test_qa2c_m12_daily_is_actual_24h_not_7200_blocks`, `…_daily_single_missed_slot_at_boundary`, `…_trailing_window_excludes_transactions_older_than_seven_days`; own `test_m12_r3_daily_spend_excludes_a_transaction_older_than_24h_inside_7200_blocks`, `…_missed_slots_never_dilute_the_trailing_average`, `…_daily_spend_resolves_exactly_when_the_spend_is_24h_old_by_chain_time`, `…_window_search_is_exact_and_bounded_under_a_burst_of_missed_slots`, `…_time_window_settings_are_validated` |
+| F2 partial fee history | `base_fee` accepted any `baseFeePerGas` list of ≥ 2 | the answer must have `oldestBlock` = C − N + 1 (0 near genesis), N + 1 base fees, N gas ratios, every fee a hex quantity; else `PartialResult` (a check error: `check-error` health, run rolled back, incidents untouched, reorg marker kept). A null answer stays an `RpcError` | QA ports `test_qa2c_m12_partial_feehistory_is_error_never_clean`, `…_partial_history_clears_real_page`, `…_partial_history_reorg_keeps_retry_marker`; own `test_m12_r3_every_partial_fee_history_raises_and_keeps_the_page[short,shift,ratios,missing,junk,long × normal,reorg]` (12, all RED: five accepted, junk escaped the step as an `RpcError`); control `…_fee_history_of_a_chain_younger_than_the_sample_is_complete` |
+| Generalised (c)+(f): a shorter replacement chain moves T, and the window, back | rows pruned at `block − window` were gone; the reorg run's quick path (nonce unchanged) undercounted a transaction at the window's edge | prune keeps `prune_margin_blocks` (256) below the window and records it in `history_from` (`m12_tx` = exactly the wallet's txs in (`history_from`, `synced_block`]); a window starting below `history_from` all the same → backfill (Blockscout; in a reorg run UNKNOWN raises, marker kept) | `test_m12_r3_shorter_chain_moving_the_window_back_still_counts_the_edge_transaction` (RED), `…_restart_between_the_shorter_chain_reorg_and_its_run_still_counts_the_edge_transaction` (RED), `…_window_below_the_stored_set_is_backfilled_never_undercounted` (margin 0: new setting) |
+
+All 17 tests of the QA's Appendix A are ported (module prefix removed): 13 into `test_m12.py` (`test_qa2c_m12_*`, incl. the 4 listing variants), 2 into `test_m8.py`, 5 into `test_m13.py`. Of these, exactly the 6 F1/F2 tests fail on `f779b45`; all pass now.
+
+**Interface change (QA note).** The spend metrics/evidence keys `window_blocks`, `day_blocks` became `window_from_block`, `day_from_block`, `day_seconds`, `day_fees_wei` (`window_seconds` stays, now always 604,800 on a chain older than 7 days). QA attempt 1 Appendix B's `test_runway_exact_14_and_daily_exact_004` builds the dict by hand with `day_blocks`: KeyError `day_seconds`; with `'day_seconds': 86400, 'day_from_block': 1` instead it passes (27/27).
+
+**Base fee sample.** `base_fee_blocks` (300, ≈ 1 h) stays a block-count sample: the spec says "current base fee" with no time window; eth_feeHistory is block-indexed. Documented in the module docstring.
+
+### Generalised state table (every persisted table/marker and every off-chain input; M12 rows re-derived, M8/M13 re-checked)
+
+Cells: behaviour, then the test. **wrong→fixed** = RED on `f779b45`, GREEN now; "(r1)/(r2)" = repair-1/2 test still green.
+
+| State / input | (a) empty | (b) error | (c) reorg depth 1 / N beyond confirmations, incl. a resolved key | (d) restart between detection and handling | (e) same-block ordering | (f) time-window anchoring | (g) partial |
+|---|---|---|---|---|---|---|---|
+| M12 `m12_tx`, `m12_sync` | zero nonce = proven zero spend (r1) | RPC error raises (r1) | rows > A deleted, nonce re-read at A (r1); resolved runway reopened (r1); **shorter chain moving the window back: margin + `history_from` (wrong→fixed)**; window below `history_from` → backfill, UNKNOWN raises (new) | durable; **crash between the shorter-chain reorg and its run (wrong→fixed)**; marker survives (r1) | two txs per block both counted (r1); end-of-block balance (r2) | **(T − 7 d, T] and (T − 24 h, T] of the evaluated block (wrong→fixed, F1)**; anchored per run, recomputed every run | short batch → `RpcError` (r1) |
+| M12 time-window search (block headers, new) | missing header → `RpcError` (raises) | `RpcError` raises | headers read in the run, ≤ checkpoint: always the new chain | no state | — | exact boundary under a 3,000-slot burst, ≤ 40 search reads (`…_window_search_is_exact_and_bounded…`); LIVE mainnet: 13 reads | non-increasing timestamps on the path → `SpendUnknown` (normal run: UNKNOWN, warn kept, `…_non_increasing_timestamps_in_a_normal_run…`; reorg run: raises (r1)) |
+| M12 `eth_feeHistory` | null → `RpcError` (r1) | `RpcError` | **partial in a reorg run → raises, marker kept (wrong→fixed, F2)** | — | — | sample ends at the evaluated block | **short / shifted / short ratios / missing field / junk / long → `PartialResult`, page kept (wrong→fixed, F2)**; young chain (oldest 0) accepted |
+| M12 `meta unknown_since:<w>` | — | — | time, not block-derived; rolled back with a raising run (r1) | durable (r1) | — | wall clock, grace from the first UNKNOWN (r1) | — |
+| M12 incidents | — | a failing run sends nothing and changes no incident (sweep, fee faults) | every key reported or the run raises (r1); resolved key reopened (r1) | no duplicate (r1) | — | daily-spend resolves at the first checkpoint ≥ 86,400 s after the spend (wrong→fixed) | — |
+| M12 Blockscout listing (untrusted) | empty + nonce → UNKNOWN; reorg run raises (r2, `test_qa2c_m12_reorg_listing_variants[empty]`) | down → UNKNOWN / raise (r1) | stale orphan item fails verification (r2, `[orphan]`) | — | (block, index) pagination (r1) | lists down to the time boundary | partial → nonce gap → UNKNOWN / raise (`[partial]`); duplicates once (`[duplicate]`) |
+| M12 RPC tx / receipt / header / nonce / balance | null tx/receipt → UNKNOWN (r1) | raise (r1) | canonical hash (r2) | — | — | — | short batch → `RpcError` (r1) |
+| M8 `meta floor` | — | (r1, r2 F3) | (r1, r2), QA port `test_qa2c_m8_daily_floor_reorg_resolved_key[False,True]` (green on both) | per-process token (r2) | — | daily re-measure by the worker clock (D3; DEFECT-CLASSES §4 allows the wall clock) | 31/64-byte → raise (r1) |
+| M13 `m13_watch`, `m13_topup`, `m13_orphan`, incidents | (r1, r2) | (r2 fallback) | (r2), QA port `test_qa2c_m13_resolved_topup_reorg_replacement[both keys]` | (r2), QA port `test_qa2c_m13_restart_gap_bounded_two_keys` | QA port `test_qa2c_m13_same_block_topup_and_spend[both orders]` (D10 net) | block-indexed by design (every block); 6 h re-page by the engine clock | (r1, r2) |
+| Logs, inbox, live params, SSV API, proof API | not consumed by M12/M8/M13 (n/a) | | | | | | |
+
+### Adversarial sweep (M12, committed, deterministic)
+
+`test_m12_adversarial_reorg_sweep`: **200 cases** (seeds 0–99 × confirmations 0/2; was 40). New per case: a timestamp profile (12 s; a missed slot every 7 or 50 blocks; a burst of 50–3,000 missed slots in the history) and partial fee-history answers in ~8 % of runs and in 30 % of reorg runs (six fault kinds). Invariants added: the window and the last 24 h equal an **independent** computation from the chain's timestamps (count, fees, per-day average, daily spend, window seconds) at every agreement point (no window anchored on stale data or block counts); a run with a partial fee history raises (errors + 1), sends nothing but health, changes no incident row and keeps the reorg marker (no resolve without positive proof); `m12_tx` = the canonical transactions of (`history_from`, checkpoint] with `history_from` below the window start (no event lost between sweeps). Kept: open incidents = a fresh worker's on the final chain (no open incident without evidence, no dropped page), no §6.2 absence resolution, UNKNOWN reorg runs keep the marker exactly when the new chain needs a listing, healthy at the end. Coverage over the 200: profiles 12s 38 / every7 30 / every50 46 / burst 86; fee faults in 148 normal and 67 reorg runs; daily-spend open at the end in 119, runway in 111.
+On `f779b45` (scratch copy, the sweep's assertions limited to keys the old code has): **184/200 red** with fee faults; **142/200 red** without them (every7 30/30, every50 46/46, burst 66/86 — bursts outside the window stay green, 12s 0/38); current code 200/200 both ways.
+
+### Verification (measured on `b1b1486` = code `e15e341` + tests; `__pycache__` removed, `PYTHONDONTWRITEBYTECODE=1`; `P` = `reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider`)
+
+| Row | Command | Result |
+|---|---|---|
+| V2x.1 | `P reconcile/tests/test_m12.py`; `test_m8.py`; `test_m13.py` | exit 0; **303 / 67 / 275** passed |
+| V2x.2 | `P … -k thresholds_from_chain` | 2/301, 1/66, 1/274 passed/deselected |
+| V2x.3 | `P … -k restart` | 3/300, 2/65, 8/267 |
+| V2x.4 | not owned by CP2c | NOT RUN |
+| V2x.5 | `PYTHONDONTWRITEBYTECODE=1 python3 plans/monitoring-service/workers/cp2c/falsify.py "$PWD"` (on `ab84934`) | **27/27**: before 0, mutated 1, restored 0, `porcelain=''` each. New: F12i (block-count windows), F12i-sweep (30/200), F12j (fee-history check off), F12j-sweep (123/200), F12k (no prune margin), F12l (no backfill below `history_from`); F12c now mutates the denominator to the window's block count; F12e-sweep 10/200, F12g-sweep 187/200 |
+| V2x.6 | `P reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | exit 0; **885 passed** (686 + 199); "All checks passed!" |
+| V2c.7 (lane row) | `P reconcile/tests/test_m12.py -k "runway or projection or tip"` | 16 passed / 287 deselected |
+| V2c.8 (lane row) | `P reconcile/tests/test_m13.py` | 275 passed |
+| QA reproducer | `PYTHONPATH=reconcile:reconcile/tests P plans/monitoring-service/qa/cp2c-attempt-2-codex-test_new.py` | `f779b45`: 6 failed / 11 passed; now **17 passed** |
+| RED/GREEN | `git archive f779b45 reconcile` in scratch + the new test files | 226 failed / 418 passed on `f779b45` (before the restart regression, itself red there: 1 failed): the 6 F1/F2 ports + 19 `r3` cases + the 200 sweep cases (also by new keys; semantic split above) + `test_m12_reorg_below_the_backfill_start…` (renamed setting) = 226; green there: the listing variants, M8/M13 ports, the young-chain control, the normal-run timestamp test. Own `r3` cases: 22, 20 RED (2 only because they use the new settings) |
+| Earlier QA reproducers | attempt 1 Appendix A, B (line 89 → `pass`, line 23 dict adapted, see interface change); attempt 2 A1–A4, C1; attempt 3 scenarios (`test_qa3.py`) and its falsifier runner | A, A1–A4: exit 0 (defects absent); B + C1 + QA3 + Codex file: 27 + 94 passed; QA3 runner: 8/8 red under mutation, restored green, porcelain clean |
+| LIVE (F1/F2) | `live_r3.py` (scratch): `base_fee(300)` and the window search at head − 20 on publicnode, drpc, blast; 2026-10-22T08:30Z, block 26,246,947 | all three accept the fee history (153,437,108 wei); windows: `lo_w` 26,196,706 (block count would say 26,196,547: **159 missed slots in 7 days**), `lo_d` 26,239,764 (count 26,239,747), spans 604,800 / 86,400 s, 13 header reads, boundary headers checked independently (true/true) |
+| NOT RUN | V2x.4 (not owned); LIVE M12 full backfill, M8, M13 (unchanged paths); anvil fork (no change to an on-chain path) | — |
+
+## Completion handoff — repair 3 (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / dispatch: task_d8441a07b246 / ctx_30d9cb9479da (CP2c repair 3, fresh implementer).
+Outcome: completed; acceptance pending a fresh QA (Claude Opus 5.5, round-capped). No finding cleared by me.
+Base -> result: f779b45 -> code e15e341, falsifiers ab84934, tests 8e5cbc9/b1b1486; lane head = docs commit on top.
+Changed: checks/m12_wallet_burn.py (time windows by chain timestamps via a header search, settings window_s/day_s;
+complete eth_feeHistory or PartialResult; prune margin + backfill when the window starts below the stored set),
+tests/test_m12|m8|m13.py, workers/cp2c/**, plan.md status.
+F1/F2: all 17 Codex Appendix A tests ported; the 6 F1/F2 ones RED on f779b45, GREEN now; 22 own regression
+cases (20 RED) incl. 12 fee-fault variants, shorter-chain edge + restart.
+State table + interface change (metric keys): workers/cp2c/plan.md#repair-3.
+Sweep: M12 200 cases with slot profiles and fee faults, independent time-window oracle; 184/200 red on f779b45.
+Verification: V2x.1 303/67/275; V2x.2 2/1/1; V2x.3 3/2/8; V2c.7 16; V2c.8 275; V2x.6 885 passed, ruff clean;
+V2x.5 27/27; earlier QA reproducers green; LIVE: 3 RPCs accept fee history, mainnet had 159 missed slots in 7 d.
+NOT RUN: V2x.4, LIVE M8/M13/full backfill, anvil.
 Next owner: fresh QA on the lane head.
 ```
