@@ -32,7 +32,9 @@ so a restart before the reorg run (durable marker) needs no extra state.
 
 Lowered checkpoint (QA cp2a-2 H1 shape): a reorg onto a shorter chain, or a node lagging behind the checkpoint
 (the framework treats a block the node does not have as not canonical), can put the reorg run's block below the
-latest scan of an open deficit. A scan there is about an earlier block, not about that evidence: the page is kept
+latest scan of an open deficit. Unless one of the blocks this check ran at above the ancestor, at or below that
+scan, is now another block on the node (`m3_views.first_replaced`: the scan provably left the chain, and the
+reorg run re-evaluates as above), a scan there is about an earlier block, not about that evidence: the page is kept
 (state `hold` = the latest scan block above the run's block) and not resolved until a complete scan at or above
 that block shows no deficit; while held the check runs at every checkpoint block (`near_set`).
 """
@@ -45,9 +47,13 @@ from checks.m3_views import (
     GET_NETWORK_EARNINGS,
     GET_OPERATOR_EARNINGS,
     MAIN_LAST_OPERATOR_ID,
+    RUNS_SCHEMA,
     STAKING_ETH_POOL_BALANCE,
     encode_cluster_args,
+    first_replaced,
+    forget_runs,
     inventory_gap,
+    record_run,
     word,
 )
 from checks.registry import register
@@ -60,7 +66,7 @@ CREATE TABLE IF NOT EXISTS m4_scans (
   operators TEXT NOT NULL, network TEXT NOT NULL, staking_pool TEXT, surplus TEXT NOT NULL,
   complete INTEGER NOT NULL, eth_clusters INTEGER NOT NULL, operator_count INTEGER NOT NULL
 );
-"""
+""" + RUNS_SCHEMA
 
 WEI = 10**18
 KEY = "deficit"
@@ -154,13 +160,23 @@ class M4ConservationDeficit(Check):
         self.near_set: frozenset = frozenset()  # {KEY} while a deficit is held above the checkpoint
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
+        findings = self.evaluate(ctx, block)
+        record_run(ctx, block)
+        return findings
+
+    def evaluate(self, ctx: Ctx, block: int) -> list[Finding]:
         hold = ctx.state("hold")
         if ctx.reorg_ancestor is not None:
+            A = ctx.reorg_ancestor
             if KEY in ctx.reorg_keys or self.open(ctx):  # its latest scan above this block: not disproved here
                 top = ctx.db.conn.execute("SELECT MAX(block) FROM m4_scans WHERE block > ?", (block,)).fetchone()[0]
                 if top is not None:
                     hold = max(top, hold or 0)
-            ctx.db.conn.execute("DELETE FROM m4_scans WHERE block > ?", (ctx.reorg_ancestor,))
+            gone_from = first_replaced(ctx, A, hold) if hold is not None else None
+            if gone_from is not None and gone_from <= hold:  # the held scan provably left the chain
+                hold = None
+            forget_runs(ctx, A)
+            ctx.db.conn.execute("DELETE FROM m4_scans WHERE block > ?", (A,))
         if hold is not None and block >= hold:
             hold = None
         ctx.set_state("hold", hold)

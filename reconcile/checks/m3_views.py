@@ -207,6 +207,50 @@ def block_times(rpc, blocks, hashes: dict | None = None) -> dict[int, int]:
     return times
 
 
+# The block hashes each liquidation-family check saw when it ran (QA cp2a-2 H1 shape): its checkpoint and the
+# framework's recorded blocks (event blocks, scan ends) up to it, copied because the framework deletes its own
+# above the ancestor before the reorg run. After a reorg that lowers the checkpoint below a check's evidence, one of
+# these blocks that the node now has with another hash proves that evidence left the canonical chain; when every
+# one probed is missing (a shorter chain, or a node behind the checkpoint) nothing is proven and the check holds its
+# incidents until it evaluates that block again.
+RUNS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS liq_runs (check_id TEXT NOT NULL, block INTEGER NOT NULL, hash TEXT NOT NULL,
+                                     PRIMARY KEY (check_id, block));
+"""
+RUNS_KEPT = 1_024  # per check; with older evidence nothing below it may be left to probe (held until re-evaluated)
+
+
+def record_run(ctx, block: int) -> None:
+    """Remember the blocks seen up to this run's checkpoint (at the end of a run; rolled back with it)."""
+    cp = ctx.db.meta("checkpoint") or {}
+    if cp.get("block") != block or not cp.get("hash"):
+        return
+    last = ctx.db.conn.execute("SELECT MAX(block) FROM liq_runs WHERE check_id=?", (ctx.check_id,)).fetchone()[0]
+    ctx.db.conn.execute("INSERT OR REPLACE INTO liq_runs SELECT ?, number, hash FROM blocks WHERE number > ? AND "
+                        "number < ?", (ctx.check_id, block - RUNS_KEPT if last is None else last, block))
+    ctx.db.conn.execute("INSERT OR REPLACE INTO liq_runs VALUES (?,?,?)", (ctx.check_id, block, cp["hash"]))
+    ctx.db.conn.execute("DELETE FROM liq_runs WHERE check_id=? AND block NOT IN (SELECT block FROM liq_runs WHERE "
+                        "check_id=? ORDER BY block DESC LIMIT ?)", (ctx.check_id, ctx.check_id, RUNS_KEPT))
+
+
+def first_replaced(ctx, ancestor: int, upto: int, probe: int = 8) -> int | None:
+    """The lowest block in (ancestor, upto] that this check saw on the old chain and that the node now has with another
+    hash (everything the check saw from there on left the canonical chain), or None: no such block, or every one
+    probed is missing. Reorg runs only, before `forget_runs`."""
+    rows = ctx.db.conn.execute("SELECT block, hash FROM liq_runs WHERE check_id=? AND block > ? AND block <= ? "
+                               "ORDER BY block LIMIT ?", (ctx.check_id, ancestor, upto, probe)).fetchall()
+    if not rows:
+        return None
+    ctx.rpc.counts["eth_getBlockByNumber"] += len(rows)
+    out = ctx.rpc.rpc.batch([("eth_getBlockByNumber", [hex(r[0]), False]) for r in rows])
+    return next((r[0] for r, blk in zip(rows, out) if blk and blk["hash"].lower() != r[1].lower()), None)
+
+
+def forget_runs(ctx, ancestor: int) -> None:
+    """Drop the blocks of the old chain (above the ancestor)."""
+    ctx.db.conn.execute("DELETE FROM liq_runs WHERE check_id=? AND block > ?", (ctx.check_id, ancestor))
+
+
 def ensure_columns(conn, table: str, columns: dict) -> None:
     """Additive migration of a check's own table on a database created by an earlier version of the check."""
     have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}

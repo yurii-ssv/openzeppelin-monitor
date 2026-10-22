@@ -59,9 +59,12 @@ in-memory near set and tuples; a restart before the reorg run replays it (durabl
 
 Lowered checkpoint (QA cp2a-2 H1 shape): a reorg onto a shorter chain, or a node lagging behind the checkpoint
 (the framework treats a block the node does not have as not canonical), can put the reorg run's block below
-the block at which a tracked cluster was last evaluated (`m3_zone.last_block`). An evaluation there is about an
-earlier block, not about that evidence: the row is kept with its onset and zero block (`hold_block` = the
-evidence block) and its incident is neither resolved nor lowered until a run at or above `hold_block`
+the block at which a tracked cluster was last evaluated (`m3_zone.last_block`). If one of the blocks this check
+ran at above the ancestor, at or below that evidence block, is now another block on the node (`liq_runs`,
+`m3_views.first_replaced`), the evidence provably left the chain and the rules above apply. Otherwise (every
+such block is missing: the node is behind, or the new chain is shorter than them) an evaluation at the lower
+block is about an earlier block, not about that evidence: the row is kept with its onset and zero block
+(`hold_block` = the evidence block) and its incident is neither resolved nor lowered until a run at or above `hold_block`
 evaluates it (then the normal rules apply, with the kept onset): the run is about an earlier block than the one
 already evaluated, so it neither lowers nor escalates the incident. While held, the cluster is in the near set
 (a run at every checkpoint block).
@@ -74,11 +77,15 @@ import logging
 
 from checks.base import Check, Ctx, Every, Finding, NearSetEveryBlock, OnEvents
 from checks.m3_views import (
+    RUNS_SCHEMA,
     ClusterView,
     blocks_until_liquidatable,
     ensure_columns,
     evaluate,
+    first_replaced,
+    forget_runs,
     inventory_gap,
+    record_run,
     short,
     stored_cluster,
     tuple_from_json,
@@ -100,7 +107,7 @@ CREATE TABLE IF NOT EXISTS m3_tuples (
   cluster_id TEXT NOT NULL, owner TEXT NOT NULL, operator_ids TEXT NOT NULL, tuple TEXT NOT NULL,
   block INTEGER NOT NULL, PRIMARY KEY (cluster_id, tuple)
 );
-"""
+""" + RUNS_SCHEMA
 HISTORY = 8  # validated tuples kept per cluster (candidates after a reorg removes the latest change)
 
 WEI = 10**18
@@ -154,8 +161,13 @@ class M3LiquidationZone(Check):
         identity and tuple stay candidates for this run: a tuple is used only if storage validates it). A row last
         evaluated above `block` (the checkpoint was lowered below its evidence) is held instead, onset and zero
         block kept."""
+        top = ctx.db.conn.execute("SELECT MAX(MAX(last_block), COALESCE(MAX(hold_block), 0)) FROM m3_zone").fetchone()[0]
+        gone_from = first_replaced(ctx, ancestor, top) if top is not None and top > block else None
+        forget_runs(ctx, ancestor)
+        if gone_from is not None:  # evidence at or above it provably left the chain: no hold on it
+            ctx.db.conn.execute("UPDATE m3_zone SET hold_block = NULL WHERE hold_block >= ?", (gone_from,))
         ctx.db.conn.execute("UPDATE m3_zone SET hold_block = MAX(COALESCE(hold_block, 0), last_block) "
-                            "WHERE last_block > ?", (block,))
+                            "WHERE last_block > ? AND last_block < ?", (block, gone_from or float("inf")))
         held = "COALESCE(hold_block, 0) <= ?"  # rows not held (hold_block at or below this run's block)
         gone = {r["cluster_id"]: dict(r) for r in
                 ctx.db.conn.execute(f"SELECT * FROM m3_zone WHERE onset_block > ? AND {held}", (ancestor, block))}
@@ -274,6 +286,7 @@ class M3LiquidationZone(Check):
         else:
             evaluated = set(infos)
             self.near_set = frozenset((set(self.near_set) - evaluated) | near)
+        record_run(ctx, block)
         return findings
 
     def remember(self, ctx: Ctx, info, block: int) -> None:

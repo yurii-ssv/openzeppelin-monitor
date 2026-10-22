@@ -784,3 +784,22 @@ def test_qa2_class10_restart_while_the_checkpoint_is_lowered_keeps_the_hold(tmp_
         chain.mine()
         advance(w)
     assert sent(w, "m3") == [("open", "info"), ("escalate", "warn"), ("escalate", "page")]
+
+
+def test_qa2_class2_shorter_chain_with_a_replaced_block_resolves_in_the_reorg_run(tmp_path):
+    """The hold needs the absence of proof: here the new chain has a block the check saw with another hash (the
+    trigger's), so the evidence provably left the chain and the reorg run resolves at once (no hold)."""
+    chain, w, cl = setup(tmp_path, cfg={"m3": {"n_blocks": 1}})
+    cl.create(balance=THRESHOLD + 1_000 * BURN)
+    advance(w)
+    fork = chain.number
+    cl.withdraw(value=1_100 * BURN)
+    advance(w)
+    chain.mine(3)
+    advance(w)
+    assert open_incidents(w, "m3")
+    chain.reorg(fork)
+    chain.mine()  # the new chain is shorter than the old checkpoint, but has block `fork` with another hash
+    advance(w)
+    assert not open_incidents(w, "m3") and w.db.meta("reorg:m3") is None
+    assert not w.db.conn.execute("SELECT hold_block FROM m3_zone WHERE hold_block IS NOT NULL").fetchall()

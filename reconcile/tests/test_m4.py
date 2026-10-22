@@ -413,3 +413,17 @@ def test_qa2_class10_restart_while_the_deficit_is_held_keeps_it_and_resolves_pas
         chain.mine()
         advance(w)
     assert sent(w, "m4") == [("open", "page"), ("resolved", "info")]
+
+
+def test_qa2_class2_shorter_chain_with_a_replaced_block_resolves_in_the_reorg_run(tmp_path):
+    chain, w, cl = balanced(tmp_path, surplus=10**15)
+    fork = chain.number
+    cl.deposit(OWNER, OPS, value=2 * 10**15)
+    root(chain)
+    advance(w)
+    chain.mine(3)
+    assert sent(w, "m4") == [("open", "page")]
+    chain.reorg(fork)
+    chain.mine()  # shorter than the old scan, but block `fork` (the deposit's, recorded) now has another hash
+    advance(w)
+    assert not open_incidents(w, "m4") and sent(w, "m4") == [("open", "page"), ("resolved", "info")]

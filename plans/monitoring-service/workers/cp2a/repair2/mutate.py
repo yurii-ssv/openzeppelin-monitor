@@ -137,6 +137,9 @@ ROWS += [
      [T14 + "test_qa2_class4_lowered_checkpoint_does_not_escalate_on_an_earlier_block"]),
     ("R2-M3d", M3, '        if hold is not None and sev != row["severity"]:', "        if False:",
      [T3 + "test_qa2_class2_lowered_checkpoint_keeps_the_page_and_never_re_escalates"]),
+    ("R2-proof", V, '    return next((r[0] for r, blk in zip(rows, out) if blk and blk["hash"].lower() != r[1].lower()), None)',
+     "    return None", [T3 + "test_qa2_class2_shorter_chain_with_a_replaced_block_resolves_in_the_reorg_run",
+                        T4 + "test_qa2_class2_shorter_chain_with_a_replaced_block_resolves_in_the_reorg_run"]),
     # the adversarial sweep alone catches each repair-2 class
     ("S7-H1", M14, "                self.await_confirmation(ctx, r)", "                pass", [SW + "::test_m14_sweep"]),
     ("S8-M1", M14, "        elif len(times) >= repeat:", "        elif len(recent) >= repeat:", [SW + "::test_m14_sweep"]),

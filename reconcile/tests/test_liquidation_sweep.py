@@ -75,6 +75,7 @@ def last_rowid(w):
 
 
 class Base:
+    seen: dict[str, tuple[int, str]]  # key -> (highest run block it was evaluated open at; severity) for invariant 6
     def snapshot(self):
         self.snaps[self.chain.sealed] = copy.deepcopy(self.cl.state)
 
@@ -93,6 +94,8 @@ class Base:
         self.snaps = {b: s for b, s in self.snaps.items() if b < frm}
         self.chain.mine(max(extra, 1) - 1)
         self.snapshot()
+        if self.chain.sealed >= frm:  # a replaced block exists: the check may prove its evidence gone (6 does not apply)
+            self.seen = {k: v for k, v in self.seen.items() if v[0] < frm}
         return frm
 
 
@@ -262,7 +265,7 @@ def test_m3_sweep(tmp_path, seed):
     s.chain.view_faults.clear()
     s.mode = "full"
     top = max([b for b, _ in s.seen.values()], default=0)
-    s.chain.mine(max(1, top + s.conf + 1 - s.chain.sealed))  # the checkpoint is back above every evidence block
+    s.chain.mine(max(s.conf + 1, top + s.conf + 1 - s.chain.sealed))  # the checkpoint passes every evidence and action
     s.w.clock.advance(600)
     s.advance()
     s.check(True, last_rowid(s.w), "final")
@@ -302,11 +305,11 @@ class M14Sweep(Base):
         cl.create(OWNER2, OPS2, balance=10**18)
         cl.create(OWNER, OPS2, balance=400 * BURN)
         cl.create(OWNER2, OPS, balance=SSV_LTP * SSV_BURN - 1_000 * SSV_BURN, burn=SSV_BURN, version="SSV")
+        self.seen = {}
         self.labels: list[dict] = []  # every failed liquidation scripted: block, cluster, qualifying, tx
         self.deposits: list[tuple[int, int, bytes, int]] = []  # (block, tx position, cluster, value)
         self.unreadable: dict[str, dict] = {}
         self.orphans: list[dict] = []  # labels a reorg removed (their inbox lines stay in the file)
-        self.seen: dict[str, tuple[int, str]] = {}  # key -> (highest run block it was open at; severity)
         self.lag = 0
         self.max_cp = 0  # the highest checkpoint so far: a label at or below it was seen by the worker
         self.start = chain.sealed  # reorgs never remove the clusters' creation
@@ -499,7 +502,7 @@ def test_m14_sweep(tmp_path, seed):
     for tx in list(s.unreadable):
         s.chain.txs[tx] = s.unreadable.pop(tx)
     top = max([lb["block"] for lb in s.labels + s.orphans] + [b for b, _ in s.seen.values()], default=0)
-    s.chain.mine(max(1, top + s.conf + 1 - s.chain.sealed))  # every inbox line's block is confirmed
+    s.chain.mine(max(s.conf + 1, top + s.conf + 1 - s.chain.sealed))  # every inbox line's block is confirmed
     s.w.clock.advance(600)
     advance(s.w)
     s.max_cp = max(s.max_cp, s.w.checkpoint()["block"])

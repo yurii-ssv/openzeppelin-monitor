@@ -83,7 +83,9 @@ every open key) at its severity, and is re-derived by the first run after the in
 dropped once its block is found orphaned (`canonical = 0`), which is then positive proof. Likewise an open
 cluster last evaluated above the reorg run's block (`m14_open.block`: e.g. its computed zero was seen there, or
 a node lagging behind the checkpoint lowered it) is held (`m14_open.hold_block`): neither resolved, lowered nor
-escalated (an earlier block than the one already evaluated) until a run at or above that block evaluates it.
+escalated (an earlier block than the one already evaluated) until a run at or above that block evaluates it,
+unless a block this check ran at above the ancestor and at or below it is now another block on the node
+(`m3_views.first_replaced`: that evaluation provably left the chain; the reorg run re-evaluates at once).
 """
 
 from __future__ import annotations
@@ -95,11 +97,15 @@ from checks.m3_views import (
     GET_BALANCE,
     GET_BALANCE_SSV,
     LIQUIDATE,
+    RUNS_SCHEMA,
     block_times,
     cluster_calls,
     decode_cluster_args,
     encode_cluster_args,
     ensure_columns,
+    first_replaced,
+    forget_runs,
+    record_run,
     short,
     stored_cluster,
     word,
@@ -124,7 +130,7 @@ CREATE TABLE IF NOT EXISTS m14_pending (
   cluster_id TEXT, reason TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS m14_open (cluster_id TEXT PRIMARY KEY, severity TEXT NOT NULL, block INTEGER NOT NULL);
-"""
+""" + RUNS_SCHEMA
 
 SELECTORS = {"0x" + s.hex(): name for name, s in LIQUIDATE.items()}
 VERSION = {"liquidate": "ETH", "liquidateSSV": "SSV"}
@@ -325,9 +331,14 @@ class M14DepositFrontrun(Check):
         if A is not None:
             ctx.db.conn.execute("DELETE FROM m14_hits WHERE block > ?", (A,))
             ctx.db.conn.execute("DELETE FROM m14_pending WHERE block > ?", (A,))
-            # evaluated above this run's block (a lowered checkpoint): held, never resolved or lowered below it
-            ctx.db.conn.execute("UPDATE m14_open SET hold_block = MAX(COALESCE(hold_block, 0), block) WHERE block > ?",
-                                (block,))
+            # evaluated above this run's block (a lowered checkpoint): held, unless that evaluation provably left
+            top = ctx.db.conn.execute("SELECT MAX(MAX(block), COALESCE(MAX(hold_block), 0)) FROM m14_open").fetchone()[0]
+            gone_from = first_replaced(ctx, A, top) if top is not None and top > block else None
+            forget_runs(ctx, A)
+            if gone_from is not None:
+                ctx.db.conn.execute("UPDATE m14_open SET hold_block = NULL WHERE hold_block >= ?", (gone_from,))
+            ctx.db.conn.execute("UPDATE m14_open SET hold_block = MAX(COALESCE(hold_block, 0), block) WHERE block > ? "
+                                "AND block < ?", (block, gone_from or float("inf")))
         rows = []
         if A is not None:  # entries delivered before the reorg whose block is still canonical: re-derive
             rows += ctx.db.conn.execute("SELECT * FROM inbox WHERE canonical = 1 AND resolved = 1 AND block > ? "
@@ -373,6 +384,7 @@ class M14DepositFrontrun(Check):
             ctx.health("m14-unknown", "M14 cannot evaluate (not treated as clean):\n- "
                        + "\n- ".join(n[:300] for n in notes[:20]), dedup="m14-unknown:" + "|".join(notes)[:2000],
                        realert=True)
+        record_run(ctx, block)
         return findings
 
     def fill_times(self, ctx: Ctx) -> None:
