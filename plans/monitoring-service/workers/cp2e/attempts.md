@@ -90,3 +90,59 @@ Further scenarios: escalation/resolution (`test_m6_warn_escalates_to_page_…_re
 - Adversarial self-review (QA list), where each is covered: reorg of the block carrying the trigger (`test_m6_reorg_depth_1_…`, `test_m7_reorg_depth_1_…`, `…deleting_an_unstake_request…`); same-block ordering (`test_m7_same_block_request_and_withdrawal`; M6 has no event-ordered state); prior non-zero state then restart (`test_m6_restart_with_a_prior_liquidatable_row_keeps_counting`, `test_m7_restart_…`); parameter changed mid-run (`test_m6_thresholds_from_chain_period_change_moves_the_warn`; params outage `test_m6_params_unavailable_skips_the_run`); missing input treated as clean (UNKNOWN tests, F7c, F7d, API failure, required config); empty RPC result (`…reverting_or_empty_view…[empty]`, `…missing_head_value…[empty]`; `rpc.get_logs` raises on a non-list); first sweep without baseline (back-dating tests, M7 baseline info).
 - Known limits (not defects of this lane, recorded for QA/CP3): the legacy set is the API ∪ logs since `start_block` (D8); a legacy cluster never listed by the API and without activity since the activation is invisible to both checks until V2e.7's log side runs; M6 back-dating assumes the current burn rate (flagged `estimated_start`); M7 runs daily, so a page can lag a leak by up to `interval_s`.
 - Resulting head: `b4f6c9e` + this record.
+
+<a id="attempt-5"></a>
+## Attempt 5 — repair 1 (QA attempt 1: F1, F2, F3)
+
+- Observed UTC: 2026-10-22T08:50Z – 09:40Z
+- Task / Dispatch: `task_9a6318071980` / `ctx_b4ba8297cc36` (fresh implementer, Claude Opus high, `claude-opus-5-5`)
+- Frozen start head: `b6f90b104eafcfcd204a79bdd40252bf7f407221` (`git rev-parse HEAD`), porcelain 0; venv `reconcile/.venv` present (Python 3.12.15); baseline `pytest -q reconcile/tests` → 297 passed.
+- Design and state table: [plan.md § Repair 1](plan.md#repair-1).
+- Commits: `a7563d3` (regressions + fixture, code untouched), `cf82a48` (F1 completeness guard, F2 back-date), `c87839c` (M6 reorg restore from `m6_obs` + its 2 regressions), `83d6bf5` (seeded sweeps), `6fca0d8` (the open-key enumeration regression also loses the row history), `e6a67d9` (LIVE script + evidence), then this record.
+- Fixture (`fixtures_legacy.py`): `LegacySSV(MiniSSV)` keeps `daoValidatorCount` in StorageProtocol word 0 as the contract does (Σ validators of active legacy clusters, written with every cluster persist); the fake API serves `pagination.total` and `api_fault` ∈ {empty, short, error, no_total}.
+
+RED on the frozen code (`a7563d3`: new tests and fixture, checks of `b6f90b1`), [evidence/repair1-red-on-frozen-code.txt](evidence/repair1-red-on-frozen-code.txt): **18 failed, 60 passed** — F1: `test_m6_first_sweep_with_an_empty_api_listing_is_unknown_not_clean` (QA PR2-M6 port), `test_m6_listing_short_of_its_total_or_without_one_is_unknown[short,no_total]`, `test_m6_unreadable_api_total_is_unknown_not_clean`, `test_m6_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count`, `test_m6_restart_on_a_lost_database_with_an_empty_api_is_unknown`, `test_m6_digest_of_an_incomplete_inventory_says_unknown_not_zero`, `test_m7_first_run_with_an_empty_api_listing_is_unknown_not_a_baseline` (QA PR2-M7 port), `test_m7_incomplete_inventory_still_pages_when_the_upper_bound_is_below_the_floor`, `test_m7_listing_short_of_its_total_or_without_one_is_unknown[short,no_total]`, `test_m7_unreadable_api_total_is_unknown_not_a_change`, `test_m7_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count`, `test_m7_restart_on_a_lost_database_with_an_empty_api_is_unknown`; F2: `test_m6_backdated_start_of_a_cluster_that_just_crossed_is_now` (PR1a port), `test_m6_benign_liquidatable_exactly_half_window_stays_silent` (now PR1c: true duration exactly W), `test_m6_liquidatable_longer_than_half_window_warns` and `test_m6_thresholds_from_chain_back_dating_uses_the_live_minimum_collateral` (the lane tests that encoded the off-by-one, corrected to W + 2 blocks of deficit = W + 1 liquidatable blocks). Green at `cf82a48`. Coverage tests green on both (F3: they pin correct behaviour; shown to kill QA's surviving mutants below): `test_m7_reorg_run_whose_re_evaluation_is_unknown_keeps_both_keys_without_a_second_baseline` (PR12), `test_m6_reorg_run_reports_an_open_key_without_a_persisted_row` (QF6d), `test_m6_reorg_orphaning_the_liquidation_that_resolved_the_page_reopens_it` (PR10), `test_m7_reorg_orphaning_the_repair_that_resolved_the_page_reopens_it`, `test_m6_events_of_one_scan_step_are_evaluated_at_the_run_block` (PR9 shape), `test_m7_unstake_prefix_read_failure_is_retried_not_zero`.
+- State-table row found wrong while generalising (c, M6): `test_m6_reorg_restores_the_canonical_start_a_deleted_clear_observation_overwrote` and `test_m6_reorg_orphaning_a_liquidation_restores_the_observed_start` — **2 failed** before `c87839c` (`assert (-99116 == (1001 + 1))`: the start re-estimated from the balance, before the canonical clear sweep, and a false warn), green after.
+- QA Appendix A probes re-created verbatim in scratch (`conftest.py`, `test_probe_m6.py` PR1a/PR1c/PR2-M6, `test_probe_m7.py` PR2-M7), `QA_ROOT=$PWD … pytest --rootdir <probes> <probes>` → **4 passed** (QA: 4 failed on `c02557a`).
+
+| Verification ID | Exact command (`P=reconcile/.venv/bin/python`, `-q -p no:cacheprovider`) | Exit / result | Head |
+|---|---|---|---|
+| V2x.1 M6 | `$P -m pytest reconcile/tests/test_m6.py` | 0; 92 passed (44 + 48 sweep) | `e6a67d9` |
+| V2x.1 M7 | `$P -m pytest reconcile/tests/test_m7.py` | 0; 92 passed (36 + 56 sweep) | `e6a67d9` |
+| V2x.2 | `… test_m6.py test_m7.py -k thresholds_from_chain` | 0; 3 passed, 181 deselected | `e6a67d9` |
+| V2x.3 | `… -k restart` | 0; 5 passed, 179 deselected | `e6a67d9` |
+| V2x.4 | `… -k rpc_budget` | 0; 2 passed (M6 eth_call ≤ 3 × 350; M7 ≤ 3 + 2,352 + 350; the guard adds 1 eth_getStorageAt and 1 API GET per full run) | `e6a67d9` |
+| reorg | `… -k reorg` | 0; 18 passed | `e6a67d9` |
+| sweep | `… -k adversarial` | 0; 104 passed (frozen checks: M6 28/48, M7 8/56 failed) | `e6a67d9` |
+| V2x.6 | `$P -m pytest reconcile/tests` | 0; **424 passed**, 0 skipped | `e6a67d9` |
+| V2x.6 | `reconcile/.venv/bin/ruff check reconcile` (+ `--config reconcile/ruff.toml` on both workers/cp2e scripts) | 0; All checks passed | `e6a67d9` |
+| config | `$P -m pytest reconcile/tests/test_framework.py -k config_example` | 0; 1 passed | `e6a67d9` |
+| LIVE completeness (new) | `$P plans/monitoring-service/workers/cp2e/live_completeness.py --rpc https://ethereum-rpc.publicnode.com --out <scratch>/live-completeness.json` | 0 (09:11Z–09:17Z); block **26,247,163**: full InventoryCache 1,908 clusters (1,026 legacy, 567 active, 0 invalid); `daoValidatorCount` **346** = listed **346**; `pagination.total` **1,908** = listing 1,908; **gap none**; controls: empty page → gap, one burning legacy row dropped → gap (306 vs 346; 1,907 of 1,908). [evidence/live-completeness-26247163.json](evidence/live-completeness-26247163.json) sha256 `13b5fbfc8117dcc4678c38b78dde330750feedece6daae35b8dfccb65bd27934` | `e6a67d9` |
+| V2e.7, LIVE M6/M7 | — | **NOT RUN** this attempt: QA attempt 1 measured both sides PASS and the M6/M7 numbers at 26,246,821; the repair changes no V2e.7 logic. Note: `live_legacy.py` feeds the checks a legacy-only inventory without an InventoryCache, so its M6/M7 section now reports an inventory gap by construction (V2e.7 part unaffected); the guard's LIVE behaviour is the row above | — |
+| Subgraph cross-check | — | DEFERRED (no `SSV_SUBGRAPH_API_KEY`; owner Marco) | — |
+
+Falsifiers (scratch `falsify.py`: one exact-string mutation → named test(s) → `git checkout -- <file>` → rerun → `git status --porcelain`), on the code of `6fca0d8` (= `e6a67d9`; R1a–R3c, F6a–F7d after `83d6bf5`, QF6d re-run after `6fca0d8`), porcelain 0 after each:
+
+| ID | Mutation | Named test(s) | Mutated | Restored |
+|---|---|---|---|---|
+| F6a | `lag > warn_blocks` → `>=` | `test_m6_benign_liquidatable_exactly_half_window_stays_silent` | 1 failed | 1 passed |
+| F6b | drop `and vc > 0` | `test_m6_benign_zero_balance_without_validators_stays_silent` | 1 failed | 1 passed |
+| F6c | drop the reorg rewind (`self._rewind` → `pass`) | `test_m6_reorg_forgets_a_clear_observation_on_deleted_blocks` | 1 failed | 1 passed |
+| F7a | claims without `outstanding` | `test_m7_unstake_request_burns_cssv_and_is_counted_until_withdrawn` | 1 failed | 1 passed |
+| F7b | `surplus < floor` → `<=` | `test_m7_benign_surplus_exactly_one_ssv_does_not_page` | 1 failed | 1 passed |
+| F7c | `unknown = {}` after the ledger | `test_m7_unpriced_legacy_cluster_is_unknown_not_clean` | 1 failed | 1 passed |
+| F7d | `m7_legacy` guard `if False:` | `test_m7_legacy_cluster_missing_from_the_inventory_is_unknown_not_a_smaller_liability` | 1 failed | 1 passed |
+| QF6d (QA survivor) | second loop enumerates only `rows` | `test_m6_reorg_run_reports_an_open_key_without_a_persisted_row` | 1 failed | 1 passed |
+| QF7b (QA survivor) | drop the `surplus` re-report on UNKNOWN | `test_m7_reorg_run_whose_re_evaluation_is_unknown_keeps_both_keys_without_a_second_baseline` | 1 failed | 1 passed |
+| R1a | `inventory_gap` returns None | M6 + M7 first-run empty-API regressions | 2 failed | 2 passed |
+| R1b | no `daoValidatorCount` comparison | both `…_found_by_the_dao_validator_count` | 2 failed | 2 passed |
+| R1c | no `pagination.total` comparison | both `…listing_short_of_its_total_or_without_one…` | 2 failed / 4 | 4 passed |
+| R1d | missing total accepted as complete | same | 2 failed / 4 | 4 passed |
+| R1e | M6 `gap = None` | `test_m6.py -k adversarial` | 8 failed / 48 | 48 passed |
+| R2a | frozen back-date formula | PR1a + PR1c ports | 2 failed | 2 passed |
+| R3a | rewind without history (`prev = None`) | `test_m6_reorg_restores_the_canonical_start_…` | 1 failed | 1 passed |
+| R3b | no tombstone on deletion | `test_m6_reorg_orphaning_a_liquidation_restores_the_observed_start` | 1 failed | 1 passed |
+| R3c | rewind dropped | `test_m6.py -k adversarial` | 24 failed / 48 | 48 passed |
+
+- Self-review notes: QF6d first survived again after `c87839c` (the history restored the deleted row, so the mutant became equivalent); the regression now also deletes `m6_obs`, then kills it. The `pagination.total` GET goes through the worker's InventoryCache (`ctx._inventory.__self__`: same base and transport as the listing; a Ctx without it is a gap, fail closed) — a read of a framework object, no write; CP3 may prefer to expose the total from `inventory.fetch_api_clusters` (frozen to this lane).
+- Resulting head: the CP2e status line in `plan.md` (this record's commit).
