@@ -328,6 +328,19 @@ class EpisodeBook:
         return (bool(r["closed"]) and e.occurred and e.revision is not None
                 and e.revision != json.loads(r["finding"])["revision"] and e.evidence_block > r["reported_block"])
 
+    def disabled(self, ctx: Ctx, prefix: str, switch: str, rule: str) -> list[Episode]:
+        """A rule switched off by config (owner D14, `checks.<id>.<switch>` false): not evaluated, said by one health
+        line per run, and each of its incidents still open is resolved once with the plain text "rule disabled by
+        config" (never left dangling)."""
+        ctx.health(f"{self.check_id}-{switch}", f"{self.check_id.upper()} {rule} rule disabled by config "
+                   f"(checks.{self.check_id}.{switch} false): not evaluated.", dedup=f"{self.check_id}-{switch}-off")
+        out = []
+        for r in ctx.db.conn.execute(f"SELECT * FROM {self.table} WHERE closed=0 AND key LIKE ?", (prefix + "%",)):
+            e = self._from_row(r)
+            e.occurred, e.resolution = False, f"Rule disabled by config (checks.{self.check_id}.{switch} false)."
+            out.append(e)
+        return out
+
     def apply(self, ctx: Ctx, episodes: list[Episode], unknown_keys: frozenset[str] = frozenset()) -> list[Finding]:
         """Findings for this run's episodes. `unknown_keys`: keys the run could not evaluate (an input is
         unavailable): their open episodes are re-reported unchanged, never resolved."""

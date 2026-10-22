@@ -14,7 +14,7 @@ index), so a rotation earlier in the same block already moves the expectation.
 | a `RootCommitted` with 0 updater txs within 60 min | `liveness` | warn | the latest closed round has no `ClusterBalanceUpdated` (its `blockNum`) inside the window in a tx sent by the updater of that tx's position; re-sent per zero round (`revision`) |
 | ... and the proof API shows clusters whose on-chain EB differs from the leaf | `liveness` | page | the zero round's leaves (`{proof_api}/proof/{clusterId}` at the same `referenceBlock`) vs `getEffectiveBalance` (Views) for every active ETH cluster with validators of the inventory. A cluster without a usable leaf (no answer, `cluster not found`, another `referenceBlock`, an unvalidated tuple) is UNKNOWN: a partial answer never reads as "all match"; the unknown clusters are retried every run until compared. API unreachable: stays warn, says so, health message, retried |
 | two consecutive committed rounds with 0 updates | `liveness` | page | trailing zero rounds >= `zero_rounds_page`; a run reaching back past the evaluated rounds is followed back to its first zero round (the episode id and the round count stay those of the whole outage while it slides out of `history_rounds`) |
-| revert rate on our updates > 10 % in a round | `revert-rate` | warn | gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block) inside the latest closed window, each counted in one round only: the round of its call's `blockNum` (decoded from the transaction, cached in `m11_reverted`; when the input does not decode, the latest round whose window holds it) / (those + successful updater txs); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox); healed only by a later round in which the updater sent transactions at a rate at or under the threshold (a round without any updater transaction proves nothing), the open round staying evaluated while it is older than `history_rounds` |
+| revert rate on our updates > 10 % in a round | `revert-rate` | warn | every updater transaction of the round counts, at any time (the spec line has no window; the 60 min belong to the liveness line: QA4-F1): gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block), each counted in one round only, the round of its call's `blockNum` (decoded from the transaction, cached in `m11_reverted`), else (input not decoded, or a blockNum no stored commit has) the round whose [commit, next commit) holds it by (block, transaction index) / (those + the updater's successful updates of that `blockNum`, at any time). A round is evaluated once its window closed and re-derived every run while evaluated (later transactions change its rate; a revert of an older round's blockNum brings that round back into the evaluation); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox); healed by a later round in which the updater sent transactions at a rate at or under the threshold (a round without any updater transaction proves nothing), or by later successful updates of the same round bringing it to or under the threshold while every revert that established it is still there; the open round staying evaluated while it is older than `history_rounds` |
 | weekly full-state leaf comparison, mismatch older than one round | `state-mismatch` | warn | every `full_state_interval_s` the comparison over all such clusters at the latest closed root; each mismatching or unknown cluster is compared again at every later closed root (and unknown ones every run). A cluster mismatching at two consecutive evaluated roots is older than one round: warn. Resolved only by positive proof (every reported cluster compared again and matching); an unknown or unevaluated reported cluster keeps the incident (API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED, health message, retried every run) |
 
 Bounded cost: one run asks the proof API at most once per cluster; after `proof_api_abort_after` consecutive transport
@@ -29,7 +29,9 @@ rule: `m11_senders` (tx hash -> sender, block) and `m11_reverted` (tx hash -> de
 `m11_block_times` (BlockTimes), `check:m11:zero_proof`, `check:m11:state_evals` (the last three evaluated
 roots) and `check:m11:state_full` (when the last weekly comparison ran) (proof results; each carries
 its commit block and the block its chain reads were made at, and is discarded when that commit is no longer the
-stored one or a reorg run's ancestor is below that block, then recomputed on the new chain). Episodes:
+stored one or a reorg run's ancestor is below that block, then recomputed on the new chain; QA4-F2: a reorg run
+that discarded the zero-round proof and cannot evaluate it again, API unreachable or the clusters that differed now
+UNKNOWN, raises: README 6.2 rule 4, rolled back and retried with the marker and the persisted proof kept). Episodes:
 m9_oracle_common (`m11_episodes`).
 """
 
@@ -133,6 +135,9 @@ class M11UpdaterLiveness(Check):
         "full_state_interval_s": 604_800,
         "seconds_per_block": 12,
         "require_inbox": True,  # the revert-rate rule needs the failed-transaction inbox (inbox.path)
+        "revert_rate_enabled": True,  # owner D14: false = the revert-rate rule is not evaluated (open one resolved)
+        "zero_round_proof_enabled": True,  # owner D14: false = no proof API comparison for a zero round (page only
+        # by zero_rounds_page consecutive zero rounds)
     }
     schema = SCHEMA
 
@@ -143,7 +148,8 @@ class M11UpdaterLiveness(Check):
                              "address of oracle slot updater_slot)")
         if not config["proof_api"]:
             raise SystemExit("checks.m11: proof_api is required (spec: the oracle proof endpoint)")
-        if config["require_inbox"] and not inbox_enabled(SimpleNamespace(settings=settings)):
+        if (config["require_inbox"] and config["revert_rate_enabled"]
+                and not inbox_enabled(SimpleNamespace(settings=settings))):
             raise SystemExit("checks.m11: the revert-rate rule needs the failed-transaction inbox (inbox.path); set "
                              "checks.m11.require_inbox false to run without it")
         self.schedule = (Every(config["interval_s"]), OnEvents({"RootCommitted"}), OnInbox())
@@ -220,13 +226,15 @@ class M11UpdaterLiveness(Check):
         rounds = [self.round_stats(ctx, c, block) for c in closed]
         episodes = self.liveness(ctx, self.zero_lead(ctx, commits, closed, rounds, block) + rounds, block)
         unknown: set[str] = set()
-        if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
+        if not self.config["revert_rate_enabled"]:
+            episodes += self.book.disabled(ctx, "revert-rate", "revert_rate_enabled", "revert-rate")
+        elif not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
             ctx.health("m11-inbox", "M11 revert-rate rule not evaluated: the failed-transaction inbox is not configured "
                        "(inbox.path).", dedup="m11-inbox-disabled")
         elif inbox_unavailable(ctx) or inbox_gate_pending(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance"):
             unknown.add("revert-rate")
         else:
-            episodes += self.revert_rate(ctx, self.revert_lead(ctx, commits, closed, block) + rounds)
+            episodes += self.revert_rate(ctx, commits, closed, rounds, block)
         full, full_unknown = self.state_mismatch(ctx, commits, closed[-1] if closed else None, block)
         episodes += full
         if full_unknown:
@@ -254,17 +262,19 @@ class M11UpdaterLiveness(Check):
         return known
 
     def round_stats(self, ctx: Ctx, commit, block: int) -> dict:
+        """One round: every successful update of its `blockNum` up to the checkpoint (`events`, `ours_all`: the
+        revert-rate rule has no window, QA4-F1), and those inside the 60 min window (`ours`, `others`: the
+        liveness rule)."""
         start = self.times(commit.block)
         end = start + self.window
         events = [ev for ev in ctx.db.events_after((commit.block - 1, 1 << 62), block, frozenset({"ClusterBalanceUpdated"}))
                   if ev.ref_block == commit.ref_block]
         at = self.times.get([ev.block for ev in events])
-        events = [ev for ev in events if at[ev.block] <= end]
         senders = self.senders(ctx, events)
-        mine = {ev.tx_hash for ev in events if senders[ev.tx_hash] == self.updater_at((ev.block, ev.tx_index))}
-        others = {ev.tx_hash for ev in events} - mine
+        mine_all = {ev.tx_hash for ev in events if senders[ev.tx_hash] == self.updater_at((ev.block, ev.tx_index))}
+        inside = {ev.tx_hash for ev in events if at[ev.block] <= end}
         return {"commit": commit, "start": start, "end": end, "events": events, "senders": senders,
-                "ours": sorted(mine), "others": sorted(others)}
+                "ours": sorted(mine_all & inside), "others": sorted(inside - mine_all), "ours_all": sorted(mine_all)}
 
     def zero_lead(self, ctx: Ctx, commits: list, closed: list, rounds: list[dict], block: int) -> list[dict]:
         """The zero rounds before the evaluated ones that belong to the same run (QA3-F1): when the earliest evaluated
@@ -302,7 +312,12 @@ class M11UpdaterLiveness(Check):
         sev, proof_note, evidence = "warn", "", {}
         if len(run) >= self.config["zero_rounds_page"]:
             sev = "page"
-        if active:
+        if active and not self.config["zero_round_proof_enabled"]:
+            ctx.health("m11-zero_round_proof_enabled", "M11 zero-round proof comparison disabled by config "
+                       "(checks.m11.zero_round_proof_enabled false): not evaluated.",
+                       dedup="m11-zero_round_proof_enabled-off")
+            proof_note = " Proof API comparison disabled by config."
+        elif active:
             result = self.zero_round_proof(ctx, last, block)
             unknown = result.get("unknown") or []
             if result.get("error"):
@@ -336,47 +351,92 @@ class M11UpdaterLiveness(Check):
             resolution=(f"The updater sent {len(healed['ours'])} update(s) for blockNum {healed['commit'].ref_block}."
                         if healed else ""))
 
-    def revert_lead(self, ctx: Ctx, commits: list, closed: list, block: int) -> list[dict]:
-        """The rounds from an open revert-rate incident's round up to the evaluated ones, when it is older than them:
-        it stays derived (and open) until a later round proves a rate under the threshold, instead of reading its
-        slide out of `history_rounds` as a recovery."""
-        row = ctx.db.conn.execute(f"SELECT finding FROM {TABLE} WHERE key='revert-rate' AND closed=0").fetchone()
-        if row is None or not closed:
-            return []
-        ref = json.loads(row["finding"])["subject"].get("ref_block")
-        i = next((k for k, c in enumerate(commits) if c.ref_block == ref), None)
-        end = next(k for k, c in enumerate(commits) if c is closed[0])
-        if i is None or i >= end:
-            return []  # in the evaluated rounds, or no longer stored (a reorg: the book's rule)
-        return [self.round_stats(ctx, c, block) for c in commits[i:end]]
+    def revert_lead(self, ctx: Ctx, commits: list, first: int) -> int:
+        """The index of an open revert-rate incident's round when it is older than the evaluated rounds (from
+        `commits[first]`): it stays derived (and open) until a later round proves a rate under the threshold, instead
+        of reading its slide out of `history_rounds` as a recovery; and in a reorg run every revert-rate round
+        reported after the ancestor, open or already resolved (repair 4, class 2): its resolution may rest on a clean
+        round the reorg removed, so it is derived again on the new chain."""
+        rows = ctx.db.conn.execute(f"SELECT finding FROM {TABLE} WHERE key='revert-rate' AND (closed=0 OR "
+                                   f"reported_block>?)", (1 << 62 if ctx.reorg_ancestor is None else
+                                                          ctx.reorg_ancestor,)).fetchall()
+        refs = {json.loads(r["finding"])["subject"].get("ref_block") for r in rows}
+        idx = [k for k, c in enumerate(commits) if c.ref_block in refs]
+        return min(idx + [first])  # a round no longer stored (a reorg): the book's rule
 
-    def revert_rate(self, ctx: Ctx, rounds: list[dict]) -> list[Episode]:
-        rows = [r for r in inbox_rows(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance")
-                if rounds and r["block"] >= rounds[0]["commit"].block
-                and (r["sender"] or "").lower() in self.updaters_in(r["block"])]
-        at = self.times.get([r["block"] for r in rows])
-        calls = self.reverted_calls(ctx, rows)
-        owner: dict[int, list] = {}  # round index -> its reverts: each revert counts in one round only
-        for r in rows:
-            cands = [i for i, rd in enumerate(rounds)
-                     if r["block"] >= rd["commit"].block and rd["start"] <= at[r["block"]] <= rd["end"]]
-            ref = calls[r["tx_hash"]].get("ref")
-            if ref is not None:  # the round of the call's blockNum (overlapping windows: never the other round)
-                cands = [i for i in cands if rounds[i]["commit"].ref_block == ref]
-            if cands:
-                owner.setdefault(cands[-1], []).append(r)
+    @staticmethod
+    def round_of(row, call: dict, commits: list, by_ref: dict[int, int]) -> int | None:
+        """The index in `commits` of the round a reverted update belongs to: the round of its call's `blockNum`
+        (at any time, QA4-F1: the revert-rate rule has no window), else (input not decoded, or a blockNum no
+        stored commit has) the round whose [commit, next commit) holds it, by (block, transaction index); None
+        before the first stored commit."""
+        ref = call.get("ref")
+        if ref is not None and ref in by_ref:
+            return by_ref[ref]
+        idx = call.get("index")
+        pos = (row["block"], 1 << 62 if idx is None else idx)
+        k = None
+        for i, c in enumerate(commits):
+            if (c.block, c.tx_index) >= pos:
+                break
+            k = i
+        return k
+
+    def revert_rate(self, ctx: Ctx, commits: list, closed: list, rounds: list[dict], block: int) -> list[Episode]:
+        """Per round, every updater transaction of the round counts (QA4-F1; spec: "revert rate on our updates
+        > 10 % in a round", no window): its successful updates of the round's `blockNum` at any time and its
+        reverts attributed by `round_of`. A round is evaluated once its 60 min window closed and re-derived every
+        run while evaluated, so later transactions of the round change its rate."""
+        if not closed:
+            return []
+        at = {id(c): k for k, c in enumerate(commits)}
+        first, last = at[id(closed[0])], at[id(closed[-1])]
+        by_ref = {c.ref_block: k for k, c in enumerate(commits)}
+        start = self.revert_lead(ctx, commits, first)
+        mine = [r for r in inbox_rows(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance")
+                if (r["sender"] or "").lower() in self.updaters_in(r["block"])]
+        while True:  # a revert of an older round's blockNum brings that round (and the ones after it) in
+            rows = [r for r in mine if r["block"] >= commits[start].block]
+            calls = self.reverted_calls(ctx, rows)
+            owner: dict[int, list] = {}  # commit index -> its reverts: each revert counts in one round only
+            for r in rows:
+                k = self.round_of(r, calls[r["tx_hash"]], commits, by_ref)
+                if k is not None and k <= last:  # a later round's window is still open: evaluated when closed
+                    owner.setdefault(k, []).append(r)
+            older = min(owner, default=start)
+            if older >= start:
+                break
+            start = older
+        rounds = [self.round_stats(ctx, c, block) for c in commits[start:first]] + rounds
+        open_eps = {r[0]: set(json.loads(r[1])["evidence"].get("reverted", [])) for r in ctx.db.conn.execute(
+            f"SELECT episode, finding FROM {TABLE} WHERE key='revert-rate' AND closed=0")}
         stats = []  # per round: (counted reverts, benign reverts, total, rate or None when nothing was sent)
         for i, rd in enumerate(rounds):
             benign, counted = [], []
-            for r in owner.get(i, []):
+            for r in owner.get(start + i, []):
                 (benign if self.benign(r, calls[r["tx_hash"]], rd) else counted).append(r)
-            total = len(rd["ours"]) + len(counted)
+            total = len(rd["ours_all"]) + len(counted)
             stats.append((counted, benign, total, len(counted) / total if total else None))
         out = []
         for i, rd in enumerate(rounds):
             c = rd["commit"]
             counted, benign, total, rate = stats[i]
-            if rate is None or rate <= self.config["revert_rate"]:
+            if rate is None:
+                continue
+            if rate <= self.config["revert_rate"]:
+                if open_eps.get(f"revert-rate:{c.ref_block}", {""}) <= {r["tx_hash"] for r in counted}:
+                    # later successful updates of the same round brought it back under the threshold while every
+                    # revert that established it is still there: positive proof (every updater transaction of the
+                    # round counted), never "no longer observed". Reverts that left the chain: the book's reorg rule
+                    out.append(Episode(
+                        key="revert-rate", episode=f"revert-rate:{c.ref_block}", active=False, occurred=False,
+                        evidence_block=max([c.block] + [r["block"] for r in counted]
+                                           + [ev.block for ev in rd["events"] if ev.tx_hash in rd["ours_all"]]),
+                        severity="warn", title=f"EB updater revert rate for blockNum {c.ref_block}", body="",
+                        subject={"ref_block": c.ref_block}, revision=str(c.ref_block),
+                        resolution=(f"Revert rate for blockNum {c.ref_block} is now {len(counted)} of {total} "
+                                    f"({rate:.0%}), at or under {self.config['revert_rate']:.0%}: later updates "
+                                    f"of the same round succeeded.")))
                 continue
             # healed only by a later round in which the updater sent something at a rate under the threshold: a
             # round without any updater transaction proves nothing (0/0, the liveness rule's case)
@@ -394,7 +454,7 @@ class M11UpdaterLiveness(Check):
                 severity="warn",
                 title=f"EB updater revert rate {rate:.0%} for blockNum {c.ref_block}",
                 body=(f"{len(counted)} of {total} updateClusterBalance txs from {short(who)} reverted in the "
-                      f"window of blockNum {c.ref_block} (threshold {self.config['revert_rate']:.0%}): "
+                      f"round of blockNum {c.ref_block} (threshold {self.config['revert_rate']:.0%}): "
                       + ", ".join(f"{n} x{k}" for n, k in sorted(names.items()))
                       + (f". {len(benign)} benign StaleUpdate revert(s) (another sender had already set the same EB) "
                          f"excluded" if benign else "")
@@ -402,15 +462,15 @@ class M11UpdaterLiveness(Check):
                          if m1 else "") + "."),
                 subject={"updater": who, "ref_block": c.ref_block}, revision=str(c.ref_block),
                 evidence={"reverted": [r["tx_hash"] for r in counted][:50], "benign": [r["tx_hash"] for r in benign][:50],
-                          "successful": len(rd["ours"]), "m1_handoff": m1, "reasons": names},
+                          "successful": len(rd["ours_all"]), "m1_handoff": m1, "reasons": names},
                 resolution=("" if clean is None else
                             f"Revert rate for blockNum {rounds[clean]['commit'].ref_block} is under "
                             f"{self.config['revert_rate']:.0%} ({len(stats[clean][0])} of {stats[clean][2]} reverted).")))
         return out
 
     def reverted_calls(self, ctx: Ctx, rows) -> dict[str, dict]:
-        """tx hash -> the decoded call of each reverted update (`ref`, `cluster_id`, `eb`, `index`; {} when the input
-        does not decode), cached in `m11_reverted` (rows above a reorg's ancestor deleted and re-read). A transaction
+        """tx hash -> the decoded call of each reverted update (`ref`, `cluster_id`, `eb`, `index`; only `index` when
+        the input does not decode), cached in `m11_reverted` (rows above a reorg's ancestor deleted and re-read). A transaction
         the node does not return raises (the run is retried; never read as "no call")."""
         hashes = sorted({r["tx_hash"] for r in rows})
         known: dict[str, dict] = {}
@@ -426,8 +486,7 @@ class M11UpdaterLiveness(Check):
             if not tx:
                 raise RpcError(f"eth_getTransactionByHash({h}) returned no transaction")
             call = decode_update_input(tx.get("input", "0x")) or {}
-            if call:
-                call["index"] = int(tx["transactionIndex"], 16) if tx.get("transactionIndex") else None
+            call["index"] = int(tx["transactionIndex"], 16) if tx.get("transactionIndex") else None
             known[h] = call
             ctx.db.conn.execute("INSERT OR REPLACE INTO m11_reverted VALUES (?,?,?)",
                                 (h, block_of[h], json.dumps(call, sort_keys=True)))
@@ -439,7 +498,7 @@ class M11UpdaterLiveness(Check):
         when the node reports the revert's index); a later update cannot explain an earlier failure."""
         if row["revert_name"] != "StaleUpdate":
             return False
-        if not call or call["ref"] != rd["commit"].ref_block:
+        if call.get("ref") != rd["commit"].ref_block:
             return False
         index = call.get("index")
 
@@ -452,13 +511,23 @@ class M11UpdaterLiveness(Check):
     # ---- proof API
 
     def zero_round_proof(self, ctx: Ctx, commit, block: int) -> dict:
-        saved = fresh(ctx, ctx.state("zero_proof"))
-        if saved and (saved["ref"] != commit.ref_block or saved["commit_block"] != commit.block):
-            saved = None
+        raw = ctx.state("zero_proof")
+        if raw and (raw["ref"] != commit.ref_block or raw["commit_block"] != commit.block):
+            raw = None
+        saved = fresh(ctx, raw)
         if saved and not saved["result"]["unknown"]:
             return saved["result"]
         only = {u["cluster"] for u in saved["result"]["unknown"]} if saved else None
         result = self.compare_leaves(ctx, commit.ref_block, block, only=only)
+        if raw and not saved and (result.get("error") or (raw["result"]["mismatches"] and not result["mismatches"]
+                                                          and result["unknown"])):
+            # QA4-F2 (README 6.2 rule 4): this reorg run discarded the proof of this zero round (its chain reads may
+            # come from deleted blocks) and cannot evaluate it again (API unreachable, or the clusters that differed
+            # are UNKNOWN now): raise. The run is rolled back and retried, the marker and the persisted proof stay;
+            # never a silent downgrade of what was proven, never a second page from the discarded proof later.
+            raise ProofApiError(f"zero round {commit.ref_block}: the proof discarded by the reorg (ancestor "
+                                f"{ctx.reorg_ancestor}) cannot be evaluated again: "
+                                f"{result.get('error') or fmt_unknown(result['unknown'])}")
         if result.get("error"):
             ctx.health("proof-api", f"M11: oracle proof API unavailable ({result['error']}); the zero-update round "
                        f"{commit.ref_block} cannot be checked for EB mismatches (retried every run).",

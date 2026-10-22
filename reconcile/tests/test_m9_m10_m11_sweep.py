@@ -465,9 +465,20 @@ class UpdaterSweep:
         assert u.api.failures - failures <= 3, self.trace(f"{u.api.failures - failures} failed proof GETs in a step")
         self.check(before, resolved_before, partial=api_mode < 0.4, down=api_mode < 0.15, removed=set(removed))
 
-    def reverted(self, rd) -> bool:
-        """A revert of the round inside its 60 min window (chain time): one that counts for its revert rate."""
-        return any(not t["ok"] and self.u.c.ts(t["block"]) <= self.u.c.ts(rd["commit"]) + 3600 for t in rd["txs"])
+    @staticmethod
+    def rate(rd, cp):
+        """Repair 4 (QA4-F1, spec: "revert rate on our updates > 10 % in a round", no window): every updater
+        transaction of the round's blockNum up to the checkpoint, at any time; None when the updater sent nothing."""
+        txs = [t for t in rd["txs"] if t["block"] <= cp and t["sender"] == t["updater"]]
+        bad = sum(1 for t in txs if not t["ok"])
+        return bad / len(txs) if txs else None
+
+    def revert_rate_expected(self, closed, cp) -> bool:
+        """Open iff a closed round's rate is > 10 % and no later closed round has updater transactions at a rate
+        <= 10 % (a round without any updater transaction proves nothing)."""
+        rates = [self.rate(rd, cp) for rd in closed]
+        last_bad = max((i for i, x in enumerate(rates) if x is not None and x > 0.1), default=None)
+        return last_bad is not None and all(x is None for x in rates[last_bad + 1:])
 
     def closed_rounds(self):
         u = self.u
@@ -511,18 +522,21 @@ class UpdaterSweep:
                 assert refs - self.liveness_refs, self.trace(f"resolved outage {sorted(refs)} reported again")
             self.liveness_refs |= refs
             self.chain_rewritten = False
+        # repair 4: the independent revert-rate rule (every updater transaction of the round, at any time), both
+        # ways: no open incident without a round over 10 %, no dropped warn for one (once the inbox is gated)
+        expected = self.revert_rate_expected(closed, cp)
         if "revert-rate" in got:
-            assert any(r["reverts"] for r in closed), self.trace("revert-rate open without a revert")
-        elif closed and self.reverted(closed[-1]) and u.w.db.conn.execute(
-                "SELECT COUNT(*) FROM inbox WHERE canonical IS NULL").fetchone()[0] == 0:
-            assert False, self.trace("the latest closed round has a counted revert but no revert-rate incident")
+            assert any((self.rate(rd, cp) or 0) > 0.1 for rd in closed), self.trace(
+                "revert-rate open without a round over 10 %")
+        gated = u.w.db.conn.execute("SELECT COUNT(*) FROM inbox WHERE canonical IS NULL").fetchone()[0] == 0
+        if gated:
+            assert ("revert-rate" in got) == expected, self.trace(
+                f"revert-rate {'missing' if expected else 'open'}: rates {[self.rate(rd, cp) for rd in closed]}")
         for r in sent(u.w, "m11", "kind='resolved'")[resolved_before:]:
             if r["ikey"] == "revert-rate" and REORG_TEXT not in r["text"]:
-                # positive proof: a closed round after the last one with a revert in which the updater sent a
-                # transaction and none reverted (a round with nothing sent proves nothing)
-                bad = max((i for i, rd in enumerate(closed) if self.reverted(rd)), default=-1)
-                assert any(not self.reverted(rd) and any(t["ok"] and t["sender"] == t["updater"] for t in rd["txs"])
-                           for rd in closed[bad + 1:]), self.trace("revert-rate resolved without a clean round")
+                # positive proof: a later clean round, or the round's own later updates (every transaction counted)
+                assert not expected, self.trace("revert-rate resolved while a round is over 10 % without a later "
+                                                "clean round")
             if r["ikey"] == "state-mismatch" and REORG_TEXT not in r["text"]:
                 # positive proof: the API answered every reported cluster at this step and it matches the chain
                 assert self.reported and not down and all(c not in removed and u.api.leaves.get(c) == self.eb
@@ -541,8 +555,10 @@ class UpdaterSweep:
     def act(self):
         u, rng = self.u, self.rng
         kind = rng.choice(["ours", "ours", "zero", "other", "revert", "rotate_same_block", "mismatch", "fix",
-                           "stall", "reorg", "deep_reorg", "downtime", "outage"])
+                           "stall", "reorg", "deep_reorg", "downtime", "outage", "late_revert", "late_ours"])
         self.log.append(("act", kind))
+        if kind in ("late_revert", "late_ours"):  # QA4-F1: a transaction of an earlier round's blockNum, now
+            return self.late(kind == "late_ours")
         if kind == "reorg":
             return self.reorg()
         if kind == "deep_reorg":
@@ -602,6 +618,27 @@ class UpdaterSweep:
             rnd["rotated"] = True
         u.set_eb(self.eb, leaves={self.bad: 99} if self.bad else None)
 
+    def late(self, ok: bool):
+        """An updater transaction of the latest round (successful: a cluster not updated for that root yet) or a
+        revert of the latest or an earlier round's blockNum, at whatever time it is now (often after the window)."""
+        u, rng = self.u, self.rng
+        if not self.rounds:
+            return
+        if ok:
+            rnd = self.rounds[-1]
+            todo = [i for i in (1, 2, 3) if u.ssv.clusters[bytes.fromhex(u.cids[i][2:])]["root"] < rnd["ref"]]
+            if not todo or u.ssv.latest_root != rnd["ref"]:
+                return
+            u.update(rng.choice(todo), eb=32 + 1 + rnd["ref"] % 7, sender=self.updater)
+        else:
+            rnd = rng.choice(self.rounds[-3:])
+            u.fail("MustUseLatestRoot", rnd["ref"], i=rng.choice([1, 2, 3]), sender=self.updater)
+            rnd["reverts"] += 1
+        rnd["txs"].append({"block": u.c.sealed, "sender": self.updater, "updater": self.updater, "ok": ok})
+        self.log.append(("late", rnd["ref"], ok, u.c.sealed))
+        if rng.random() < 0.5:
+            self.step(rng.choice([1, 100]))
+
     def deep_reorg(self):
         """QA2-F3 class: a reorg (beyond any confirmation window) that removes the last round(s) with their updates
         and the evaluations they aged; the model is rewound with the chain (the rounds left the canonical chain)."""
@@ -614,6 +651,8 @@ class UpdaterSweep:
         self.chain_rewritten = True
         u.c.reorg(fork)
         del self.rounds[-n:]
+        for r in self.rounds:  # late transactions of the earlier rounds above the fork left the chain too
+            r["txs"] = [t for t in r["txs"] if t["block"] < fork]
         u.oc.stub()
         u.ssv.latest_root = self.rounds[-1]["ref"]
         for st in u.ssv.clusters.values():
@@ -663,8 +702,10 @@ class UpdaterSweep:
                 assert str(r["ref"]) in text, self.trace(f"zero round {r['ref']} never sent")
 
 
-# seeds 0-59, plus the seeds of a 1200-seed exploration (repair 3) that found a defect or a model gap, and the
-# seeds that keep the repair-2 falsifier SWEEP2-m11-definite red (109, 152, 319)
-@pytest.mark.parametrize("seed", [*range(60), 106, 109, 146, 152, 153, 249, 281, 285, 287, 319, 684])
+# seeds 0-59, plus the seeds of a 1200-seed exploration (repair 3) that found a defect or a model gap, the seeds
+# that keep the repair-2 falsifier SWEEP2-m11-definite red (109, 152, 319), and the seeds of the repair-4 exploration
+# that found R4-G1 (a reorg removing the clean round of a resolved revert-rate older than history_rounds)
+@pytest.mark.parametrize("seed", [*range(60), 92, 106, 109, 146, 152, 153, 249, 281, 285, 287, 319, 332, 456, 569,
+                                  684])
 def test_sweep_m11(tmp_path, seed):
     UpdaterSweep(tmp_path, seed).run(16)

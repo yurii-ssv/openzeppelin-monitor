@@ -777,11 +777,23 @@ def test_reorg_orphaning_the_updates_that_resolved_a_zero_round_reopens_it(tmp_p
     assert [r["kind"] for r in sent(u.w, "m11") if r["kind"] == "open"] == ["open", "open"]
 
 
-def test_a_revert_after_the_window_does_not_count(tmp_path):
+def test_a_revert_after_the_window_counts_in_its_round(tmp_path):
+    """Repair 4 (QA4-F1): the spec's revert-rate line has no window (the 60 min belong to the liveness line). Until
+    repair 3 this test pinned the opposite (a revert 61 min after the commit counted nowhere)."""
     u = world(tmp_path)
     ref = u.round(updates=(0,))
     u.c.elapse(305)
-    u.fail("MustUseLatestRoot", ref, i=1)  # 61 min after the commit
+    u.fail("MustUseLatestRoot", ref, i=1)  # 61 min after the commit, before the next root
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"} and "1 of 2" in incidents(u.w, "m11")[0]["body"]
+
+
+def test_benign_late_revert_of_the_round_at_10_percent_is_silent(tmp_path):
+    """Benign twin: nine successful updates of the round, one revert of it 61 min after the commit: 1 of 10 = 10 %."""
+    u = world(tmp_path, n=10)
+    ref = u.round(updates=tuple(range(9)))
+    u.c.elapse(305)
+    u.fail("MustUseLatestRoot", ref, i=9)
     u.close()
     assert pw(u.w) == []
 
@@ -1457,3 +1469,491 @@ def test_r3_reorg_orphaning_the_reverts_of_an_open_revert_rate_resolves_with_the
     tick(u.w, u.oc, 3)
     res = [r["text"] for r in sent(u.w, "m11", "kind='resolved'") if r["ikey"] == "revert-rate"]
     assert open_keys(u.w, "m11") == {} and len(res) == 1 and REORG_TEXT in res[0], (res, _kinds(u.w))
+
+
+# ---------------------------------------------------------------- repair 4 (QA attempt 4)
+
+
+def test_qa4_f1_reverts_of_the_rounds_own_blocknum_after_60_min_count_in_the_round(tmp_path):
+    """QA4-F1 reproducer, scenario A (missed warn; classes 9, 4): two successful updates right after the commit, then
+    three updates for the same root revert 61-62 min after the commit, before the next root: 3 of 5 = 60 % -> warn."""
+    u = world(tmp_path)
+    ref = u.round(updates=(0, 1))
+    u.c.elapse(305)
+    for i in range(3):
+        u.fail("IncorrectClusterState", ref, i=i)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}, _kinds(u.w)
+    assert "3 of 5" in incidents(u.w, "m11")[0]["body"] and f"round of blockNum {ref}" in incidents(u.w, "m11")[0]["body"]
+
+
+def test_qa4_f1_late_successful_updates_count_in_the_denominator(tmp_path):
+    """QA4-F1 reproducer, scenario B (false warn): one success and one revert in the first hour, nine more successful
+    updates of the same root after 61 min (a slow updater, still the same round): 1 of 11 = 9.1 % -> silent."""
+    u = world(tmp_path, n=11)
+    ref = u.round(updates=(0,))
+    u.fail("IncorrectClusterState", ref, i=10)
+    u.c.elapse(305)
+    for i in range(1, 10):
+        u.update(i, eb=33)
+    u.close()
+    assert "revert-rate" not in open_keys(u.w, "m11") and not [p for p in pw(u.w) if p[0] == "revert-rate"], \
+        _kinds(u.w)
+
+
+def test_qa4_f1_round_with_only_reverted_updates_warns_liveness_and_revert_rate_control(tmp_path):
+    """QA4 control: every updater transaction of the round reverts: 0 successful updates within 60 min (liveness) and
+    a 100 % revert rate."""
+    u = world(tmp_path)
+    ref = u.round(updates=())
+    u.fail("IncorrectClusterState", ref, i=0)
+    u.fail("IncorrectClusterState", ref, i=1)
+    u.close()
+    keys = open_keys(u.w, "m11")
+    assert keys.get("liveness") in ("warn", "page") and keys.get("revert-rate") == "warn", (keys, _kinds(u.w))
+
+
+def test_qa4_f1_a_run_inside_a_slow_round_warns_then_resolves_on_the_full_count(tmp_path):
+    """Scenario B with the worker running in between (every 5 min): at the window's close the round's updates so far
+    are 1 of 2 reverted (warn, what was true then); the late successful updates of the same round bring it to 1 of
+    11: resolved once, with that count (positive proof, never "no longer observed"); nothing more afterwards."""
+    u = world(tmp_path, n=11)
+    ref = u.round(updates=(0,))
+    u.fail("IncorrectClusterState", ref, i=10)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"} and "1 of 2" in incidents(u.w, "m11")[0]["body"]
+    for i in range(1, 10):
+        u.update(i, eb=33)
+    tick(u.w, u.oc, 5, seconds=300)  # the next interval run
+    res = [r["text"] for r in sent(u.w, "m11", "kind='resolved'")]
+    assert open_keys(u.w, "m11") == {} and len(res) == 1 and "is now 1 of 11" in res[0], _kinds(u.w)
+    n = len(sent(u.w, "m11"))
+    tick(u.w, u.oc, 30, seconds=600)
+    w = u.restart()
+    tick(w, u.oc, 2)
+    assert len(sent(w, "m11")) == n
+
+
+def test_qa4_f1_late_reverts_after_the_window_reopen_a_round_resolved_by_its_own_updates(tmp_path):
+    """The rate keeps following the round: after the late successes resolved it, three more reverts of the same root
+    (1+3 of 14 = 29 %) open it again (a new message; the round's evidence grew)."""
+    u = world(tmp_path, n=14)
+    ref = u.round(updates=(0,))
+    u.fail("IncorrectClusterState", ref, i=13)
+    u.close()
+    for i in range(1, 10):
+        u.update(i, eb=33)
+    tick(u.w, u.oc, 5, seconds=300)  # the next interval run
+    assert open_keys(u.w, "m11") == {}
+    for i in (10, 11, 12):
+        u.fail("MustUseLatestRoot", ref, i=i)
+    tick(u.w, u.oc, 5)
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    assert [k for i, _, k in _kinds(u.w) if i == "revert-rate"] == ["open", "resolved", "open"], _kinds(u.w)
+
+
+def test_qa4_f1_a_late_revert_for_the_older_root_after_the_next_commit_counts_in_the_older_round(tmp_path):
+    """A revert of round A's blockNum lands after round B committed and after A's window closed: it counts in A (its
+    round, at any time), not in B, and not nowhere."""
+    u = world(tmp_path)
+    a = u.round(updates=(0,))
+    u.close()
+    b = u.round(updates=(0, 1))
+    u.fail("MustUseLatestRoot", a, i=2)
+    u.close()
+    titles = [r["text"].splitlines()[0] for r in sent(u.w, "m11") if r["ikey"] == "revert-rate"]
+    assert titles and all(f"blockNum {a}" in t for t in titles) and not any(f"blockNum {b}" in t for t in titles), \
+        _kinds(u.w)
+
+
+def test_qa4_f1_a_revert_for_a_round_older_than_the_evaluated_rounds_is_not_lost(tmp_path):
+    """(class 5, no event lost) A revert of round A's blockNum lands after A slid out of the last history_rounds
+    evaluated rounds: A is brought back into the evaluation (1 of 2 reverted, healed by the later clean rounds): it is
+    reported once (open + resolution) and never again."""
+    u = world(tmp_path)
+    a = u.round(updates=(0,))
+    u.close()
+    for _ in range(7):
+        u.round(updates=(0, 1))
+        u.close()
+    assert pw(u.w) == []
+    u.fail("MustUseLatestRoot", a, i=1)
+    tick(u.w, u.oc, 5)
+    kinds = [(i, k) for i, _, k in _kinds(u.w)]
+    assert kinds == [("revert-rate", "open"), ("revert-rate", "resolved")], _kinds(u.w)
+    assert f"blockNum {a}" in sent(u.w, "m11")[0]["text"]
+    tick(u.w, u.oc, 30, seconds=600)
+    u.round(updates=(0,))
+    u.close()
+    assert len(sent(u.w, "m11")) == 2
+
+
+def _fail_undecodable(u, sender=SLOTS[4]):
+    """An updateClusterBalance revert whose calldata does not decode (selector + 4 bytes)."""
+    from fixtures_oracle import ERR, PROXY, inbox_line
+
+    from checks.m9_oracle_common import UPDATE_CLUSTER_BALANCE_SELECTOR
+
+    data = UPDATE_CLUSTER_BALANCE_SELECTOR + "deadbeef"
+    u.c.stub_call(PROXY, data, revert=ERR["MustUseLatestRoot"])
+    u.c.mine()
+    tx = u.c.add_tx(sender, PROXY, data)
+    u.c.mine()
+    with open(u.inbox, "a") as fh:
+        fh.write(inbox_line(u.c, tx, sender, UPDATE_CLUSTER_BALANCE_SELECTOR,
+                            "updateClusterBalance(uint64,address,uint64[],(uint32,uint64,uint64,bool,uint256),uint32,"
+                            "bytes32[])"))
+    return tx
+
+
+def test_qa4_f1_an_undecodable_revert_after_the_window_counts_in_the_round_whose_commit_precedes_it(tmp_path):
+    """Fallback [commit, next commit): an updater revert whose input does not decode, 61 min after A's commit and
+    before the next root, counts in A (1 of 2 -> warn); one after B's commit counts in B."""
+    u = world(tmp_path)
+    a = u.round(updates=(0,))
+    u.c.elapse(305)
+    _fail_undecodable(u)
+    u.close()
+    titles = [r["text"].splitlines()[0] for r in sent(u.w, "m11") if r["ikey"] == "revert-rate"]
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"} and f"blockNum {a}" in titles[0], _kinds(u.w)
+    b = u.round(updates=(0, 1))
+    _fail_undecodable(u)
+    u.close()
+    titles = [r["text"].splitlines()[0] for r in sent(u.w, "m11") if r["ikey"] == "revert-rate"]
+    assert any(f"blockNum {b}" in t for t in titles) and open_keys(u.w, "m11") == {"revert-rate": "warn"}, _kinds(u.w)
+
+
+def _zero_round_page(tmp_path, **kw):
+    u = world(tmp_path, confirmations=2, **kw)
+    u.round(updates=(0,))
+    u.close()
+    u.round(updates=())
+    u.set_eb(32, leaves={u.cids[1]: 40})  # the zero round's leaves: cluster 1 differs from the chain
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "page"}, _kinds(u.w)
+    return u
+
+
+def _sev(w, key="liveness"):
+    return [tuple(r) for r in w.db.conn.execute(
+        "SELECT severity, state FROM incidents WHERE check_id='m11' AND key=?", (key,)).fetchall()]
+
+
+def test_qa4_f2_reorg_run_with_proof_api_down_keeps_the_zero_round_page(tmp_path):
+    """QA4-F2 reproducer (classes 2, 1; README 6.2 rule 4): a zero round paged on a leaf mismatch; a reorg beyond the
+    confirmation depth replaces only empty blocks after the evaluation while the proof API is down. The reorg run
+    cannot evaluate the discarded proof again: it raises (rolled back, marker kept, retried), so the page stays a
+    page and nothing is sent; when the API is back the retry re-evaluates on the new chain: no second page."""
+    u = _zero_round_page(tmp_path)
+    n = len(sent(u.w, "m11"))
+    u.api.down = True
+    u.oc.reorg(u.c.number - 5, latest=u.oc.latest)
+    u.c.mine(8)
+    tick(u.w)
+    assert _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == []
+    assert u.w.db.meta("reorg:m11") is not None and "cannot be evaluated again" in u.w.db.meta("run:m11")["last_error"]
+    tick(u.w, u.oc, 3, seconds=300)  # retried every step while the API is down
+    assert _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == [] and u.w.db.meta("reorg:m11") is not None
+    u.api.down = False
+    tick(u.w, u.oc, 3)
+    tick(u.w, u.oc, 3, seconds=300)
+    assert u.w.db.meta("reorg:m11") is None and _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == []
+
+
+def test_qa4_f2_non_reorg_run_with_proof_api_down_keeps_the_zero_round_page_control(tmp_path):
+    """QA4 control: the same API outage without a reorg keeps the page (the persisted proof is used) and sends
+    nothing."""
+    u = _zero_round_page(tmp_path)
+    n = len(sent(u.w, "m11"))
+    u.api.down = True
+    tick(u.w, u.oc, 8)
+    u.api.down = False
+    tick(u.w, u.oc, 3)
+    assert _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == []
+
+
+def test_qa4_f2_reorg_run_with_a_partial_answer_omitting_the_mismatching_cluster_keeps_the_page(tmp_path):
+    """The partial variant named in QA4-F2 (class 1): in the reorg run the API answers every cluster but the one that
+    differed ("cluster not found"): no mismatch proven, one UNKNOWN; never a downgrade of what was proven: the run
+    raises and is retried; when the leaf is served again the page holds, nothing is sent."""
+    u = _zero_round_page(tmp_path)
+    n = len(sent(u.w, "m11"))
+    leaf = u.api.leaves.pop(u.cids[1])
+    u.oc.reorg(u.c.number - 5, latest=u.oc.latest)
+    u.c.mine(8)
+    tick(u.w)
+    tick(u.w, u.oc, 3, seconds=300)
+    assert _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == [] and u.w.db.meta("reorg:m11") is not None
+    u.api.leaves[u.cids[1]] = leaf
+    tick(u.w, u.oc, 3)
+    tick(u.w, u.oc, 3, seconds=300)
+    assert u.w.db.meta("reorg:m11") is None and _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == []
+
+
+def test_qa4_f2_restart_between_the_failed_reorg_run_and_its_retry(tmp_path):
+    """(d) restart between detection and handling: the worker restarts while the reorg run is still failing on the
+    proof API; the marker survives the restart and the page is kept; with the API back the retry sends nothing."""
+    u = _zero_round_page(tmp_path)
+    n = len(sent(u.w, "m11"))
+    u.api.down = True
+    u.oc.reorg(u.c.number - 5, latest=u.oc.latest)
+    u.c.mine(8)
+    tick(u.w)
+    w = u.restart()
+    u.w = w
+    tick(w, u.oc, 2, seconds=300)
+    assert w.db.meta("reorg:m11") is not None and _sev(w) == [("page", "open")] and sent(w, "m11")[n:] == []
+    u.api.down = False
+    tick(w, u.oc, 3)
+    tick(w, u.oc, 3, seconds=300)
+    assert w.db.meta("reorg:m11") is None and _sev(w) == [("page", "open")] and sent(w, "m11")[n:] == []
+
+
+def test_qa4_f2_reorg_run_with_the_api_up_re_evaluates_on_the_new_chain(tmp_path):
+    """Benign twin: the API answers in the reorg run: the proof is recomputed on the new chain (still mismatching):
+    the page is kept under its id, nothing is sent; the reorg run commits."""
+    u = _zero_round_page(tmp_path)
+    n = len(sent(u.w, "m11"))
+    calls = u.api.calls
+    u.oc.reorg(u.c.number - 5, latest=u.oc.latest)
+    u.c.mine(8)
+    tick(u.w)
+    tick(u.w, u.oc, 3, seconds=300)
+    assert u.api.calls > calls and u.w.db.meta("reorg:m11") is None
+    assert _sev(u.w) == [("page", "open")] and sent(u.w, "m11")[n:] == []
+
+
+def test_qa4_f2_reorg_run_with_the_api_down_keeps_a_zero_round_warn_unchanged(tmp_path):
+    """(b) error input for a warn-level zero round (every leaf matched): the reorg run that discarded its proof and
+    cannot redo it raises as well (any unevaluable input of a reorg run): the warn stays, nothing is sent, the marker
+    is kept until the API answers."""
+    u = world(tmp_path, confirmations=2)
+    u.round(updates=(0,))
+    u.close()
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+    n = len(sent(u.w, "m11"))
+    u.api.down = True
+    u.oc.reorg(u.c.number - 5, latest=u.oc.latest)
+    u.c.mine(8)
+    tick(u.w)
+    assert u.w.db.meta("reorg:m11") is not None and _sev(u.w) == [("warn", "open")] and sent(u.w, "m11")[n:] == []
+    u.api.down = False
+    tick(u.w, u.oc, 3, seconds=300)
+    assert u.w.db.meta("reorg:m11") is None and _sev(u.w) == [("warn", "open")] and sent(u.w, "m11")[n:] == []
+
+
+def test_r4_reorg_removing_the_late_successes_that_resolved_a_round_reopens_it(tmp_path):
+    """State table (c) for the within-round resolution: the late successful updates that brought the round under the
+    threshold leave the chain (depth beyond the confirmation window; the commit and the revert stay): the clearance
+    was orphaned, the round is again 1 of 2 reverted: the warn opens again; nothing is lost or duplicated after."""
+    u = world(tmp_path, n=11, confirmations=2)
+    ref = u.round(updates=(0,))
+    u.fail("IncorrectClusterState", ref, i=10)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    fork = u.c.number
+    saved = {cid: dict(st) for cid, st in u.ssv.clusters.items()}
+    for i in range(1, 10):
+        u.update(i, eb=33)
+    tick(u.w, u.oc, 5, seconds=300)
+    assert open_keys(u.w, "m11") == {}
+    u.c.reorg(fork)
+    for cid, st in saved.items():
+        u.ssv.clusters[cid].update(st)
+    u.oc.stub()
+    u.c.mine(6)
+    tick(u.w, u.oc, 3)
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}, _kinds(u.w)
+    assert [k for i, _, k in _kinds(u.w) if i == "revert-rate"] == ["open", "resolved", "open"], _kinds(u.w)
+    n = len(sent(u.w, "m11"))
+    tick(u.w, u.oc, 3, seconds=600)
+    assert len(sent(u.w, "m11")) == n
+
+
+def test_r4_reorg_orphaning_the_late_reverts_of_an_open_round_resolves_with_the_reorg_text(tmp_path):
+    """(c) for the late reverts: an open revert-rate established by reverts 61 min after the commit; a reorg beyond
+    the confirmation window orphans exactly those reverts (the commit and the successes stay): resolved with the
+    reorg text (its evidence left the chain), not "no longer observed", not kept."""
+    u = world(tmp_path, confirmations=2)
+    ref = u.round(updates=(0, 1))
+    u.c.elapse(305)
+    fork = u.c.number
+    for i in range(3):
+        u.fail("IncorrectClusterState", ref, i=i)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    u.c.reorg(fork)
+    u.oc.stub()
+    u.c.mine(6)
+    tick(u.w, u.oc, 3)
+    res = [r["text"] for r in sent(u.w, "m11", "kind='resolved'") if r["ikey"] == "revert-rate"]
+    assert open_keys(u.w, "m11") == {} and len(res) == 1 and REORG_TEXT in res[0], (res, _kinds(u.w))
+
+
+def test_r4_round_of_orders_an_undecodable_revert_by_block_and_transaction_index():
+    """(e) same-block ordering for the [commit, next commit) fallback: a revert in the block of the next commit
+    belongs to the earlier round when its transaction index is lower than the commit's, to the next round when it is
+    higher, and (index unknown) to the next round; before the first stored commit: no round. A decoded blockNum of a
+    stored commit wins over the position."""
+    from checks.m11_updater_liveness import M11UpdaterLiveness
+
+    commits = [SimpleNamespace(block=100, tx_index=5, ref_block=99), SimpleNamespace(block=200, tx_index=5,
+                                                                                     ref_block=199)]
+    by_ref = {99: 0, 199: 1}
+
+    def of(block, call):
+        return M11UpdaterLiveness.round_of({"block": block}, call, commits, by_ref)
+
+    assert of(200, {"index": 4}) == 0 and of(200, {"index": 6}) == 1 and of(200, {"index": None}) == 1
+    assert of(200, {}) == 1 and of(150, {}) == 0 and of(100, {"index": 4}) is None and of(99, {}) is None
+    assert of(250, {"ref": 99, "index": 1}) == 0 and of(150, {"ref": 199}) == 1 and of(250, {"ref": 7}) == 1
+
+
+def test_r4_state_mismatch_reorg_run_with_the_api_down_then_back_still_mismatching_is_silent(tmp_path):
+    """(b) + (c) for `state_evals` (the QA4-F2 class in the weekly rule): a reorg orphans the latest evaluation while
+    the API is down (the key is UNKNOWN: re-reported unchanged); when the API is back and the cluster still differs,
+    the warn holds under its id and nothing is sent (no "no longer observed", no second warn)."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    mismatch_older_than_one_round(u, cluster=1, leaf=64)
+    n = len(sent(u.w, "m11"))
+    u.c.reorg(u.c.number - 2)
+    u.api.down = True
+    u.c.mine(3)
+    tick(u.w)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    u.api.down = False
+    tick(u.w, u.oc, 1, seconds=300)
+    tick(u.w, u.oc, 1, seconds=300)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"} and _kinds(u.w)[n:] == [], _kinds(u.w)[n:]
+
+
+# ---------------------------------------------------------------- repair 4: owner D14 switches (checks.m11.*_enabled)
+
+
+def _health(w, part):
+    return [r[0] for r in w.db.conn.execute("SELECT text FROM outbox WHERE severity='health' AND text LIKE ?",
+                                            (f"%{part}%",))]
+
+
+def test_r4_revert_rate_enabled_default_on_is_unchanged(tmp_path):
+    u = world(tmp_path, checks={"revert_rate_enabled": True})
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"} and not _health(u.w, "revert_rate_enabled")
+
+
+def test_r4_revert_rate_disabled_is_silent_and_says_so(tmp_path):
+    u = world(tmp_path, checks={"revert_rate_enabled": False})
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.fail("MustUseLatestRoot", ref, i=2)
+    u.close()
+    assert open_keys(u.w, "m11") == {} and pw(u.w) == []
+    assert _health(u.w, "checks.m11.revert_rate_enabled false")
+
+
+def test_r4_revert_rate_disabled_needs_no_inbox(tmp_path):
+    from fixtures_oracle import VIEWS
+    from harness import make_worker
+
+    make_worker(tmp_path, only=["m11"], views=VIEWS, checks={"m11": {"revert_rate_enabled": False}})
+
+
+def test_r4_revert_rate_disabled_with_an_open_incident_resolves_it_once(tmp_path):
+    u = world(tmp_path)
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    n = len(sent(u.w, "m11"))
+    u.cfg["revert_rate_enabled"] = False
+    w = u.w = u.restart()
+    tick(w, u.oc, 2, seconds=300)
+    new = sent(w, "m11")[n:]
+    assert open_keys(w, "m11") == {} and [r["kind"] for r in new] == ["resolved"], new
+    assert "Rule disabled by config" in new[0]["text"]
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    w = u.w = u.restart()
+    tick(w, u.oc, 2, seconds=300)
+    assert len(sent(w, "m11")) == n + 1
+
+
+def test_r4_zero_round_proof_enabled_default_on_is_unchanged(tmp_path):
+    u = world(tmp_path, checks={"zero_round_proof_enabled": True})
+    u.round(updates=(0,))
+    u.close()
+    u.round(updates=())
+    u.set_eb(32, leaves={u.cids[1]: 40})
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "page"} and not _health(u.w, "zero_round_proof_enabled")
+
+
+def test_r4_zero_round_proof_disabled_asks_nothing_and_stays_warn(tmp_path):
+    """Off: a single zero round with a mismatching leaf stays warn (no proof API request for it, the text says the
+    comparison is disabled); two consecutive zero rounds still page (that rule is not switched)."""
+    u = world(tmp_path, checks={"zero_round_proof_enabled": False, "full_state_interval_s": 10**9})
+    u.round(updates=(0,))
+    u.close()  # the first weekly comparison (shared API) runs here
+    calls = u.api.calls
+    u.round(updates=())
+    u.set_eb(32, leaves={u.cids[1]: 40})
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"} and u.api.calls == calls
+    assert "Proof API comparison disabled by config" in incidents(u.w, "m11")[-1]["body"]
+    assert _health(u.w, "checks.m11.zero_round_proof_enabled false")
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "page"}
+
+
+def test_r4_zero_round_proof_disabled_with_an_open_proof_page_sends_nothing(tmp_path):
+    """Off while a zero round is open at page because of the proof: the liveness condition still holds (the incident
+    is the liveness rule's, not the switched comparison's), so it is not resolved; its severity is recorded at warn
+    silently (no message, the framework's rule for a lower severity)."""
+    u = _zero_round_page(tmp_path)
+    n = len(sent(u.w, "m11"))
+    u.cfg["zero_round_proof_enabled"] = False
+    w = u.w = u.restart()
+    tick(w, u.oc, 2, seconds=300)
+    assert "liveness" in open_keys(w, "m11") and sent(w, "m11")[n:] == []
+
+
+def test_r4_reorg_removing_the_clean_round_of_a_resolved_revert_rate_older_than_history_reopens_it(tmp_path):
+    """Found by the repair-4 sweep exploration (seeds 92, 332, 456, 569; class 2, a reorg removing the clearance of
+    an ALREADY RESOLVED key): a revert-rate round, then 7 rounds without updater transactions (it slides out of
+    history_rounds, kept open), then the clean round that resolves it; a reorg beyond the confirmation window removes
+    that clean round. The resolved round is older than the evaluated rounds, yet the reorg run derives it again on
+    the new chain: no positive proof is left, the warn opens again (once); a later clean round resolves it once."""
+    u = UpdaterWorld(tmp_path, confirmations=2)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    for _ in range(7):
+        u.round(updates=())
+        u.close()
+    fork = u.c.number
+    latest = u.ssv.latest_root
+    u.round(updates=(0,))
+    u.close()
+    assert "revert-rate" not in open_keys(u.w, "m11"), _kinds(u.w)
+    u.c.reorg(fork)
+    u.ssv.latest_root = latest
+    for st in u.ssv.clusters.values():
+        st["root"] = min(st["root"], latest)
+    u.oc.stub()
+    u.c.mine(4)
+    tick(u.w, u.oc, 1)
+    assert open_keys(u.w, "m11").get("revert-rate") == "warn", _kinds(u.w)
+    assert [k for i, _, k in _kinds(u.w) if i == "revert-rate"] == ["open", "resolved", "open"], _kinds(u.w)
+    u.round(updates=(0,))
+    u.close()
+    tick(u.w, u.oc, 2, seconds=600)
+    assert "revert-rate" not in open_keys(u.w, "m11")
+    assert [k for i, _, k in _kinds(u.w) if i == "revert-rate"] == ["open", "resolved", "open", "resolved"]

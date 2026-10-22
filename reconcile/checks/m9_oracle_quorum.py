@@ -59,6 +59,7 @@ class M9OracleQuorum(Check):
         "round_timeout_s": 1800,  # proposed, not committed within -> failed round
         "max_commit_gap_s": 32_400,  # 9 h (cadence 8 h + margin); 25 h if the cadence moves to daily
         "dissent_streak": 3,
+        "dissent_enabled": True,  # owner D14: false = the dissent:<slot> rule is not evaluated (open ones resolved once)
         "min_committing_slots": 3,
         "absent_rounds": 6,
         "seconds_per_block": 12,
@@ -105,7 +106,9 @@ class M9OracleQuorum(Check):
         every = [self.round_state(hist, r) for r in rounds]
         states = [st for st in every if st.ref >= self.complete_from]
         episodes = (self.failed_rounds(every) + self.cadence(ctx, hist, block) + self.splits(hist, states)
-                    + self.dissent(states) + self.weak_commits(hist) + self.absent(hist))
+                    + (self.dissent(states) if self.config["dissent_enabled"]
+                       else self.book.disabled(ctx, "dissent:", "dissent_enabled", "dissent"))
+                    + self.weak_commits(hist) + self.absent(hist))
         unknown: set[str] = set()
         if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
             ctx.health("m9-inbox", "M9 commitRoot-revert rule not evaluated: the failed-transaction inbox is not "

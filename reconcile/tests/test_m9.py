@@ -1518,3 +1518,49 @@ def test_r3_qa3_control_cadence_page_resolved_by_a_reorg_that_adds_the_commit_is
     w = restart(tmp_path, w, oc)
     tick(w, oc, 5, seconds=60)
     assert len(sent(w, "m9")) == n and open_keys(w, "m9") == {}
+
+
+# ---------------------------------------------------------------- repair 4: owner D14 switch checks.m9.dissent_enabled
+
+
+def _health(w, part):
+    return [r[0] for r in w.db.conn.execute("SELECT text FROM outbox WHERE severity='health' AND text LIKE ?",
+                                            (f"%{part}%",))]
+
+
+def test_r4_dissent_enabled_default_on_is_unchanged(tmp_path):
+    oc, w = oracle_worker(tmp_path, checks={"m9": {"dissent_enabled": True}})
+    tick(w)
+    oc.round(variants={3: 1})
+    tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"} and not _health(w, "dissent_enabled")
+
+
+def test_r4_dissent_disabled_is_silent_and_says_so(tmp_path):
+    oc, w = oracle_worker(tmp_path, checks={"m9": {"dissent_enabled": False}})
+    tick(w)
+    for _ in range(3):
+        oc.round(variants={3: 1})
+        tick(w, oc, 1)
+    assert open_keys(w, "m9") == {} and pages_warns(w) == []
+    assert _health(w, "checks.m9.dissent_enabled false")
+
+
+def test_r4_dissent_disabled_with_an_open_incident_resolves_it_once(tmp_path):
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    for _ in range(3):
+        oc.round(variants={3: 1})
+        tick(w, oc, 1)
+    assert open_keys(w, "m9") == {"dissent:3": "page"}
+    n = len(sent(w, "m9"))
+    w = restart(tmp_path, w, oc, checks={"m9": {"dissent_enabled": False}})
+    tick(w, oc, 2, seconds=60)
+    new = sent(w, "m9")[n:]
+    assert open_keys(w, "m9") == {} and [r["kind"] for r in new] == ["resolved"], new
+    assert "Rule disabled by config" in new[0]["text"]
+    oc.round(variants={3: 1})
+    tick(w, oc, 2, seconds=60)
+    w = restart(tmp_path, w, oc, checks={"m9": {"dissent_enabled": False}})
+    tick(w, oc, 2, seconds=60)
+    assert len(sent(w, "m9")) == n + 1
