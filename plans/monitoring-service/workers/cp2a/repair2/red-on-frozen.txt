@@ -1,4 +1,4 @@
-# Repair 2 (QA cp2a-2): new test cases run against the frozen head 92d8ff9 (= 1154333 code) check modules, with the HEAD tests, fixtures_liquidation.py and sweep overlaid in scratch (git archive 92d8ff9 reconcile). FAILED = red on the frozen head. The two PASSED rows are controls (shorter chain with a replaced block: resolve at once, as before).
+# Repair 2 (QA cp2a-2): new test cases run against the frozen head 92d8ff9 (= 1154333 code) check modules, with the HEAD tests, fixtures_liquidation.py and sweep overlaid in scratch (git archive 92d8ff9 reconcile). FAILED = red on the frozen head. Controls: the two test_qa2_class2_shorter_chain_with_a_replaced_block_* cases guard the proof path (resolve at once, as before): M4's passes on the frozen head; M3's fails there only on its last line, which reads the new m3_zone.hold_block column.
 # new cases: 25 failed / 1 passed; sweep: M3 20/60 failed, M14 41/90 failed
 PASSED test_m4.py::test_qa2_class2_shorter_chain_with_a_replaced_block_resolves_in_the_reorg_run
 FAILED test_m3.py::test_qa2_class2_lowered_checkpoint_keeps_the_page_and_never_re_escalates[False-False]
