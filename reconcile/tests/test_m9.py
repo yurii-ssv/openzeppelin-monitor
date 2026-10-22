@@ -1358,3 +1358,18 @@ def test_r3_lone_voter_round_settled_by_the_clock_does_not_heal(tmp_path):
     w = restart(tmp_path, w, oc)
     tick(w, seconds=120)
     assert open_keys(w, "m9").get("dissent:3") == "page" and not _dissent_resolutions(w)
+
+
+def test_r3_one_slot_voting_twice_does_not_make_another_slot_a_dissenter(tmp_path):
+    """Distinct slots decide the reference (generalisation of QA3-F2): slot 3 votes root X from its old and its new
+    address, slot 1 votes Y, the round times out. One slot each: tied, no reference: unattributed split, and slot 1
+    is not made a dissenter by slot 3's double vote."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    x = oc.c.number - 1
+    oc.vote(x, 3, variant=1)
+    oc.voted.discard((x, oc.root(x, 1), 3))
+    oc.vote(x, 3, variant=1, oracle="0x" + "33" * 20)
+    oc.vote(x, 1)
+    tick(w, oc, 200)
+    assert open_keys(w, "m9") == {"failed-round": "page", "split": "warn"}, open_keys(w, "m9")
