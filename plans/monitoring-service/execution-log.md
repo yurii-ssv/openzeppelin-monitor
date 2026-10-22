@@ -872,3 +872,5 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - Marco: RPC D16 (Tenderly primary, Tenderly public and MEV Blocker fallbacks, 5000-block getLogs), D17 silent backfill, D18 named volumes locally and a Kubernetes PVC in production (DevOps), D19 CP3 approved, continue to the end. Recorded in plan §2. CP3 dispatch follows.
 - CP3 dispatched: task `task_e6121a51fcdb`/`ctx_ad9a6e4a6775`, worktree `ms-cp3` (fresh child of `plan/monitoring-service` @ `0c388ec`), claude/opus/high requested = effective. Packet: compose with named volumes, D16 RPC failover + 5000-block chunking in shared rpc.py, promotion of lane-local RPC helpers, removal of the frozen-test patch, D17 silent backfill, fork e2e m5/m3/m9/m12 at a recent fork block, local run in record mode, runbook with a Kubernetes section (D18), carried small items; F6 stays deferred.
+
+- CP3 question (M11 weekly comparison re-asks 419 clusters every 300 s while the proof API lags a root): ruling A + probe-first short-circuit (retry at most every 1800 s, one probe cluster first). CP3 change to a CP2b check; QA to re-check M11.
