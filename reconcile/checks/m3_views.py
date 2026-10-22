@@ -194,8 +194,7 @@ def block_times(rpc, blocks, hashes: dict | None = None) -> dict[int, int]:
     blocks = sorted(set(blocks))
     if not blocks:
         return {}
-    rpc.counts["eth_getBlockByNumber"] += len(blocks)
-    out = rpc.rpc.batch([("eth_getBlockByNumber", [hex(b), False]) for b in blocks])
+    out = rpc.batch("eth_getBlockByNumber", [[hex(b), False] for b in blocks])
     times = {}
     for b, blk in zip(blocks, out):
         want = (hashes or {}).get(b)
@@ -241,8 +240,7 @@ def first_replaced(ctx, ancestor: int, upto: int, probe: int = 8) -> int | None:
                                "ORDER BY block LIMIT ?", (ctx.check_id, ancestor, upto, probe)).fetchall()
     if not rows:
         return None
-    ctx.rpc.counts["eth_getBlockByNumber"] += len(rows)
-    out = ctx.rpc.rpc.batch([("eth_getBlockByNumber", [hex(r[0]), False]) for r in rows])
+    out = ctx.rpc.batch("eth_getBlockByNumber", [[hex(r[0]), False] for r in rows])
     return next((r[0] for r, blk in zip(rows, out) if blk and blk["hash"].lower() != r[1].lower()), None)
 
 

@@ -49,16 +49,15 @@ def make(tmp_path, chain=None, notifier=None, **over):
         "chain_id": 1, "proxy": PROXY, "activation_block": chain.number, "start_block": chain.number,
         "rpc_url_env": "UNUSED", "confirmations": 0, "sweep_interval_s": 0, "full_sweep_interval_s": 0,
         "max_log_range": 10_000, "db_path": str(tmp_path / "eb.sqlite"), "layout": {},
-        "alerts": {"mode": "record", "label": "test", "digest_interval_s": 0},
+        "alerts": {"mode": "record", "label": "test", "digest_interval_s": 0}, "backfill": {"enabled": False},
     }
-    from checks import registry as _registry
-
-    raw.setdefault("checks", {cid: {"enabled": False} for cid in _registry.REGISTRY if cid != "m5"})
     raw.update(over)
+    import checks as registry
     from eb_reconcile import DEFAULTS
 
     cfg = Config({**DEFAULTS, **raw})
-    w = Worker(cfg, FakeRpc(chain), DB(cfg.db_path), notifier or Capture())
+    built = registry.build(cfg.raw, only=["m5", *raw.get("checks", {})])  # M5 plus the checks a test names
+    w = Worker(cfg, FakeRpc(chain), DB(cfg.db_path), notifier or Capture(), checks=built)
     w.bootstrap()
     return chain, w
 

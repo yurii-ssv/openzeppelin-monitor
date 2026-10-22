@@ -60,7 +60,7 @@ import json
 import re
 
 from checks.base import Check, Ctx, Every, Finding, NearSetEveryBlock
-from checks.m12_wallet_burn import balances_at, headers, raw_batch
+from checks.m12_wallet_burn import balances_at, headers
 from checks.registry import register
 from rpc import RpcError
 
@@ -349,7 +349,7 @@ class M13RetiredKeys(Check):
                     elif str(tx.get("from") or "").lower() == addr:
                         found.setdefault(tx["hash"], "sent by the address")
             if self.config["receipt_logs"]:
-                for n, rcs in zip(blocks, raw_batch(ctx, "eth_getBlockReceipts", [[hex(n)] for n in blocks], blocks)):
+                for n, rcs in zip(blocks, ctx.rpc.batch("eth_getBlockReceipts", [[hex(n)] for n in blocks], blocks)):
                     if not isinstance(rcs, list):
                         raise RpcError(f"eth_getBlockReceipts({n}): no result")
                     for rc in rcs:

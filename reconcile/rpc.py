@@ -6,10 +6,13 @@ that signs or sends a transaction exists here.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
+import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 
@@ -38,41 +41,153 @@ def _revert_data(err) -> str | None:
     return None
 
 
+DEFAULT_RPC_URLS = (
+    # D16 (2026-10-22): public endpoints, in failover order. None is archive-guaranteed and all cap
+    # eth_getLogs at 5000 blocks (`max_log_range`). `rpc_url_env` (MAINNET_RPC_URL), when set, replaces the first.
+    "https://mainnet.gateway.tenderly.co",
+    "https://gateway.tenderly.co/public/mainnet",
+    "https://rpc.mevblocker.io",
+)
+
+
+def endpoint_label(url: str) -> str:
+    """A label for logs and health messages: the host only (a path or user part may carry an API key)."""
+    host = urllib.parse.urlsplit(url).hostname
+    return host or "rpc"
+
+
+def resolve_endpoints(entries, primary_env: str | None = None, environ=None) -> list[tuple[str, str]]:
+    """[(label, url)] in failover order. An entry is a URL or the name of an environment variable holding one
+    (an unset or empty variable is skipped). `primary_env`, when set and non-empty, replaces the first entry.
+    Environment-sourced URLs are labelled by the variable name, never by their value."""
+    environ = os.environ if environ is None else environ
+
+    def env(name):
+        return (environ.get(name) or "").strip().strip("\"'") if name else ""
+
+    out: list[tuple[str, str]] = []
+    for e in entries:
+        if e.startswith(("http://", "https://")):
+            out.append((endpoint_label(e), e))
+        elif env(e):
+            out.append((e, env(e)))
+    if env(primary_env):
+        url = env(primary_env)
+        out = [(primary_env, url)] + [x for x in out[1:] if x[1] != url]
+    seen: set[str] = set()
+    return [x for x in out if not (x[1] in seen or seen.add(x[1]))]
+
+
+def _deterministic(err) -> bool:
+    """A JSON-RPC error every healthy endpoint gives alike: a revert (with or without revert data)."""
+    if not isinstance(err, dict):
+        return False
+    return _revert_data(err) is not None or "revert" in str(err.get("message", "")).lower()
+
+
 class Rpc:
-    def __init__(self, url: str, timeout: float = 30, retries: int = 4, batch_size: int = 50):
-        self.url, self.timeout, self.retries, self.batch_size = url, timeout, retries, batch_size
+    """JSON-RPC over HTTP with ordered failover across endpoints (D16).
+
+    Each request goes to the active endpoint first, then to the others in configured order. A transport
+    failure (unreachable, timeout, HTTP 5xx/429, a body that is not JSON) moves to the next endpoint; so does a
+    JSON-RPC error that is not a revert (rate limit, unknown block, range or capacity errors), because another
+    endpoint may answer it. A revert is an answer and is never retried elsewhere. Failover never invents a
+    result: an endpoint answering `[]` or `null` is a result; when every endpoint fails the request raises
+    (`RpcError(transport=True)`), and when every endpoint that answered gave a JSON-RPC error, the answer of the
+    highest-priority one is returned (`call` raises it as before). `retries` rounds over all endpoints, with
+    backoff between rounds. After a failover the worker returns to the first endpoint after `primary_retry_s`.
+    `switches` counts changes of the serving endpoint (the scan re-reads a window whose reads straddled one).
+    """
+
+    def __init__(self, urls, timeout: float = 30, retries: int = 4, batch_size: int = 50,
+                 primary_retry_s: float = 300):
+        if isinstance(urls, str):
+            urls = [urls]
+        self.endpoints = [u if isinstance(u, tuple) else (endpoint_label(u), u) for u in urls]
+        if not self.endpoints:
+            raise ValueError("no RPC endpoint configured")
+        self.url = self.endpoints[0][1]
+        self.timeout, self.retries, self.batch_size = timeout, retries, batch_size
+        self.primary_retry_s = primary_retry_s
         self._id = 0
         self.batch_ok = True
+        self.active = 0  # index of the endpoint that answered last
+        self.switched_at = 0.0
+        self.switches = 0
 
-    def _post(self, payload):
+    def _post_one(self, url: str, payload):
+        """One HTTP attempt: the decoded JSON body, or RpcError(transport=True) (`.retry` False: do not retry)."""
         req = urllib.request.Request(
-            self.url,
+            url,
             json.dumps(payload).encode(),
             {"content-type": "application/json", "user-agent": "ssv-eb-reconcile/1.0"},
         )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            # Several providers answer JSON-RPC errors (range too large, rate limits) with HTTP 4xx.
+            try:
+                body = json.loads(exc.read())
+            except (ValueError, OSError):
+                body = None
+            if isinstance(body, (dict, list)) and exc.code != 429:
+                return body
+            err = RpcError(f"transport error: HTTP {exc.code}", transport=True)
+            err.retry = exc.code not in (401, 403, 404)
+            raise err from None
+        except (OSError, ValueError, http.client.HTTPException) as exc:  # URLError, timeouts, resets, bad JSON
+            raise RpcError(f"transport error: {type(exc).__name__}", transport=True) from None
+
+    def _select(self, i: int) -> None:
+        if i != self.active:
+            log.warning("RPC endpoint %s now serves requests (was %s)", self.endpoints[i][0],
+                        self.endpoints[self.active][0])
+            self.active, self.switched_at = i, time.monotonic()
+            self.switches += 1
+
+    def _post(self, payload):
+        n = len(self.endpoints)
+        first = self.active
+        if first and time.monotonic() - self.switched_at >= self.primary_retry_s:
+            first = 0  # after a failover, give the primary another chance
+        order = [first] + [i for i in range(n) if i != first]
+        errors: dict[int, str] = {}
+        dead: set[int] = set()
+        answer = None  # (index, body) of the first JSON-RPC error answer, in priority order
         delay = 1.0
         for attempt in range(self.retries + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    return json.load(resp)
-            except urllib.error.HTTPError as exc:
-                # Several providers answer JSON-RPC errors (range too large, rate limits) with HTTP 4xx.
+            for i in order:
+                if i in dead:
+                    continue
                 try:
-                    body = json.loads(exc.read())
-                except (ValueError, OSError):
-                    body = None
-                if isinstance(body, (dict, list)) and exc.code != 429:
-                    return body
-                if attempt == self.retries or exc.code in (401, 403, 404):
-                    raise RpcError(f"transport error: HTTP {exc.code}", transport=True) from None
+                    out = self._post_one(self.endpoints[i][1], payload)
+                except RpcError as exc:
+                    errors[i] = str(exc)
+                    if not getattr(exc, "retry", True):
+                        dead.add(i)
+                    continue
+                err = out.get("error") if isinstance(out, dict) else None
+                if err and n > 1 and not _deterministic(err):
+                    errors[i] = f"JSON-RPC error {err.get('message', err) if isinstance(err, dict) else err}"[:200]
+                    dead.add(i)  # its answer is kept; another endpoint may serve the request
+                    if answer is None or order.index(i) < order.index(answer[0]):
+                        answer = (i, out)
+                    continue
+                self._select(i)
+                return out
+            if answer is not None or len(dead) == n:
+                break
+            if attempt < self.retries:
                 time.sleep(delay)
                 delay = min(delay * 2, 20)
-            except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as exc:
-                status = getattr(exc, "code", None)
-                if attempt == self.retries or status in (400, 401, 403, 404):
-                    raise RpcError(f"transport error: {type(exc).__name__} {status or ''}".strip(), transport=True) from None
-                time.sleep(delay)
-                delay = min(delay * 2, 20)
+        if answer is not None:
+            self._select(answer[0])
+            return answer[1]
+        detail = "; ".join(f"{self.endpoints[i][0]}: {e}" for i, e in sorted(errors.items()))
+        if n == 1:
+            raise RpcError(errors.get(0, "transport error"), transport=True)
+        raise RpcError(f"transport error: all {n} RPC endpoints failed ({detail})", transport=True)
 
     def call(self, method: str, params: list):
         self._id += 1
@@ -212,6 +327,37 @@ class Chain:
     def storage(self, address: str, slots: list[int], block: int | None = None) -> list[int]:
         self.counts["eth_getStorageAt"] += len(slots)
         return self.rpc.storage_many(address, slots, self.block if block is None else block)
+
+    def batch(self, method: str, params: list[list], blocks=()) -> list:
+        """Batched read-only JSON-RPC `method`, one call per params list, for reads the helpers here do not
+        cover (nonces, receipts, fee history, block receipts). `blocks`: every block number the calls name; each
+        must be at or below the pinned block (never read above the checkpoint). A short or malformed answer is
+        an RpcError, never fewer items."""
+        for b in blocks:
+            if b > self.block or b < 0:
+                raise ValueError(f"{method} at block {b} is outside [0, pinned block {self.block}]")
+        if not params:
+            return []
+        self.counts[method] += len(params)
+        res = self.rpc.batch([(method, p) for p in params])
+        if not isinstance(res, list) or len(res) != len(params):
+            raise RpcError(f"{method}: {len(res) if isinstance(res, list) else 'no'} results for {len(params)} calls")
+        return res
+
+    def request(self, method: str, params: list):
+        """One read-only JSON-RPC call, counted; the caller chooses the block (e.g. the unconfirmed next block)."""
+        self.counts[method] += 1
+        return self.rpc.call(method, params)
+
+    def headers(self, blocks: list[int], full: bool = False) -> dict[int, dict]:
+        """Block headers (or full blocks) at or below the pinned block; a missing block is an RpcError."""
+        blocks = sorted(set(blocks))
+        out = {}
+        for b, r in zip(blocks, self.batch("eth_getBlockByNumber", [[hex(b), full] for b in blocks], blocks)):
+            if not isinstance(r, dict) or not r.get("hash"):
+                raise RpcError(f"eth_getBlockByNumber({b}): no block")
+            out[b] = r
+        return out
 
     def logs(self, address: str, topics: list[str], start: int, end: int | None = None) -> list[dict]:
         """Raw logs of any contract, topic0 in `topics`, in [start, end or the pinned block]."""
