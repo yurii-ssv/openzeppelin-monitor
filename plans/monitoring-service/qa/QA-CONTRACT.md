@@ -46,3 +46,7 @@ Then:
 ## Status transitions
 
 Only QA sets `VERIFIED`. Set `QA FAILED` on any failure, record the minimal reproducer, and yield for a fresh repair worker; you do not fix it and you do not clear a finding you would then be re-reviewing. Never mark `VERIFIED` when any required row fails or is silent. "Implementation complete" wording never substitutes for your measurements. Do not start the next checkpoint. Send `worker_done` once with `--outcome succeeded` when your report is written (a FAIL verdict is a successful QA assignment), `--report-path` set to your report, then idle.
+
+## Scope note (owner, 2026-10-22)
+
+Do not run mutation testing or other time-consuming checks: the goal is the initial version. Re-run the owned V rows, earlier reproducers and targeted adversarial scenarios; the implementer's own falsifiers are not re-run in bulk. State what you skipped. The round policy in DEFECT-CLASSES.md is unchanged.

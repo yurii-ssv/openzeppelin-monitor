@@ -660,3 +660,7 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - CP2b repair 3 question answered, ruling A (horizon capped at ts(checkpoint+1)-1; total-halt limitation documented).
 - CP2a repair 2 done, head `2b434cf`. Diff outside workers/cp2a within allowed writes (m3, m3_views, m4, m14 checks, their tests, fixtures, plan status line); test_m3+m4+m14+sweep 315 passed, ruff clean. QA 3 on Opus, capped, dispatched with an explicit attack on the time-window (block-count) and degenerate-input classes (they slipped past an earlier Opus QA, event-0062). Released `ctx_5c44cca7a3e5`.
+
+## Event 0065 — Owner scope note: QA without mutation testing
+
+- Marco: QA verifiers must not run mutation testing or other time-consuming tests; the aim is the initial version. Appended to qa/QA-CONTRACT.md; sent to the live QA dispatches (`ctx_e7ec763575a8` CP2a QA 3, `ctx_ba0224588278` CP2e QA 1); to be put in every later QA packet.
