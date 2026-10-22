@@ -51,7 +51,12 @@ def stored_logs(w, oc):
 
 
 def horizon(w, oc, cp, confirmations):
-    return max(oc.c.ts(cp), w.clock() - (confirmations + 2) * 12)
+    """Chain time up to which the stored chain is complete: the clock (less the confirmation depth) moves it while
+    blocks stop, but never past a block that exists above the checkpoint (it may hold the event)."""
+    h = max(oc.c.ts(cp), w.clock() - (confirmations + 2) * 12)
+    if cp + 1 <= oc.c.sealed:
+        h = min(h, max(oc.c.ts(cp), oc.c.ts(cp + 1) - 1))
+    return h
 
 
 def expected_m9_m10(w, oc, start, confirmations, timeout=1800, max_gap=32_400):
@@ -459,6 +464,10 @@ class UpdaterSweep:
         assert u.api.failures - failures <= 3, self.trace(f"{u.api.failures - failures} failed proof GETs in a step")
         self.check(before, resolved_before, partial=api_mode < 0.4, down=api_mode < 0.15, removed=set(removed))
 
+    def reverted(self, rd) -> bool:
+        """A revert of the round inside its 60 min window (chain time): one that counts for its revert rate."""
+        return any(not t["ok"] and self.u.c.ts(t["block"]) <= self.u.c.ts(rd["commit"]) + 3600 for t in rd["txs"])
+
     def closed_rounds(self):
         u = self.u
         cp = u.w.checkpoint()["block"]
@@ -503,15 +512,15 @@ class UpdaterSweep:
             self.chain_rewritten = False
         if "revert-rate" in got:
             assert any(r["reverts"] for r in closed), self.trace("revert-rate open without a revert")
-        elif closed and closed[-1]["reverts"] and u.w.db.conn.execute(
+        elif closed and self.reverted(closed[-1]) and u.w.db.conn.execute(
                 "SELECT COUNT(*) FROM inbox WHERE canonical IS NULL").fetchone()[0] == 0:
             assert False, self.trace("the latest closed round has a counted revert but no revert-rate incident")
         for r in sent(u.w, "m11", "kind='resolved'")[resolved_before:]:
             if r["ikey"] == "revert-rate" and REORG_TEXT not in r["text"]:
                 # positive proof: a closed round after the last one with a revert in which the updater sent a
                 # transaction and none reverted (a round with nothing sent proves nothing)
-                bad = max((i for i, rd in enumerate(closed) if rd["reverts"]), default=-1)
-                assert any(not rd["reverts"] and any(t["ok"] and t["sender"] == t["updater"] for t in rd["txs"])
+                bad = max((i for i, rd in enumerate(closed) if self.reverted(rd)), default=-1)
+                assert any(not self.reverted(rd) and any(t["ok"] and t["sender"] == t["updater"] for t in rd["txs"])
                            for rd in closed[bad + 1:]), self.trace("revert-rate resolved without a clean round")
             if r["ikey"] == "state-mismatch" and REORG_TEXT not in r["text"]:
                 # positive proof: the API answered every reported cluster at this step and it matches the chain

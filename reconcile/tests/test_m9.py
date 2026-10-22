@@ -412,9 +412,9 @@ def test_rpc_budget_no_eth_call_per_sweep_with_350_clusters(tmp_path):
     run = w.db.meta("run:m9")
     assert run["rpc_calls"].get("eth_call", 0) == 0  # bound: 0 eth_call (all from stored logs + live parameters)
     # chain time: one header per block a rule newly needs (checkpoint, first vote, commit), cached afterwards
-    assert set(run["rpc_calls"]) <= {"eth_getBlockByNumber"} and run["rpc_calls"]["eth_getBlockByNumber"] <= 3
-    tick(w, seconds=120)  # clock only: every header is cached
-    assert sum(w.db.meta("run:m9")["rpc_calls"].values()) == 0
+    assert set(run["rpc_calls"]) <= {"eth_getBlockByNumber"} and run["rpc_calls"]["eth_getBlockByNumber"] <= 4
+    tick(w, seconds=120)  # clock only: every header is cached; one uncached probe of the block after the checkpoint
+    assert w.db.meta("run:m9")["rpc_calls"] == {"eth_getBlockByNumber": 1}  # (repair 3, horizon)
 
 
 # ---------------------------------------------------------------- reorg (README §6.2)
@@ -1041,8 +1041,8 @@ def test_qa2_f1_reorg_removing_the_superseding_commit_reopens_the_failed_round(t
     assert open_keys(w, "m9") == {}
     commit_block = next(e.block for e in w.db.events_after((-1, 0), w.checkpoint()["block"], frozenset({"RootCommitted"})))
     oc.reorg(commit_block, latest=0, refs={x})
-    oc.c.mine(5)
-    tick(w, oc, 5)
+    oc.c.mine(TIMEOUT_BLOCKS + 5)  # the new chain passes the 30 min in chain time (repair 3: the clock alone never
+    tick(w, oc, 5)                 # passes a block that exists above the checkpoint)
     assert open_keys(w, "m9") == {"failed-round": "page"}
 
 
@@ -1251,7 +1251,8 @@ def test_r3_reorg_removing_the_commit_that_ended_a_resolved_cadence_gap_reopens_
     tick(w)
     oc.round()
     tick(w, oc, 5)
-    tick(w, seconds=9.5 * HOUR)
+    oc.c.elapse(2860)  # 9.5 h of blocks without a RootCommitted (with confirmations the clock alone stops at the tail)
+    tick(w, oc, 3)
     assert open_keys(w, "m9") == {"cadence": "page"}
     fork = oc.c.number
     latest = oc.latest
@@ -1427,3 +1428,45 @@ def test_r3_reorg_growing_an_already_resolved_failed_round_run_sends_the_new_mem
     w = restart(tmp_path, w, oc)
     tick(w, oc, 4, seconds=60)
     assert len(sent(w, "m9")) == n
+
+
+# ---- repair 3, horizon (coordinator ruling A): the clock never moves the horizon past a block that exists above the
+# checkpoint; a total chain halt with confirmations > 0 then keeps the clock rules waiting (accepted limitation)
+
+
+def test_r3_commit_seconds_before_the_deadline_in_an_unconfirmed_block_is_not_a_failed_round(tmp_path):
+    """Class 4 (window anchored past the stored data): round X commits ~29.6 min after its first vote, in a block
+    still above the checkpoint (confirmations 2) when missed slots let the clock pass X's 30 min. The horizon stops
+    before that block: no failed-round page (before: a false page, resolved once the commit was confirmed)."""
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w, oc, 3)
+    x = oc.c.number - 1
+    oc.vote(x, 1)
+    tick(w, oc, TIMEOUT_BLOCKS - 4)
+    oc.vote(x, 2)
+    oc.vote(x, 4)  # the commit, inside the 30 min by chain time
+    assert oc.committed(x) and oc.c.ts(oc.c.sealed) <= oc.c.ts(oc.c.sealed - TIMEOUT_BLOCKS + 2) + 1800
+    tick(w, seconds=150)  # missed slots: no block for 150 s, the clock passes X's deadline
+    tick(w, oc, 3)  # blocks again: the commit is confirmed
+    assert [r for r in sent(w, "m9") if r["ikey"] == "failed-round"] == [] and open_keys(w, "m9") == {}
+
+
+def test_r3_seed_295_late_confirmed_votes_do_not_retract_an_attribution(tmp_path):
+    """Sweep seed 295 (confirmations 3): votes of round R in blocks above the checkpoint while the chain stalls. The
+    horizon no longer settles R by the clock before those votes are stored, so no dissent is attributed on a partial
+    vote set and later retracted ('Condition no longer observed')."""
+    import test_m9_m10_m11_sweep as sweep
+
+    sweep.Sweep(tmp_path, 295, 3).run(20)
+
+
+def test_r3_chain_halt_with_confirmations_waits_for_the_tail_control(tmp_path):
+    """The accepted limitation, pinned: confirmations 2, the chain halts with two unconfirmed blocks; 9.5 h of clock
+    do not open the cadence page (a block above the checkpoint may hold a RootCommitted). With confirmations 0 the
+    clock still fires it (V2b.7, `test_no_root_committed_for_9h_pages_from_the_clock_without_any_event`)."""
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w, oc, 3)
+    oc.round()
+    tick(w, oc, 5)
+    tick(w, seconds=9.5 * HOUR)
+    assert open_keys(w, "m9") == {}

@@ -208,10 +208,20 @@ class BlockTimes:
     def horizon(self) -> float:
         """The time up to which the stored chain is complete: every block with a timestamp at or before it is at or
         below the checkpoint, or does not exist yet. The checkpoint's own timestamp, or, when blocks stop arriving,
-        the worker clock less the confirmation depth (+2 slots of margin for the head read)."""
+        the worker clock less the confirmation depth (+2 slots of margin for the head read), but never at or past the
+        timestamp of the block after the checkpoint when that block exists (read every run, not cached: it is not
+        confirmed): an event in the unconfirmed tail is never judged absent (missed slots let the clock pass it).
+        Accepted limitation (coordinator ruling, repair 3): during a total chain halt with confirmations > 0 the
+        unconfirmed blocks never confirm, so the clock rules (30 min, 60 min, 9 h) wait for blocks again."""
         conf = int(self.ctx.settings.get("confirmations", 0))
         lag = (conf + 2) * self.spb if conf >= 0 else 96 * self.spb  # finalized: 64..95 slots behind the head
-        return max(float(self(self.ctx.block)), self.ctx.clock() - lag)
+        at = float(self(self.ctx.block))
+        h = max(at, self.ctx.clock() - lag)
+        self.ctx.rpc.counts["eth_getBlockByNumber"] += 1
+        nxt = self.ctx.rpc.rpc.call("eth_getBlockByNumber", [hex(self.ctx.block + 1), False])
+        if nxt and nxt.get("timestamp") not in (None, "", "0x"):  # never past a block that exists unprocessed
+            h = min(h, max(at, int(nxt["timestamp"], 16) - 1))
+        return h
 
 
 _FN = "(lower(selector)=? OR function LIKE ?)"
