@@ -36,8 +36,8 @@ Completeness (QA cp2e-1 F1): absence from the SSV API is not evidence, and at a 
 database) nothing persisted would reveal a short listing. Every full sweep therefore checks the inventory
 against two counts (`inventory_gap`): the chain's SSV-side `daoValidatorCount` must equal the validators of the
 active, storage-validated legacy clusters (it covers every cluster M6 can warn or page on: both need
-validators), and the listing (API rows and scanned logs) must hold the API's own `pagination.total`; an API
-answer without a single cluster is a gap whatever both counts say (QA cp2e-2 F1). A gap is
+validators), and the distinct API rows (log-only clusters not counted, QA cp2e-3 F1) must reach the API's own
+`pagination.total`; an API answer without a single cluster is a gap whatever both counts say (QA cp2e-2 F1). A gap is
 the same UNKNOWN health message and the summary (weekly digest) says the counts are a lower bound; the listed
 clusters are still evaluated and open incidents leave only on positive proof, as above.
 
@@ -193,8 +193,10 @@ def inventory_gap(ctx: Ctx, inv) -> str | None:
 
     Chain: the validators of the active, storage-validated legacy clusters must add up to the SSV-side
     `daoValidatorCount` (a cluster missing from the API and the logs, or an unvalidated tuple, breaks it).
-    API: the listing (API rows and scanned logs) must hold at least the API's own `pagination.total` (an empty or
-    short page; it also covers the legacy clusters without validators, whose balance is still an M7 claim).
+    API: the distinct clusters the API pages listed must reach the API's own `pagination.total` (an empty or short
+    page; it also covers the legacy clusters without validators, whose balance is still an M7 claim). Clusters only
+    the scanned logs know are not counted: `total` counts API rows only, so a log-only cluster would offset a row
+    the page dropped (QA cp2e-3 F1). A self-consistent partial page (`total` agrees with its rows) stays invisible.
     An API answer without a single cluster is a gap whatever its total and `daoValidatorCount` say (QA cp2e-2
     F1): next to a proxy with legacy storage an empty listing is a degenerate answer, and a self-consistent one
     (`total` 0, no validators left on legacy clusters) would otherwise hide every inert legacy balance."""
@@ -211,9 +213,9 @@ def inventory_gap(ctx: Ctx, inv) -> str | None:
         gaps.append(f"the SSV API listed no clusters (pagination.total {total}); an empty listing is never complete")
     if total is None:
         gaps.append(f"{why}: the listing of {from_api} API rows cannot be confirmed complete")
-    elif len(inv.clusters) < total:
-        gaps.append(f"the SSV API listed {from_api} clusters ({len(inv.clusters)} with the scanned logs) of its "
-                    f"pagination.total {total}")
+    elif from_api < total:
+        gaps.append(f"the SSV API listed {from_api} clusters of its pagination.total {total} (clusters known only "
+                    f"from the scanned logs not counted)")
     return "; ".join(gaps) or None
 
 
