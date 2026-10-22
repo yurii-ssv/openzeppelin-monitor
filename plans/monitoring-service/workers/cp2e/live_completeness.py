@@ -8,8 +8,8 @@ the worker's own InventoryCache (all SSV API v4 pages + storage validation, D8/D
   * positive: the validators of the active, storage-validated legacy clusters must equal the SSV-side
     `daoValidatorCount` (StorageProtocol word 0), and the listing must hold the API's `pagination.total` — the
     production guard must say None (complete) on a healthy mainnet, or the checks would be UNKNOWN for ever;
-  * negative controls on the same block: an empty API page (with the true total) and a listing one row short must
-    each report a gap.
+  * negative controls on the same block: an empty API page (with the true total), a self-consistent empty page
+    (total 0; repair 2, QA cp2e-2 F1) and a listing one row short must each report a gap.
 Exit 0 when the positive case is complete and both controls report a gap; 1 otherwise.
 """
 
@@ -75,11 +75,13 @@ def main(argv=None) -> int:
         }
         rows = cache._api  # the listing the inventory used (read-only)
         controls = {}
-        for name, served in (("empty", []), ("short_by_one_legacy_row", [r for r in rows if r is not next(
-                (r2 for r2 in rows if not r2.get("migrated") and int(r2.get("validatorCount", 0)) > 0), None)])):
+        short = [r for r in rows if r is not next(
+            (r2 for r2 in rows if not r2.get("migrated") and int(r2.get("validatorCount", 0)) > 0), None)]
+        for name, served, t in (("empty", [], total), ("empty_total_0", [], 0),
+                                ("short_by_one_legacy_row", short, total)):
             neg = InventoryCache(db, lambda b: Chain(rpc, b), PROXY, clock=lambda: 0.0, api_base=args.api,
-                                 http_get=lambda url, s=served: {"clusters": s, "pagination": {
-                                     "pages": 1, "total": total}})
+                                 http_get=lambda url, s=served, t=t: {"clusters": s, "pagination": {
+                                     "pages": 1, "total": t}})
             controls[name] = {"rows": len(served), "gap": inventory_gap(ctx(neg), neg.get(block))}
         report["controls"] = controls
     ok = gap is None and all(v["gap"] for v in controls.values())
