@@ -672,7 +672,8 @@ def test_m6_reorg_run_reports_an_open_key_without_a_persisted_row(tmp_path):
     row is lost and the API no longer lists the cluster; storage still says legacy: UNKNOWN, kept open."""
     lw, w, a, fork = _page_at_fork(tmp_path)
     inc = incidents(w)[0]["id"]
-    w.db.conn.execute("DELETE FROM m6_clusters")
+    w.db.conn.execute("DELETE FROM m6_clusters")  # the row and its history are lost; the open incident is not
+    w.db.conn.execute("DELETE FROM m6_obs")
     lw.rows.clear()
     lw.fork(fork)
     lw.views(a, balance=0, liquidatable=True)
