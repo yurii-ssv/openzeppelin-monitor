@@ -9,7 +9,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
 - Mode: attended; resumed by Marco (event-0055)
 - Overall acceptance: pending
-- Current checkpoint: CP4 final QA part A running (candidate `047e9ad`); part B (V4.2) after the soak T48 2026-10-24T22:51Z
+- Current checkpoint: CP4 part A PASS WITH NOTES (`1b118a6`); part B (V4.2) after the soak T48 2026-10-24T22:51Z
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
 
 | Task | State | Active dispatch / receipt | Frozen head | Owner | Evidence / next action |
@@ -27,9 +27,9 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 
 ## Next transition
 
-- Exact next authorized action and owner: coordinator waits for CP3 worker_done, then a fresh Opus QA (D13, D15, no mutation testing); after CP3 VERIFIED: CP4 final QA, with the 48 h soak run by Marco (OG3).
+- Exact next authorized action and owner: at T48 (2026-10-24T22:51Z) the coordinator collects the soak evidence (workers/cp3/plan.md 'Soak handoff') and dispatches CP4 part B (V4.2 review, fresh Opus QA); then the completion statement; then, with Marco's authorization, DT-18 repairs and cleanup (DT-16). Push and PR are Marco's.
 - Ready work with no active dispatch: none.
-- Waiting for: CP3 implementer. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
+- Waiting for: soak T48. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
 - Next check/wake mechanism: attended; `orca orchestration check --wait` on the coordinator's Run (15 min) while workers run. Unattended recovery UNVERIFIED (DEF-4).
 - Context resume: verify HEAD/status/runtime, read this file, inspect the next task's latest attempt, continue the first unproven action. Do not reload whole history.
 
