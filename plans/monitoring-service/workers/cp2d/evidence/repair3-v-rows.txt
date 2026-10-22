@@ -1,0 +1,57 @@
+head under test: 337329a5ac864cbbc2b4bc6cd300789b8b7e08d6; git status --porcelain lines: 1
+### V2x.1 M1
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1.py
+82 passed in 0.71s
+exit=0
+### V2x.1 M2
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m2.py
+47 passed in 0.49s
+exit=0
+### V2x.2
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1.py reconcile/tests/test_m2.py -k thresholds_from_chain
+2 passed, 127 deselected in 0.08s
+exit=0
+### V2x.3
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1.py reconcile/tests/test_m2.py reconcile/tests/test_m1_m2_sweep.py -k restart
+6 passed, 243 deselected in 0.17s
+exit=0
+### V2x.4 (not owned)
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests -k rpc_budget
+1 passed, 512 deselected in 0.19s
+exit=0
+### V2d.7 lane row (offline replay)
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1_receipts.py
+24 passed in 0.25s
+exit=0
+### reorg
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1.py reconcile/tests/test_m2.py -k reorg
+38 passed, 91 deselected in 0.37s
+exit=0
+### repair 3 regressions
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1.py -k 'orphaning_the_repair or found_after'
+11 passed, 71 deselected in 0.18s
+exit=0
+### sweep
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m1_m2_sweep.py
+120 passed in 2.81s
+exit=0
+### V2x.6 suite
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests
+513 passed in 16.65s
+exit=0
+### V2x.6 lint
+$ reconcile/.venv/bin/ruff check reconcile
+All checks passed!
+exit=0
+### QA3 Appendix A (extracted unmodified; the one failure is N1, NOTE, not required)
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider /private/tmp/claude-501/-Users-marco-orca-workspaces-ssv-network-monitor-ms-cp2d/77c924e4-49c8-42ff-a6bb-c617d5f5fd46/scratchpad/qa3/test_attack3.py
+1 failed, 14 passed, 2 warnings in 0.55s
+exit=1
+### QA2 Appendix A (extracted unmodified)
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider /private/tmp/claude-501/-Users-marco-orca-workspaces-ssv-network-monitor-ms-cp2d/77c924e4-49c8-42ff-a6bb-c617d5f5fd46/scratchpad/qa2_test_adversarial.py
+24 passed, 2 warnings in 0.21s
+exit=0
+### QA1 Appendix A (extracted unmodified)
+$ reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider /private/tmp/claude-501/-Users-marco-orca-workspaces-ssv-network-monitor-ms-cp2d/77c924e4-49c8-42ff-a6bb-c617d5f5fd46/scratchpad/qa1_test_independent.py
+29 passed, 2 warnings in 0.42s
+exit=0

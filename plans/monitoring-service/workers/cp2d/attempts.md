@@ -84,3 +84,13 @@ Restart / reorg / errors (adversarial review): `test_m1_restart_does_not_duplica
 - Sweep model notes: the SSV API answers live while the worker checks at the checkpoint, so the model compares the API with storage at the checkpoint (K2/LEG changes are mined past the confirmations in the M1 walk; the M2 model takes LEG's version at the checkpoint); a reverted call's calldata tuple is a validated candidate once its inbox line is delivered.
 - Deviations: section named "Repair 2" (the brief said "Repair 1", which already exists). Question to the coordinator (msg_818d3a70a21b, pre-existing API-ahead false unknown) timed out unanswered; recommendation A (record only) applied. NOT RUN: V2d.7 LIVE re-authentication, DEF-3.
 - Resulting head: records commit on top of `560f92f` (named in plan.md CP2d status). Next: fresh Codex QA attempt 3 (capped round).
+
+## Repair 3 — QA attempt 3 BLOCKING F1 (fresh implementer, capped round)
+
+- Observed UTC: 2026-10-22
+- Task / Dispatch: `task_e0f7da3f20d9` / `ctx_21446fcd0af4` (worker `term_e0b203db-…`, coordinator `term_89e2fa6f-…`)
+- Frozen start head: `ec58434ac3f3331ca1965a5f7b749901f528395f`, branch `mtabasco/ms-cp2d`, tree clean; venv present (3.12.15). QA attempt 3 Appendix A extracted unmodified: start head 5 failed / 10 passed (F1×4, N1).
+- Action and concrete outcome: M1 `_finding` revision rebuilt from the incident's meaning (state, poisoning, repair-tuple digest, last revert) so the transient → stale change after a reorg is sent (F1), also with a revert present (G1) and when the repair tuple arrives later (G2). 11 new tests in `test_m1.py`; sweep F1 composite attack + meaning invariant; `falsify_repair3.py`. Commit `337329a`; records commit follows.
+- Verification: see [plan.md § Repair 3](plan.md#repair-3-qa-attempt-3-fail-blocking-f1-capped-round): suite 513, sweep 120, QA3 App. A 14/15 (N1 NOTE only), QA2 24/24, QA1 29/29, RED on start head 24 (10 targeted + 14 walks), falsifiers 4/4 + 41/41 (scratch copies only).
+- Deviations: none from the brief. `plan/monitoring-service` not merged (conflicts in `execution-log.md`, outside scope). NOT RUN: V2d.7 LIVE re-authentication, DEF-3, N1–N6.
+- Resulting head: records commit on top of `337329a` (named in plan.md CP2d status). Next: fresh Claude Opus QA attempt 4 (capped round).
