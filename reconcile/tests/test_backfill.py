@@ -237,6 +237,26 @@ def test_check_failing_in_its_silent_evaluation_keeps_the_backfill_and_sends_hea
     assert len(sent(w)) == 1
 
 
+def test_backfill_steps_run_back_to_back_only_while_blocks_remain(tmp_path):
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=30)
+    w, check = make(tmp_path, chain, check=Watch(fail=True), start=start)  # poll_interval_s 30 (default)
+    w.step()
+    assert w.backfilling and w.wait_s() == 0  # blocks left to scan: next step at once
+    while not w.caught_up(w.checkpoint()["block"]):
+        w.step()
+    w.step()
+    assert w.backfilling and w.wait_s() == 30  # caught up, a check keeps failing: no tight retry loop
+    chain.down = True
+    w.step()
+    assert w.wait_s() == 30
+    chain.down = False
+    check.fail = False
+    w.step()
+    assert not w.backfilling and w.wait_s() == 30
+
+
 def test_lag_and_digest_are_quiet_and_phase_is_exposed_while_backfilling(tmp_path):
     chain = FakeChain()
     start = chain.number

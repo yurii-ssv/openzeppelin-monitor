@@ -230,6 +230,15 @@ class Worker:
             out["progress"] = round(min(max((cp - start + 1) / max(target - start + 1, 1), 0), 1), 4)
         return out
 
+    def wait_s(self) -> float:
+        """Seconds to wait before the next step: none while a backfill still has blocks to scan and the last step
+        succeeded (bounded steps back to back); otherwise `poll_interval_s` (also while the caught-up backfill waits
+        for a check that keeps failing its silent run: no tight retry loop)."""
+        if self.bootstrapped and self.rpc_failures == 0 and self.backfilling \
+                and not self.caught_up(self.checkpoint()["block"]):
+            return 0
+        return self.cfg.poll_interval_s
+
     def _go_live(self, block: int) -> None:
         """Every check has evaluated history silently at a caught-up checkpoint: alerting starts at the next
         step. Each check's first live run is a forced full run (reasons `live`, `force`), so a condition still
@@ -823,9 +832,7 @@ def main(argv=None) -> int:
              (worker.checkpoint() or {}).get("block"), sorted(worker.checks), cfg.alerts.get("mode", "record"))
     while not stop["flag"]:
         worker.step()
-        if worker.bootstrapped and worker.backfilling and worker.rpc_failures == 0:
-            continue  # a bounded backfill step succeeded: take the next one without waiting
-        for _ in range(int(cfg.poll_interval_s)):
+        for _ in range(int(worker.wait_s())):
             if stop["flag"]:
                 break
             time.sleep(1)
