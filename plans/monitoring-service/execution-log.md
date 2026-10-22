@@ -867,3 +867,7 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - QA 4 (`ctx_ff8a170155e1`, QA commit `48c0097`) on `45cc774`: PASS WITH NOTES (F1 fixed; N5 corrupted-identity API row inside the recorded N4 residual envelope). Merged into `plan/monitoring-service`; this also closes the premature-merge item of event-0055: the integration branch now contains exactly the verified lane head (`git diff 45cc774 HEAD` on m6/m7 is empty). Integration suite: 2138 passed. Released `ctx_ff8a170155e1`.
 - Gate state: CP0, CP1A, CP1B, CP2a, CP2b, CP2c, CP2d, CP2e all VERIFIED. CP3 requires Marco's approval of the wave transition (not yet given). Open owner items: start-block / silent backfill proposal for CP3; spec amendments at closure (M1 re-poison ruling, M4 liabilities, M6, M12 runway, M14, M13 row 3); notes of every QA to plan §8; Codex-era worktree cleanup; durable data dir and archive RPC (CP3).
+
+## Event 0076 — Owner decisions D16-D19; CP3 approved
+
+- Marco: RPC D16 (Tenderly primary, Tenderly public and MEV Blocker fallbacks, 5000-block getLogs), D17 silent backfill, D18 named volumes locally and a Kubernetes PVC in production (DevOps), D19 CP3 approved, continue to the end. Recorded in plan §2. CP3 dispatch follows.
