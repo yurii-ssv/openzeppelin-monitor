@@ -655,3 +655,8 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - QA 3 (Opus, `ctx_6a9a342fb10e`, QA commit `ec58434`) on `6a93e1a`: FAIL. Attempt-2 findings F1-F4 confirmed fixed. One BLOCKING (new): a reorg that orphans the repair behind a 'poisoned and repaired before this run' report rewrites the incident silently and sends nothing (transient and stale branches share the revision string). 6 NOTEs.
 - Failed rounds for CP2d: 3. Lane fast-forwarded to `ec58434`; repair 3 dispatched `task_e0f7da3f20d9`/`ctx_21446fcd0af4` (opus/high effective); next QA capped. Released `ctx_6a9a342fb10e`.
+
+## Event 0064 — CP2a repair 2 delivered, QA 3 (capped)
+
+- CP2b repair 3 question answered, ruling A (horizon capped at ts(checkpoint+1)-1; total-halt limitation documented).
+- CP2a repair 2 done, head `2b434cf`. Diff outside workers/cp2a within allowed writes (m3, m3_views, m4, m14 checks, their tests, fixtures, plan status line); test_m3+m4+m14+sweep 315 passed, ruff clean. QA 3 on Opus, capped, dispatched with an explicit attack on the time-window (block-count) and degenerate-input classes (they slipped past an earlier Opus QA, event-0062). Released `ctx_5c44cca7a3e5`.
