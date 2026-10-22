@@ -72,3 +72,15 @@ Restart / reorg / errors (adversarial review): `test_m1_restart_does_not_duplica
 - Sweep model notes (measured while building the sweep, not product defects): FakeChain does not rewind call stubs on reorg, so both the M2 sweep and `test_m2_reorg_orphaning_the_settlement…` drop stub entries from the fork on (test-side); the inbox delivers in file order, so an unconfirmed line of a deleted block holds the lines after it until the checkpoint reaches it; the worker's ancestor is its newest *recorded* block below the fork, so M2 un-settles every settlement above that ancestor (the model mirrors it).
 - Deviations: none from the brief. NOT RUN: V2d.7 LIVE re-authentication (fixtures unchanged), DEF-3.
 - Resulting head: records commit on top of `b94632b` (named in plan.md CP2d status). Next: fresh Codex QA attempt 2.
+
+<a id="repair-2"></a>
+## Repair 2 — QA attempt 2 findings F1–F4 (fresh implementer)
+
+- Observed UTC: 2026-10-21 (start; the laptop slept mid-session, resumed on the coordinator's message) → 2026-10-22T08:05Z (records)
+- Task / Dispatch: `task_1aa9f92f025e` / `ctx_e0f0fb329a9f` (worker `term_aa00fd3f-…`, coordinator `term_89e2fa6f-…`)
+- Frozen start head: `cba2fb3c6c42204435fb215163a3a11d0c198b1f`, branch `mtabasco/ms-cp2d`, tree clean; venv present (3.12.15). QA attempt 2 Appendix A extracted unmodified: start head 7 failed / 17 passed.
+- Action and concrete outcome: M1 per-transaction intra-block walk with the coordinator's unverified re-poison page (F2/F3), resolved-key re-evaluation in reorg runs (F1), `m1-inventory-empty` (F4), poisonings repaired within one run reported (G1), receipt window anchored on the first run (G2); M2 tuple history and resolved-key re-evaluation (F1), unknown hard always health (G3). 22 new/rewritten tests in `test_m1.py` / `test_m2.py`, sweep extended to 120 walks with brute-force same-block model. Commit `560f92f`; records commit follows.
+- Verification: see [plan.md § Repair 2](plan.md#repair-2-qa-attempt-2-fail-f1f4): m1 71, m2 47, sweep 120, suite 502, ruff clean, QA2 Appendix A 24/24, QA1 Appendix A 29/29, RED on start head 92 (20 targeted + 72 walks), falsifiers 41/41 (scratch copy only).
+- Sweep model notes: the SSV API answers live while the worker checks at the checkpoint, so the model compares the API with storage at the checkpoint (K2/LEG changes are mined past the confirmations in the M1 walk; the M2 model takes LEG's version at the checkpoint); a reverted call's calldata tuple is a validated candidate once its inbox line is delivered.
+- Deviations: section named "Repair 2" (the brief said "Repair 1", which already exists). Question to the coordinator (msg_818d3a70a21b, pre-existing API-ahead false unknown) timed out unanswered; recommendation A (record only) applied. NOT RUN: V2d.7 LIVE re-authentication, DEF-3.
+- Resulting head: records commit on top of `560f92f` (named in plan.md CP2d status). Next: fresh Codex QA attempt 3 (capped round).

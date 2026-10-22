@@ -121,3 +121,101 @@ NOT RUN: V2d.7 LIVE re-auth (fixtures unchanged), DEF-3
 Limit: mid-block multi-tuple tx not validatable (health)
 Next: fresh Codex QA attempt 2
 ```
+
+## Repair 2 (QA attempt 2 FAIL: F1–F4)
+
+Dispatched as "CP2d repair 1 … fix the QA attempt-2 findings"; recorded here as **repair 2** (the lane's second repair) so it does not collide with the section above.
+
+- Task / Dispatch: `task_1aa9f92f025e` / `ctx_e0f0fb329a9f` (worker `term_aa00fd3f-…`, coordinator `term_89e2fa6f-…`). Requested Claude Opus high (fresh implementer); effective launch recorded by the coordinator.
+- Frozen start head: `cba2fb3c6c42204435fb215163a3a11d0c198b1f` (`git rev-parse HEAD`; QA evidence commit on top of `8d5b6752f5a360a59918b8faed73dce41bf7ca9b`), tree clean, venv `reconcile/.venv` present (Python 3.12.15). QA Appendix A extracted unmodified to scratch: **7 failed, 17 passed** on the start head (exactly the report's F1×4, F2, F3, F4). No `plan/monitoring-service` merge (read `qa/DEFECT-CLASSES.md` from that branch; nothing else needed).
+- Implementation commit: `560f92f`. Changed paths: `reconcile/checks/{m1_stale_tuple,m2_operator_capacity}.py`, `reconcile/tests/{test_m1,test_m2,test_m1_m2_sweep}.py`, `plans/monitoring-service/workers/cp2d/**`. No frozen CP1B file, no config change (`checks.m1.receipt_window_blocks` keeps its key; its meaning narrowed, see F-gen-3).
+
+### Findings → fix
+
+| QA finding | Root cause | Fix | Regression (RED on `cba2fb3`, GREEN at `560f92f`) |
+|---|---|---|---|
+| F1 HIGH (M1) resolved key not revisited in the reorg run | keys enumerated from active rows and open incidents only | reorg run adds every key **resolved above the ancestor** (`_resolved_since`); an API-only key in storage with no inventory tuple (partial/empty API) then raises (marker kept, also across a restart) | `test_m1_reorg_orphaning_the_resolution_of_an_api_only_key_with_a_partial_api_raises[False,True]` (then a complete API reopens it); twin `test_m1_reorg_of_a_resolved_key_with_logs_reopens_without_the_inventory` |
+| F1 HIGH (M2) resolved hard not revisited; the canonical tuple overwritten by the orphaned one | `m2_clusters` kept one tuple per cluster (replaced); resolved keys not enumerated | `m2_clusters` is a **history** (PK cluster, tuple; pruned below the newest row ≥ `reorg_search_depth` old), every row matched against storage, newest first; reorg run adds keys resolved above the ancestor; an unproven one raises | `test_m2_reorg_orphaning_the_resolution_restores_the_canonical_tuple_and_reopens_hard[False,True]`, `test_m2_reorg_of_a_resolved_hard_without_a_canonical_tuple_raises_and_keeps_the_marker`, `test_m2_tuple_history_is_bounded_and_keeps_the_newest_tuple_below_the_reorg_depth` |
+| F2 HIGH (M1) differing-tuple repair mid-block not counted; re-poison stays warn | such a transaction was health only (`m1-intra-block`) | **coordinator ruling** (below): page under the existing incident as `unverified intra-block re-poison (no trace)`; health removed | `test_m1_unverified_two_tuple_transaction_after_a_poisoning_then_poison_pages[poison,repair]` (QA case + twin), `test_m1_same_block_unreadable_transaction_before_a_poisoning_pages_as_unverified_re_poison` (repair 1's health test, rewritten to the ruling), `…unverified_re_poison_page_survives_restart_and_resolves_on_a_validating_block`, `…reorg_removing_the_unverified_re_poison_block_returns_to_warn`, `…unverified_page_stays_for_a_further_poisoning_without_a_repair`; twin `test_m1_unverified_transaction_before_a_first_poisoning_stays_warn` |
+| F3 MEDIUM (M1) poison → repair → poison in the first flagged block loses history | earlier transactions only mattered with a persisted poisoning | per-transaction walk (`_block_of_cluster`): each earlier transaction classed `clean` (one tuple: written and emitted; a repair row at its position when a poisoning is active) or `unverified`; all kept in the poisoning's `intra_block` evidence in log order; an unverified one followed by any transaction before a final poisoning pages (unverified) | `test_m1_three_transactions_poison_repair_poison_in_one_block_pages[False,True]` (logs delivered reversed) |
+| F4 MEDIUM (M1) empty first API inventory silent | no M1 check of an empty API answer | `m1-inventory-empty` health whenever the API is used and returns no cluster; `last_sweep.degraded`, digest says `DEGRADED` | `test_m1_initial_empty_inventory_is_health_never_a_clean_sweep[empty,listed]` |
+
+**F2 behaviour (coordinator ruling, to be amended into spec M1 at closure).** Only the block's last transaction on a cluster can be validated (storage at the block is its result; public endpoints have no trace RPC). An earlier transaction with differing tuples is `unverified` — it may be a poisoning or a repair. A final poisoning pages, under the existing incident, with evidence `re_poisoned: true`, `re_poison_unverified: true`, `note: "unverified intra-block re-poison (no trace)"` and `intra_block` = every earlier transaction (hash, log indexes, class, distinct tuples), whenever some reading of the unverified transactions gives poison → repair → poison: an unverified transaction after an unrepaired poisoning, a warn/page incident, or an earlier unverified one (read as the repair), or an unverified transaction followed by any transaction before the last (read as the poisoning). The page holds for the unrepaired episode (a further poisoning does not downgrade it); a later block whose last log validates resolves it plainly; a block-end state that validates in the same block resolves it (`[repair]` twin). **False-positive cost:** a benign helper with differing tuples (e.g. two deposits in one transaction; none exists in the recorded mainnet corpus, where every multi-event group carries one tuple) in the same block as a poisoning of an already flagged cluster, or before a clean transaction and a poisoning, pages instead of warning. A lone unverified transaction before a first poisoning stays warn (no such reading).
+
+### Generalisation (beyond the four findings, each with a regression RED on `cba2fb3`)
+
+- **G1 events between runs (class 5):** a poisoning repaired in a later block (or transaction) of the same run was silent. Now reported once (warn; page when re-poisoned or unverified) and resolved at the next run; a reorg that re-includes the same transactions does not re-send it (deduplicated against earlier alerts of the cluster naming the transaction). → `test_m1_poison_repaired_before_the_run_still_alerts`, `test_m1_poison_repaired_before_the_run_is_not_re_alerted_after_a_reorg_re_detects_it`.
+- **G2 window anchored on the wrong thing (class 4/5):** `receipt_window_blocks` was anchored on each run's block, so a downtime backlog longer than 1,000 blocks skipped per-receipt validation (a poisoning repaired inside it was lost). Now anchored on the **first run** (durable `check:m1:first_run_block`): only a first start on history is bounded. → `test_m1_downtime_backlog_beyond_the_receipt_window_still_validates_every_receipt`.
+- **G3 unknown is never silent (class 1):** M2 reported `m2-hard-unknown` only for an *open* hard key; an unproven operator with nothing open was silent. Now health for every unproven operator (no incident opened without a validated blocked tuple). → `test_m2_unknown_tuple_on_a_blocked_operator_without_an_open_incident_is_health`.
+
+### State table — every persisted table/marker and every off-chain input
+
+(a) empty · (b) error · (c) reorg depth 1 / N beyond the confirmations, incl. a resolved key · (d) restart between detection and handling · (e) same-block ordering · (f) time-window anchoring · (g) partial. "sweep" = `test_m1_m2_sweep.py`.
+
+| State / input | (a) empty | (b) error | (c) reorg 1 / N, resolved keys | (d) restart | (e) same block | (f) window | (g) partial | Status → test |
+|---|---|---|---|---|---|---|---|---|
+| M1 `m1_detections` poison/repair (receipt) | no events: nothing | Views/storage RPC error or empty answer raises | rows > A deleted, cursor rewound, re-detected; re-included poisoning not re-sent | detection + incident one transaction | **per transaction, position kept, unverified page** | receipts validated for every block after the first run | — | F2/F3/G1/G2 **wrong** → tests above; reorg `test_m1_reorg_*`, sweep |
+| M1 `m1_detections` state rows, revert rows, `cleared_block` | empty inbox: nothing | tx lookup nothing raises | state rows ingested > A deleted; reverts follow `inbox.canonical`; `cleared_block > A` reset | inbox cursor in run tx | inbox revert reported before it clears (`ingested_block < block`) | — | — | correct → `test_m1_reorg_orphaning_the_clearing_run…`, `test_m1_inbox_*` |
+| M1 incidents (cluster, `tx:` keys), incl. **resolved** | — | kept (check-error) | open + persisted + `reorg_keys` + **resolved above A**; unevaluable → raise | `test_m1_restart_*`, F1 `[True]` | unverified page sticky per episode | — | — | F1 **wrong** → F1 tests, sweep `k2_fix`→`reorg_partial` |
+| `meta reorg:m1` | — | kept while the run raises | kept until a committed reorg run | F1 `[True]`, `test_m1_crash_between…` | — | — | kept on partial API | F1 **wrong** → F1 tests, sweep |
+| `meta check:m1:first_run_block` (new) | set on the first run | rolled back with the run | not rewound (a start fact) | durable | — | anchors the receipt window | — | new → G2 test |
+| M1 `last_sweep` (memory) | `degraded: true` + health | not updated; `m1-inventory` health | rebuilt by the reorg run (sweep reason) | rebuilt next sweep | — | per sweep | `api_clusters` count | F4 **wrong** → F4 test |
+| M1 input: SSV API / inventory | **health, never clean**; keys only kept | health, sweep skipped; reorg run raises | cache cleared by framework; keys from persisted + resolved rows | memory, refetched | — | — | omitted tracked key: kept + `m1-inventory-missing`; reorg: raise | F1/F4 **wrong** → tests above, sweep `api_empty/partial/error` |
+| M1 input: stored logs | — | — | rewound by the framework | durable | log order within block, reversed RPC order tested | — | — | correct → F3 test (reversed), `tie_is_the_earliest` |
+| M1 input: inbox + tx lookup | nothing | lookup nothing raises; unresolved revert health | `canonical = 0` drops | cursor in run tx | — | — | — | correct → existing |
+| M1 input: params (liquidation period via Views) | Views `0x` raises | raises | re-read by framework | — | — | at the run's block | — | correct → `thresholds_from_chain` |
+| M2 `m2_clusters` (**history**) | empty API: history used; unknown blocks resolution | — | never trusted without storage match; older tuple matches again after a reorg; pruned below depth | durable | — | — | partial API: history used | F1 **wrong** → M2 F1 tests, prune test, sweep `leg_fix`→`reorg_partial` |
+| M2 `m2_reverts` + `cleared_block` | nothing; unresolved health | tx lookup nothing raises | `canonical = 0` drops; `cleared_block > A` reset | one transaction | latest by block, rowid | settles only at a later run | no settle while unknown / API empty | correct → repair-1 tests, sweep |
+| M2 incidents hard (incl. **resolved**) | empty API: history + on-chain count | inventory error: check-error, kept | open + `reorg_keys` + **resolved above A**; unproven → raise | `test_m2_restart_*` | — | — | unknown: kept + **health even with nothing open** | F1/G3 **wrong** → tests above |
+| M2 incidents early / velocity | on-chain counts only | operator read error/empty raises | velocity from rewound logs; resolved keys add their operator | existing | — | **velocity window ends at the run's checkpoint** (blocks; a 7,200-block window spans ≥ 24 h with missed slots, a superset) | operators from inventory ∪ history ∪ reverts ∪ open/resolved keys | correct → existing + sweep `burst` (window ageing) |
+| `meta reorg:m2` | — | kept while raising | kept on unproven reorg/resolved key | `test_m2_crash_between…`, F1 `[True]` | — | — | — | F1 **wrong** → tests above |
+| M2 input: SSV API | `m2-inventory-empty` health | check-error | — | — | — | — | `m2-inventory` mismatch health | correct → existing, sweep |
+| M2 input: params `validators_per_operator_limit` | — | `ParamsUnavailable` | re-read after reorg | — | — | at the run's block | — | correct → `thresholds_from_chain` |
+| Block timestamps | not consumed by M1/M2 | — | — | — | — | intervals are wall-clock `Every`; velocity in blocks (above) | — | by design |
+
+Known limits (not regressions): (1) **storage cannot be enumerated**: a cluster with no stored log since `start_block` that the API never lists is unknown to M1/M2 (health covers empty answers and missing tracked keys). (2) Pre-existing observation, asked of the coordinator (no answer before worker_done; my recommendation A applied: no code change): when the SSV API is **ahead of the confirmed checkpoint**, a cluster with no stored log that transacts above the checkpoint gets a transient `Cluster tuple unknown` warn that resolves at the next sweep. Repro: [evidence/repro_api_ahead_of_checkpoint.py](evidence/repro_api_ahead_of_checkpoint.py). Fix options for the owner: (B) re-check a non-validating API tuple against storage at the chain head only to suppress, or (C) defer a new unknown incident one sweep (changes QA attempt 2's `first_sweep_has_no_baseline_and_wrong_hash_tuple[False]` expectation).
+
+### Adversarial sweep (`reconcile/tests/test_m1_m2_sweep.py`, committed)
+
+60 + 60 seeded walks × 14 steps (+ recovery), models built from the walk's own action log. New: M1 three-transaction blocks (poison/repair/poison; two-tuple helper + poisoning + poison or repair; helper + poisoning), poisoning repaired in the next block of one run, K2 storage changes without a log, partial API (only an unrelated cluster), empty **first** inventory, the composite F1 attack (`k2_fix` then `reorg_partial`: orphan the resolution, API partial/empty); M2 LEG tuple changes without a log, registration bursts (velocity window ageing), partial API, the composite F1 attack (`leg_fix` then `reorg_partial`). Asserted after every step: no resolve without positive proof; no open incident without evidence; every held condition open at its model severity, with the same-block re-poison decided by **brute force over every reading** of the unverified transactions (independent of the implementation's rule); a poisoning repaired inside one run is reported; velocity counted on the window ending at the checkpoint; empty API and unknown hard rule are health; a committed reorg run never keeps an orphaned API-only resolution without API data; uncommitted runs change nothing. Start head: **72 of 120 walks fail** (53 M1, 19 M2); `560f92f`: 120 passed.
+
+### Verification (head `560f92f`, local, fake chain; [evidence/repair2-v-rows.txt](evidence/repair2-v-rows.txt))
+
+| V-ID | Command | Result |
+|---|---|---|
+| V2x.1 M1 | `reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_m1.py` | exit 0, 71 passed |
+| V2x.1 M2 | `… reconcile/tests/test_m2.py` | exit 0, 47 passed |
+| V2x.2 | `… test_m1.py test_m2.py -k thresholds_from_chain` | exit 0, 2 passed |
+| V2x.3 | `… test_m1.py test_m2.py test_m1_m2_sweep.py -k restart` | exit 0, 6 passed |
+| V2x.4 (not owned) | `… reconcile/tests -k rpc_budget` | exit 0, 1 passed |
+| V2d.7 (lane row, offline replay) | `… reconcile/tests/test_m1_receipts.py` | exit 0, 24 passed (12 faithful + 11 synthetic + count) |
+| reorg | `… test_m1.py test_m2.py -k reorg` | exit 0, 28 passed |
+| sweep | `… reconcile/tests/test_m1_m2_sweep.py` | exit 0, 120 passed |
+| V2x.6 suite | `… reconcile/tests` | exit 0, 502 passed, 0 skips (localhost metrics test included) |
+| V2x.6 lint | `reconcile/.venv/bin/ruff check reconcile` | exit 0 |
+| V2x.5 falsifiers | `reconcile/.venv/bin/python plans/monitoring-service/workers/cp2d/falsify_repair2.py <scratch>` | exit 0; **41/41** red then green (18 repair-2 incl. 6 sweep-only, 15 repair-1 re-run (R1-M2-persisted, R2, R3-M2 re-targeted), 8 attempt-1 F-M1a–d/F-M2a–d (F-M1a, F-M1c re-targeted)) — [evidence/repair2-falsifiers.txt](evidence/repair2-falsifiers.txt) |
+| RED on start head | implementation files from `cba2fb3` in a scratch copy, final tests | **92 failed** / 146 passed (20 targeted + 72 sweep walks) — [evidence/repair2-red-on-frozen.txt](evidence/repair2-red-on-frozen.txt) |
+| QA attempt 2 Appendix A | extracted unmodified | start head 7 failed / 17 passed; `560f92f` 24 passed |
+| QA attempt 1 Appendix A | `/tmp/cp2d-qa/test_independent.py` (SHA-256 `1d49099c…`) | 29 passed |
+
+Of the 20 targeted reds on the start head, three are evidence-shape reds rather than behaviour reds: `three_transactions…[True]` (new `intra_block` field), `unverified_two_tuple…[repair]` (the old `m1-intra-block` health row), `initial_empty_inventory…[listed]` (new `degraded` field).
+
+NOT RUN: V2d.7 LIVE re-authentication (receipt fixtures unchanged; QA attempt 2 re-authenticated six and hash-matched all twelve); DEF-3 fork PoC (deferred); no RPC or network used.
+
+### Completion handoff — repair 2 (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / dispatch: CP2d repair (QA attempt 2) / task_1aa9f92f025e, ctx_e0f0fb329a9f
+Outcome: F1-F4 repaired; acceptance pending fresh Codex QA (capped round)
+Base -> head: cba2fb3 -> 560f92f (code+tests) + records commit (head in plan.md status)
+Changed: checks/{m1_stale_tuple,m2_operator_capacity}.py, tests/{test_m1,test_m2,test_m1_m2_sweep}.py, workers/cp2d/**; no frozen file, no config
+F1: reorg runs re-check keys resolved above the ancestor (M1, M2); M2 tuple history; unevaluable -> raise, marker kept
+F2: coordinator ruling: unverified intra-block re-poison (no trace) pages under the incident; false-positive cost recorded
+F3: per-transaction walk, each poison/repair at its position, intra_block evidence
+F4: m1-inventory-empty health, degraded sweep
+Generalised: poisoning repaired within one run reported; receipt window anchored on the first run; M2 unknown hard always health
+Verification: m1 71, m2 47, thresholds 2, restart 6, receipts 24, reorg 28, sweep 120, suite 502, ruff clean; QA2 App. A 24/24, QA1 29/29; RED on start head 92; falsifiers 41/41
+NOT RUN: V2d.7 LIVE re-auth, DEF-3
+Open: pre-existing API-ahead-of-checkpoint transient unknown warn (repro recorded; question pending, no code change)
+Next: fresh Codex QA attempt 3
+```
