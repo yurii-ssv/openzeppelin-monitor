@@ -391,8 +391,9 @@ class Sweep:
             held[r["slot"]] = r["new"]
 
 
+# seeds 0-11, plus the seeds of a 700-seed exploration (repair 3) that found a defect or a model gap
 @pytest.mark.parametrize("confirmations", [0, 3])
-@pytest.mark.parametrize("seed", range(12))
+@pytest.mark.parametrize("seed", [*range(12), 23, 63, 98, 123, 295, 505, 597])
 def test_sweep_m9_m10(tmp_path, seed, confirmations):
     Sweep(tmp_path, seed, confirmations).run(20)
 
@@ -662,6 +663,7 @@ class UpdaterSweep:
                 assert str(r["ref"]) in text, self.trace(f"zero round {r['ref']} never sent")
 
 
-@pytest.mark.parametrize("seed", range(60))
+# seeds 0-59, plus the seeds of a 1200-seed exploration (repair 3) that found a defect or a model gap
+@pytest.mark.parametrize("seed", [*range(60), 106, 146, 153, 249, 281, 285, 287, 684])
 def test_sweep_m11(tmp_path, seed):
     UpdaterSweep(tmp_path, seed).run(16)
