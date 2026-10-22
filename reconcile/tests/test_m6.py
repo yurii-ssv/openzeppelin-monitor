@@ -3,7 +3,9 @@ plans/monitoring-service/workers/cp2e/attempts.md (V2x.1–V2x.5)."""
 
 from __future__ import annotations
 
+import itertools
 import json
+import random
 
 import pytest
 from fixtures_legacy import BURN, PERIOD_SSV, SSV, VIEWS, LegacyWorld, owner, param_change
@@ -772,3 +774,147 @@ def test_m6_reorg_orphaning_a_liquidation_restores_the_observed_start(tmp_path):
     lw.chain.mine()
     advance(w)
     _after_restore(w, clear)
+
+
+# ---------------------------------------------------------------- seeded adversarial sweep (qa/DEFECT-CLASSES.md)
+
+SWEEP_STORIES = ("page_orphaned", "page_survives", "resolution_orphaned", "clear_orphaned")
+SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert")
+BLINDING = {"empty", "short", "error", "view_revert"}  # faults that hide the cluster under attack from the run
+
+
+def _sweep_cases(seed=20261022):
+    """Every story × fault, twice, with confirmations, reorg depth and restart point drawn from a fixed seed."""
+    rng = random.Random(seed)
+    for story, fault in itertools.product(SWEEP_STORIES, SWEEP_FAULTS):
+        for _ in range(2):
+            yield story, fault, rng.choice((0, 3)), rng.choice(("1", "N")), rng.choice((None, "detected", "before"))
+
+
+class _M6Sweep:
+    """One cluster `a` (1 validator) under attack and a clear bystander `b`; `truth` is a's state on the canonical
+    chain (zero: active at balance 0), `obs` the canonical blocks at which the check evaluated a."""
+
+    def __init__(self, tmp_path, conf):
+        self.lw = lw = world(tmp_path, confirmations=conf)
+        self.conf = conf
+        self.a, self.b = lw.legacy(owner(1)), lw.legacy(owner(2), count=2)
+        lw.views(self.b, balance=500 * SSV)
+        self.set_truth(False)
+        lw.chain.mine()
+        lw.start()
+        self.truth_zero, self.obs = False, []
+
+    @property
+    def w(self):
+        return self.lw.w
+
+    def set_truth(self, zero, revert=False):
+        self.lw.views(self.a, balance=0 if zero else 30 * SSV, liquidatable=zero, revert=revert)
+
+    def last_run(self):  # a failed run only counts an error in run:m6
+        r = self.w.db.meta("run:m6", {})
+        return r.get("at"), r.get("block"), r.get("reasons")
+
+    def snapshot(self):
+        return {r["id"]: (r["key"], r["state"]) for r in self.w.db.conn.execute(
+            "SELECT id, key, state FROM incidents WHERE check_id='m6'")}
+
+    def step(self, seconds=3600, blocks=1, fault=None, run=True):
+        lw, before, n_out = self.lw, self.snapshot(), len(outbox(self.w))
+        prev_run = self.last_run()
+        lw.clock.advance(seconds)
+        lw.chain.mine(blocks + self.conf)
+        if run:
+            advance(self.w)
+        new_rows, after = outbox(self.w)[n_out:], self.snapshot()
+        ran = self.last_run() != prev_run
+        if ran and fault not in BLINDING:
+            self.obs.append((self.w.db.meta("run:m6")["block"], self.truth_zero))
+        self.check(before, after, new_rows, fault, ran)
+        return new_rows
+
+    def check(self, before, after, new_rows, fault, ran):
+        a = self.a.cid
+        resolved = [i for i, (k, st) in after.items() if st != "open" and before.get(i, (k, "open"))[1] == "open"
+                    and i in before]
+        opened = {k for k, st in after.values() if st == "open"}
+        # no resolve without positive proof
+        for i in resolved:
+            assert after[i][0] == a and not self.truth_zero and fault not in BLINDING, (i, fault)
+        # no open incident without supporting evidence (b never; a only while it is at zero)
+        assert opened <= ({a} if self.truth_zero else set()) | {k for k, st in before.values() if st == "open"}
+        if fault is None:
+            assert opened == ({a} if self.truth_zero else set()), (opened, self.truth_zero)
+        else:  # an input the run cannot trust is reported, never silent
+            assert any(r["severity"] == "health" and ("M6" in r["text"] or "m6" in r["text"]) for r in new_rows)
+        # every incident id pages once (no duplicate, no re-page of a surviving incident)
+        opens = [r["incident_id"] for r in outbox(self.w, "kind='open'")]
+        assert len(opens) == len(set(opens))
+        # no window anchored on stale data: the start lies after the last canonical clear observation and no
+        # later than the first canonical observation at zero after it (a failed run decides nothing: its rewind
+        # is rolled back with it and the reorg marker kept)
+        if not ran:
+            assert self.w.db.meta("reorg:m6") is not None or not resolved
+            return
+        row = self.w.db.conn.execute("SELECT * FROM m6_clusters WHERE cluster_id=?", (a,)).fetchone()
+        clears = [b for b, z in self.obs if not z]
+        if row is not None and row["last_clear_block"] is not None:
+            assert row["last_clear_block"] in clears
+        if row is not None and row["liquidatable_since"] is not None:
+            last_clear = max(clears, default=None)
+            zeros = [b for b, z in self.obs if z and (last_clear is None or b > last_clear)]
+            assert last_clear is None or row["liquidatable_since"] > last_clear
+            assert not zeros or row["liquidatable_since"] <= min(zeros)
+
+    def reorg(self, fork):
+        self.lw.fork(fork)
+        self.obs = [(b, z) for b, z in self.obs if b < fork]
+
+
+@pytest.mark.parametrize("story,fault,conf,depth,restart", list(_sweep_cases()))
+def test_m6_adversarial_sweep(tmp_path, story, fault, conf, depth, restart):
+    sw = _M6Sweep(tmp_path, conf)
+    lw, a = sw.lw, sw.a
+    raw = bytes.fromhex(a.cid[2:])
+    sw.step(seconds=0, blocks=0)  # the first sweep: a and b clear
+    if story in ("resolution_orphaned", "clear_orphaned"):  # canonical: a reaches zero and pages
+        sw.set_truth(True)
+        sw.truth_zero = True
+        sw.step()
+    fork = lw.chain.number
+    saved = dict(lw.ssv.clusters[raw])
+    if story in ("page_orphaned", "page_survives"):  # the zero balance appears on the chain about to be replaced
+        sw.set_truth(True)
+        sw.truth_zero = True
+        sw.step()
+    elif story == "resolution_orphaned":  # the liquidation that resolves it: an event run, no interval needed
+        lw.ssv.liquidate(a.owner, a.ops)
+        sw.truth_zero = False
+        new = sw.step(seconds=0, blocks=0)
+        assert [r["kind"] for r in new if r["severity"] != "health"] == ["resolved"]  # no event lost between sweeps
+    else:  # clear_orphaned: a clear observation on the deleted chain
+        sw.set_truth(False)
+        sw.truth_zero = False
+        sw.step()
+    if depth == "N":  # the reorg reaches below the checkpoint: deeper than the confirmation window
+        sw.step(blocks=6)
+    sw.reorg(fork)
+    lw.ssv.clusters[raw].update(saved)
+    sw.truth_zero = story != "page_orphaned"
+    sw.set_truth(sw.truth_zero, revert=fault == "view_revert")
+    lw.api_fault = fault if fault != "view_revert" else None
+    if restart == "before":
+        lw.restart()
+    elif restart == "detected":
+        lw.chain.mine(1 + conf)
+        sw.w.check_reorg()  # rewound and committed; the process dies before M6 runs
+        lw.restart()
+    sw.step(seconds=601, fault=fault)  # the reorg run, past api_refresh_s: the fault reaches the inventory
+    lw.api_fault = None
+    sw.set_truth(sw.truth_zero)
+    sw.step()  # healed
+    sw.step()  # and stable
+    assert sw.w.db.meta("reorg:m6") is None
+    keys = [k for k, _ in sw.snapshot().values() if k == a.cid]
+    assert len(keys) == {"page_orphaned": 1, "page_survives": 1}.get(story, 2)

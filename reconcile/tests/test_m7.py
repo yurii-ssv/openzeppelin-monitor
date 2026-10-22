@@ -3,7 +3,9 @@ plans/monitoring-service/workers/cp2e/attempts.md (V2x.1–V2x.5)."""
 
 from __future__ import annotations
 
+import itertools
 import json
+import random
 
 import pytest
 from fixtures_legacy import CSSV, SEL, SSV, VIEWS, LegacyWorld, owner
@@ -566,3 +568,137 @@ def test_m7_reorg_orphaning_the_repair_that_resolved_the_page_reopens_it(tmp_pat
     advance(lw.w)
     assert "surplus-floor" in incidents(lw.w)
     assert len(outbox(lw.w, "severity='page' AND kind='open'")) == 2
+
+
+# ---------------------------------------------------------------- seeded adversarial sweep (qa/DEFECT-CLASSES.md)
+
+SWEEP_STORIES = ("leak_orphaned", "leak_survives", "repair_orphaned", "unstake_orphaned")
+SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert", "op_revert")
+OP_SEL = "0x" + keccak(b"getOperatorEarningsSSV(uint64)")[:4].hex()
+
+
+def _sweep_cases(seed=20261022):
+    """Every story × fault, twice, with confirmations, reorg depth and restart point drawn from a fixed seed."""
+    rng = random.Random(seed)
+    for story, fault in itertools.product(SWEEP_STORIES, SWEEP_FAULTS):
+        for _ in range(2):
+            yield story, fault, rng.choice((0, 3)), rng.choice(("1", "N")), rng.choice((None, "detected", "before"))
+
+
+class _M7Sweep:
+    """The M7 ledger with `truth` = the canonical surplus; every step checks the sweep invariants."""
+
+    def __init__(self, tmp_path, conf):
+        self.lw, self.a = world(tmp_path, confirmations=conf)
+        self.conf, self.proxy, self.cssv = conf, BALANCED, STAKED
+        self.truth = SSV
+
+    @property
+    def w(self):
+        return self.lw.w
+
+    def ledger(self, proxy=None, cssv=None):
+        self.proxy = self.proxy if proxy is None else proxy
+        self.cssv = self.cssv if cssv is None else cssv
+        self.lw.ledger(proxy_ssv=self.proxy, cssv_supply=self.cssv, network=NETWORK, operators=OPS)
+
+    def last_run(self):
+        r = self.w.db.meta("run:m7", {})
+        return r.get("at"), r.get("block"), r.get("reasons")
+
+    def snapshot(self):
+        return {r["id"]: dict(r) for r in self.w.db.conn.execute(
+            "SELECT * FROM incidents WHERE check_id='m7' ORDER BY rowid")}
+
+    def step(self, seconds=DAY, blocks=1, fault=None):
+        lw, before, n_out, prev = self.lw, self.snapshot(), len(outbox(self.w)), self.last_run()
+        lw.clock.advance(seconds)
+        lw.chain.mine(blocks + self.conf)
+        advance(self.w)
+        new_rows, after, ran = outbox(self.w)[n_out:], self.snapshot(), self.last_run() != prev
+        open_after = {i: r for i, r in after.items() if r["state"] == "open"}
+        open_keys = {r["key"] for r in open_after.values()}
+        below = self.truth < SSV
+        # no resolve without positive proof: a complete ledger at or above the floor
+        for i, r in after.items():
+            if r["state"] != "open" and before.get(i, {}).get("state") == "open":
+                assert r["key"] == "surplus-floor" and not below and fault is None and ran, (r["key"], fault)
+        # no open incident without supporting evidence; never a second baseline
+        for i, r in open_after.items():
+            if i not in before:
+                assert (r["key"] == "surplus-floor" and below) or (r["key"] == "surplus" and fault is None), r["key"]
+        assert len({i for i, r in after.items() if r["key"] == "surplus"}) <= 1
+        if fault is None and ran:
+            assert open_keys == {"surplus"} | ({"surplus-floor"} if below else set())
+            inc = next(r for r in open_after.values() if r["key"] == "surplus")
+            ev = json.loads(inc["evidence"])
+            assert inc["revision"] == str(self.truth) and ev["surplus"] == str(self.truth)
+            # no window anchored on stale data: the ledger is the one at this run's block
+            assert ev["block"] == self.w.db.meta("run:m7")["block"]
+        elif fault is not None:  # UNKNOWN or a failed run: reported, the surplus value never changes
+            assert any(r["severity"] == "health" and ("M7" in r["text"] or "m7" in r["text"]) for r in new_rows)
+            for i, r in open_after.items():
+                if r["key"] == "surplus" and i in before:
+                    assert r["revision"] == before[i]["revision"]
+        # every incident id opens once (no duplicated page, no re-sent baseline)
+        opens = [r["incident_id"] for r in outbox(self.w, "kind='open'")]
+        assert len(opens) == len(set(opens))
+        return new_rows
+
+
+@pytest.mark.parametrize("story,fault,conf,depth,restart", list(_sweep_cases()))
+def test_m7_adversarial_sweep(tmp_path, story, fault, conf, depth, restart):
+    sw = _M7Sweep(tmp_path, conf)
+    lw = sw.lw
+    lw.chain.mine(conf)
+    sw.step(seconds=0, blocks=0)  # the first run: the 1 SSV baseline
+    # no event lost between sweeps: a request and its withdrawal both between two daily runs
+    lw.unstake(USER, 20 * SSV)
+    lw.chain.mine()
+    lw.unstake(USER, 20 * SSV, withdraw=True)
+    sw.ledger(proxy=sw.proxy - 20 * SSV, cssv=sw.cssv - 20 * SSV)
+    sw.step()
+    if story == "repair_orphaned":  # canonical: 5 SSV leave, the page opens
+        sw.ledger(proxy=sw.proxy - 5 * SSV)
+        sw.truth -= 5 * SSV
+        sw.step()
+    fork, proxy, cssv, truth = lw.chain.number, sw.proxy, sw.cssv, sw.truth
+    if story in ("leak_orphaned", "leak_survives"):
+        sw.ledger(proxy=sw.proxy - 5 * SSV)
+        sw.truth -= 5 * SSV
+    elif story == "repair_orphaned":
+        sw.ledger(proxy=sw.proxy + 5 * SSV)
+        sw.truth += 5 * SSV
+    else:  # unstake_orphaned: request (cSSV burned, SSV kept) on the chain about to be replaced
+        lw.unstake("0x" + "cd" * 20, 30 * SSV)
+        sw.ledger(cssv=sw.cssv - 30 * SSV)
+    sw.step()
+    if depth == "N":
+        sw.step(blocks=6)
+    lw.fork(fork)
+    sw.proxy, sw.cssv, sw.truth = proxy, cssv, truth
+    if story == "leak_survives":
+        sw.ledger(proxy=sw.proxy - 5 * SSV)
+        sw.truth -= 5 * SSV
+    if fault == "view_revert":
+        lw.views(sw.a, balance=CLUSTER, revert=True)
+    elif fault == "op_revert":
+        lw.chain.stub_call(VIEWS, OP_SEL + u256(2).hex(), revert="0x")
+    else:
+        lw.api_fault = fault
+    if restart == "before":
+        lw.restart()
+    elif restart == "detected":
+        lw.chain.mine(1 + conf)
+        sw.w.check_reorg()
+        lw.restart()
+    sw.step(seconds=601, fault=fault)  # the reorg run (reorg reason; past api_refresh_s)
+    lw.api_fault = None
+    lw.views(sw.a, balance=CLUSTER)
+    lw.chain.stub_call(VIEWS, OP_SEL + u256(2).hex(), u256(OPS[2]))
+    sw.step()  # healed
+    sw.step()  # and stable
+    assert sw.w.db.meta("reorg:m7") is None
+    pages = [r for r in sw.snapshot().values() if r["key"] == "surplus-floor"]
+    assert len(pages) == {"leak_orphaned": 1, "leak_survives": 1, "repair_orphaned": 2}.get(story, 0)
+    assert [r["state"] for r in pages][-1:] == (["open"] if sw.truth < SSV else ["resolved"] if pages else [])
