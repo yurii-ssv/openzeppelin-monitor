@@ -66,3 +66,9 @@ one SWEEP2-m11-definite $C/m11_updater_liveness.py 'if not aged and (not reporte
   $T/test_m9_m10_m11_sweep.py -k sweep_m11
 one SWEEP2-book $C/m9_oracle_common.py 'elif (r is not None and not r["closed"]' 'elif (False and r is not None and not r["closed"]' \
   $T/test_m9_m10_m11_sweep.py -k sweep_m11
+# repair 1's F1-proof anchor is now behind `definite` (its named test no longer reaches `proven`): both re-guarded
+one R2-F1-proof $C/m11_updater_liveness.py 'proven = newest is not None and all(' 'proven = newest is not None or all(' \
+  $T/test_m11.py::test_qa2_f3_reorg_removing_the_round_that_aged_a_mismatch
+one R2-F1-definite $C/m11_updater_liveness.py 'definite = newest is not None and latest is not None' \
+  'definite = True or newest is not None and latest is not None' \
+  $T/test_m11.py::test_qa1_f1_partial_proof_answer_in_a_reorg_run_keeps_the_reported_mismatch
