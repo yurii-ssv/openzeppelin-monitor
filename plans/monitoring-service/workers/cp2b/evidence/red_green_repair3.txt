@@ -1,0 +1,90 @@
+RED on the frozen head (repair 3): code of 8bd225e (= 6191a36 code, QA attempt 3 frozen head; git archive) + the repair-3 lane test files
+command: (cd frozen && reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py reconcile/tests/test_m10.py reconcile/tests/test_m11.py reconcile/tests/test_m9_m10_m11_sweep.py -rfp)
+result: 37 failed, 195 passed in 5.06s
+
+## per new test (repair 3)
+GREEN test_r3_reorg_removing_the_rotation_that_healed_a_duplicate_reopens_it (state-table row: untested before, behaviour already correct)
+RED   test_qa3_f1_two_zero_rounds_sliding_out_of_history_are_not_reported_again
+RED   test_qa3_f1_long_zero_outage_recovery_sends_no_further_pages
+RED   test_qa3_f1_ongoing_outage_longer_than_history_keeps_one_incident_and_counts_every_round
+RED   test_qa3_f1_restart_while_a_resolved_outage_slides_out_is_silent
+RED   test_qa3_f1_outage_during_downtime_is_reported_once_and_not_again_while_it_slides
+RED   test_qa3_f1_reorg_beyond_confirmations_removing_the_healing_round_of_a_resolved_outage_reopens_it
+RED   test_qa3_f1_reorg_re_including_the_healing_round_of_a_resolved_outage_is_silent
+RED   test_r3_revert_rate_is_not_healed_by_a_round_without_any_updater_transaction
+RED   test_r3_revert_rate_open_while_it_slides_out_of_history_is_kept
+RED   test_r3_reorg_removing_the_clean_round_that_healed_a_revert_rate_reopens_it
+RED   test_r3_outage_from_the_first_stored_round_counts_every_round
+RED   test_r3_a_sender_lookup_failing_in_the_backward_walk_fails_the_run_closed
+RED   test_qa3_f2_stray_single_vote_round_is_not_positive_proof_that_a_dissenting_slot_agrees
+RED   test_qa3_f2_timed_out_round_with_only_the_dissenter_voting_does_not_heal_its_page
+RED   test_qa3_f2_self_referential_committed_root_does_not_heal
+RED   test_qa3_f2_lone_voter_round_does_not_extend_the_dissent_run
+GREEN test_qa3_f2_timed_out_round_where_another_slot_votes_the_same_root_heals_control (benign twin: behaviour kept)
+RED   test_qa3_f2_one_slot_voting_one_root_twice_is_no_reference
+GREEN test_r3_reorg_removing_the_commit_that_ended_a_resolved_cadence_gap_reopens_it (state-table row: untested before, behaviour already correct)
+GREEN test_r3_reorg_removing_the_adequate_commit_that_healed_a_weak_commit_reopens_it (state-table row: untested before, behaviour already correct)
+GREEN test_r3_reorg_removing_the_vote_that_healed_an_absent_slot_reopens_it (state-table row: untested before, behaviour already correct)
+GREEN test_r3_reorg_removing_the_vote_that_healed_a_commit_root_revert_reopens_it (state-table row: untested before, behaviour already correct)
+GREEN test_r3_reorg_removing_the_commit_that_settled_a_split_reopens_it (state-table row: untested before, behaviour already correct)
+RED   test_r3_lone_voter_round_settled_by_the_clock_does_not_heal
+
+## sweep cases RED on the frozen code (updated independent model + new invariants)
+test_sweep_m11[0]
+test_sweep_m11[10]
+test_sweep_m11[11]
+test_sweep_m11[13]
+test_sweep_m11[14]
+test_sweep_m11[16]
+test_sweep_m11[17]
+test_sweep_m11[18]
+test_sweep_m11[1]
+test_sweep_m11[4]
+test_sweep_m11[9]
+test_sweep_m9_m10[0-0]
+test_sweep_m9_m10[0-3]
+test_sweep_m9_m10[11-0]
+test_sweep_m9_m10[11-3]
+test_sweep_m9_m10[2-0]
+test_sweep_m9_m10[2-3]
+test_sweep_m9_m10[3-0]
+test_sweep_m9_m10[3-3]
+
+## all failing on the frozen code
+FAILED reconcile/tests/test_m9.py::test_qa3_f2_stray_single_vote_round_is_not_positive_proof_that_a_dissenting_slot_agrees
+FAILED reconcile/tests/test_m9.py::test_qa3_f2_timed_out_round_with_only_the_dissenter_voting_does_not_heal_its_page
+FAILED reconcile/tests/test_m9.py::test_qa3_f2_self_referential_committed_root_does_not_heal
+FAILED reconcile/tests/test_m9.py::test_qa3_f2_lone_voter_round_does_not_extend_the_dissent_run
+FAILED reconcile/tests/test_m9.py::test_qa3_f2_one_slot_voting_one_root_twice_is_no_reference
+FAILED reconcile/tests/test_m9.py::test_r3_lone_voter_round_settled_by_the_clock_does_not_heal
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_two_zero_rounds_sliding_out_of_history_are_not_reported_again
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_long_zero_outage_recovery_sends_no_further_pages
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_ongoing_outage_longer_than_history_keeps_one_incident_and_counts_every_round
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_restart_while_a_resolved_outage_slides_out_is_silent
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_outage_during_downtime_is_reported_once_and_not_again_while_it_slides
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_reorg_beyond_confirmations_removing_the_healing_round_of_a_resolved_outage_reopens_it
+FAILED reconcile/tests/test_m11.py::test_qa3_f1_reorg_re_including_the_healing_round_of_a_resolved_outage_is_silent
+FAILED reconcile/tests/test_m11.py::test_r3_revert_rate_is_not_healed_by_a_round_without_any_updater_transaction
+FAILED reconcile/tests/test_m11.py::test_r3_revert_rate_open_while_it_slides_out_of_history_is_kept
+FAILED reconcile/tests/test_m11.py::test_r3_reorg_removing_the_clean_round_that_healed_a_revert_rate_reopens_it
+FAILED reconcile/tests/test_m11.py::test_r3_outage_from_the_first_stored_round_counts_every_round
+FAILED reconcile/tests/test_m11.py::test_r3_a_sender_lookup_failing_in_the_backward_walk_fails_the_run_closed
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[0-0] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[0-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[2-0] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[2-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[3-0] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[3-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[11-0] - As...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[11-3] - As...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[0] - Assertio...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[1] - Assertio...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[4] - Assertio...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[9] - Assertio...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[10] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[11] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[13] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[14] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[16] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[17] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[18] - Asserti...

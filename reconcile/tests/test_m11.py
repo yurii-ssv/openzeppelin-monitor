@@ -1333,3 +1333,77 @@ def test_r3_revert_rate_open_while_it_slides_out_of_history_is_kept(tmp_path):
     w = u.restart()
     tick(w, u.oc, 2, seconds=600)
     assert open_keys(w, "m11") == {} and len([r for r in sent(w, "m11") if r["ikey"] == "revert-rate"]) == 2
+
+
+def test_r3_reorg_removing_the_clean_round_that_healed_a_revert_rate_reopens_it(tmp_path):
+    """Repair 3 state table (c) for `revert-rate`: the clean round that resolved it is replaced (depth beyond the
+    confirmation window) by a round without updater transactions: no positive proof on the new chain, the warn holds
+    again; the next clean round resolves it once."""
+    u = UpdaterWorld(tmp_path, confirmations=2)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    fork = u.c.number
+    latest = u.ssv.latest_root
+    u.round(updates=(0, 1))
+    u.close()
+    assert open_keys(u.w, "m11") == {}
+    u.c.reorg(fork)
+    u.ssv.latest_root = latest
+    u.c.mine(2)
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn", "liveness": "warn"}, _kinds(u.w)
+    u.round(updates=(2,))
+    u.close()
+    assert open_keys(u.w, "m11") == {}
+    assert [k for i, _, k in _kinds(u.w) if i == "revert-rate"] == ["open", "resolved", "open", "resolved"]
+
+
+def test_r3_outage_from_the_first_stored_round_counts_every_round(tmp_path):
+    """(a) empty input for the run's backward walk: the outage starts at the first stored RootCommitted (nothing
+    before it): one incident, every round counted, nothing sent again while it slides after recovery."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    for _ in range(8):
+        u.round(updates=())
+        u.close()
+    rows = sent(u.w, "m11")
+    assert len({r["incident_id"] for r in rows}) == 1 and "for 8 committed round(s)" in rows[-1]["text"], _kinds(u.w)
+    u.round(updates=(0,))
+    u.close()
+    n = len(sent(u.w, "m11"))
+    for _ in range(7):
+        u.round(updates=(0,))
+        u.close()
+    assert len(sent(u.w, "m11")) == n and open_keys(u.w, "m11") == {}, _kinds(u.w)[n:]
+
+
+def test_r3_a_sender_lookup_failing_in_the_backward_walk_fails_the_run_closed(tmp_path):
+    """(b) error input: another sender's update in the first (oldest) zero round, beyond history_rounds, cannot be
+    read (eth_getTransactionByHash -> null) on a fresh store (restart with its sender cache dropped): the run raises
+    and changes nothing (no resolve, no new incident); the next run with the RPC back continues the one incident."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.round(updates=(0,))
+    u.close()
+    u.round(updates=())
+    tx = u.update(1, eb=40, sender=SLOTS[3])  # another sender in the outage's first round
+    u.close()
+    for _ in range(7):
+        u.round(updates=())
+        u.close()
+    rows = len(sent(u.w, "m11"))
+    u.w.db.conn.execute("DELETE FROM m11_senders")
+    u.w.db.conn.commit()
+    saved = u.c.senders.pop(tx)
+    u.round(updates=())
+    u.close()
+    assert u.w.db.meta("run:m11")["errors"] >= 1 and len(sent(u.w, "m11")) == rows
+    assert open_keys(u.w, "m11") == {"liveness": "page"}
+    u.c.senders[tx] = saved
+    tick(u.w, u.oc, 1, seconds=300)
+    new = sent(u.w, "m11")[rows:]
+    assert [r["kind"] for r in new] == ["update"] and "for 9 committed round(s)" in new[0]["text"], _kinds(u.w)[rows:]

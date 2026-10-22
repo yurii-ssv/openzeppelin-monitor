@@ -1229,3 +1229,132 @@ def test_qa3_f2_one_slot_voting_one_root_twice_is_no_reference(tmp_path):
     oc.vote(x, 3, variant=1, oracle="0x" + "33" * 20)
     tick(w, oc, 200)
     assert open_keys(w, "m9").get("dissent:3") == "page" and not _dissent_resolutions(w), open_keys(w, "m9")
+
+
+# ---- repair 3 generalisation, state table (c): a reorg beyond the confirmation window that removes the CLEARANCE of
+# an already resolved key (the condition's own evidence survives): the key holds again on the new chain and is
+# reported again (supported by evidence), and a restart sends nothing more
+
+
+def _reopened(tmp_path, w, oc, key, sev):
+    keys = open_keys(w, "m9")
+    assert keys.get(key) == sev, (key, keys, pages_warns(w))
+    n = len(sent(w, "m9"))
+    w = restart(tmp_path, w, oc)
+    tick(w, oc, 2, seconds=60)
+    assert open_keys(w, "m9").get(key) == sev and len([r for r in sent(w, "m9")[n:] if r["ikey"] == key]) == 0
+    return w
+
+
+def test_r3_reorg_removing_the_commit_that_ended_a_resolved_cadence_gap_reopens_it(tmp_path):
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    oc.round()
+    tick(w, oc, 5)
+    tick(w, seconds=9.5 * HOUR)
+    assert open_keys(w, "m9") == {"cadence": "page"}
+    fork = oc.c.number
+    latest = oc.latest
+    ref = oc.round()
+    tick(w, oc, 5)
+    assert open_keys(w, "m9") == {}
+    oc.reorg(fork, latest=latest, refs={ref})
+    oc.c.mine(6)  # the new chain has no RootCommitted after the gap
+    tick(w, oc, 2)
+    _reopened(tmp_path, w, oc, "cadence", "page")
+
+
+def test_r3_reorg_removing_the_adequate_commit_that_healed_a_weak_commit_reopens_it(tmp_path):
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    oc.set_quorum(2500)
+    oc.round(voters=(1,))  # committed by one slot
+    tick(w, oc, 5)
+    assert open_keys(w, "m9").get("weak-commit") == "page"
+    oc.set_quorum(7500)
+    fork = oc.c.number
+    latest = oc.latest
+    ref = oc.round()
+    tick(w, oc, 5)
+    assert "weak-commit" not in open_keys(w, "m9")
+    oc.reorg(fork, latest=latest, refs={ref})
+    oc.c.mine(6)
+    tick(w, oc, 2)
+    _reopened(tmp_path, w, oc, "weak-commit", "page")
+
+
+def test_r3_reorg_removing_the_vote_that_healed_an_absent_slot_reopens_it(tmp_path):
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    for _ in range(6):
+        oc.round(voters=(1, 2, 4))
+        tick(w, oc, 3)
+    assert open_keys(w, "m9") == {"absent:3": "warn"}
+    fork = oc.c.number
+    latest = oc.latest
+    ref = oc.round(voters=(3, 1, 2))
+    tick(w, oc, 5)
+    assert open_keys(w, "m9") == {}
+    oc.reorg(fork, latest=latest, refs={ref})
+    oc.c.mine(3)
+    oc.round(voters=(1, 2, 4))  # the new chain's round: slot 3 absent again
+    tick(w, oc, 5)
+    _reopened(tmp_path, w, oc, "absent:3", "warn")
+
+
+def test_r3_reorg_removing_the_vote_that_healed_a_commit_root_revert_reopens_it(tmp_path):
+    oc, w = oracle_worker(tmp_path, inbox=True, confirmations=2)
+    tick(w, oc, 3)
+    failed_commit_root(oc, tmp_path / "failed-tx.jsonl", SLOTS[3], "AlreadyVoted")
+    tick(w, oc, 3)
+    key = f"revert:{SLOTS[3]}"
+    assert open_keys(w, "m9") == {key: "warn"}
+    oc.c.mine(2)
+    fork = oc.c.number
+    latest = oc.latest
+    ref = oc.round(voters=(3, 1, 2))
+    tick(w, oc, 5)
+    assert open_keys(w, "m9") == {}
+    oc.reorg(fork, latest=latest, refs={ref})
+    oc.c.mine(6)
+    tick(w, oc, 2)
+    _reopened(tmp_path, w, oc, key, "warn")
+
+
+def test_r3_reorg_removing_the_commit_that_settled_a_split_reopens_it(tmp_path):
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    ref = oc.c.number - 1
+    oc.vote(ref, 1)
+    oc.vote(ref, 3, variant=1)
+    tick(w, oc, 3)
+    assert open_keys(w, "m9") == {"split": "warn"}
+    fork = oc.c.number
+    oc.vote(ref, 2)
+    oc.vote(ref, 4)
+    tick(w, oc, 3)
+    assert open_keys(w, "m9") == {"dissent:3": "warn"}
+    oc.reorg(fork, latest=0)
+    oc.acc = {k: a for k, a in oc.acc.items() if k[0] != ref or k[1] != oc.root(ref)} | {(ref, oc.root(ref)): 0}
+    oc.voted -= {(ref, oc.root(ref), 2), (ref, oc.root(ref), 4)}
+    oc.c.mine(4)
+    tick(w, oc, 2)
+    keys = open_keys(w, "m9")
+    assert keys == {"split": "warn"}, keys
+
+
+def test_r3_lone_voter_round_settled_by_the_clock_does_not_heal(tmp_path):
+    """(f) window anchoring: blocks stop after slot 3's lone vote; the round settles from the clock (horizon) at its
+    deadline: still no reference, the dissent page stays (also across a restart)."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w)
+    tick(w, oc, 10)
+    oc.vote(oc.c.number - 1, 3, variant=1)
+    tick(w, oc, 2)
+    tick(w, seconds=40 * 60)  # no block: the clock passes the 30 min
+    keys = open_keys(w, "m9")
+    assert keys.get("failed-round") == "page" and keys.get("dissent:3") == "page" and not _dissent_resolutions(w), keys
+    w = restart(tmp_path, w, oc)
+    tick(w, seconds=120)
+    assert open_keys(w, "m9").get("dissent:3") == "page" and not _dissent_resolutions(w)

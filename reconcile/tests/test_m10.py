@@ -380,3 +380,26 @@ def test_reorg_below_the_checks_first_run_lowers_its_baseline(tmp_path):
     assert oc.c.sealed < base
     tick(w2, oc, 12)
     assert [(r["ikey"].split(":")[0], r["kind"]) for r in sent(w2, "m10")] == [("dup", "open"), ("dup", "resolved")]
+
+
+def test_r3_reorg_removing_the_rotation_that_healed_a_duplicate_reopens_it(tmp_path):
+    """Repair 3 state table (c): slot 2 takes slot 1's key (page), a later rotation heals it (resolved); a reorg
+    beyond the confirmation window removes only the healing rotation: the duplicate holds again on the new chain and
+    is reported again, once (also across a restart)."""
+    oc, w = setup(tmp_path, confirmations=2)
+    oc.replace(2, SLOTS[1])
+    tick(w, oc, 3)
+    assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"}
+    fork = oc.c.number
+    oc.replace(2, NEW)
+    tick(w, oc, 3)
+    assert open_keys(w, "m10") == {}
+    oc.slots[2] = SLOTS[1]
+    oc.reorg(fork, latest=oc.latest)
+    oc.c.mine(4)
+    tick(w, oc, 2)
+    assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"}, (open_keys(w, "m10"), [r["kind"] for r in sent(w, "m10")])
+    n = len(sent(w, "m10"))
+    w = restart(tmp_path, w, oc, ids=("m10",))
+    tick(w, oc, 2, seconds=600)
+    assert open_keys(w, "m10") == {f"dup:{SLOTS[1]}": "page"} and len(sent(w, "m10")) == n
