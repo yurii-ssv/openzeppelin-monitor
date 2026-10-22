@@ -874,3 +874,9 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - CP3 dispatched: task `task_e6121a51fcdb`/`ctx_ad9a6e4a6775`, worktree `ms-cp3` (fresh child of `plan/monitoring-service` @ `0c388ec`), claude/opus/high requested = effective. Packet: compose with named volumes, D16 RPC failover + 5000-block chunking in shared rpc.py, promotion of lane-local RPC helpers, removal of the frozen-test patch, D17 silent backfill, fork e2e m5/m3/m9/m12 at a recent fork block, local run in record mode, runbook with a Kubernetes section (D18), carried small items; F6 stays deferred.
 
 - CP3 question (M11 weekly comparison re-asks 419 clusters every 300 s while the proof API lags a root): ruling A + probe-first short-circuit (retry at most every 1800 s, one probe cluster first). CP3 change to a CP2b check; QA to re-check M11.
+
+## Event 0077 — CP3 implemented; QA 1 on Opus
+
+- CP3 worker_done (`ctx_ad9a6e4a6775`): head `91ca3a7` (base `0c388ec`), 31 files; changed paths within the CP3 allowed writes (reconcile/**, docker-compose*.yaml, deploy/README.md, .gitignore, reconcile/.dockerignore, workers/cp3/**, plan CP3 line); no config/, config.zip, .env*, Dockerfile.production edit. Coordinator re-run in the lane: suite 2202 passed, ruff clean; local stack project `ms-cp3` up (worker healthy). Worker claims V3.1-V3.9 PASS, V3.10 runbook for QA review.
+- Findings from the worker: F-1 Dockerfile.development's jq cannot load (glibc), so every Monitor script trigger (inbox bridge) fails; compose now defaults to Dockerfile.production (fixing Dockerfile.development is Marco's; note Marco's uncommitted local edit of Dockerfile.production in the main checkout). F-4 the M11 retry gate (ruling of this session).
+- QA 1 on Opus dispatched `task_984b1183ea51`/`ctx_ca931025aa41` (`ms-qa-cp3`, opus/high effective), D15 and the no-mutation scope note. Released `ctx_ad9a6e4a6775`.

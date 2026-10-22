@@ -22,7 +22,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2e Legacy SSV (M6, M7) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `45cc774`), integrated | settled+released | `45cc774` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; N4 residual recorded |
-| CP3 Integration, compose, fork e2e | DISPATCHED (D19) | task `task_e6121a51fcdb`/`ctx_ad9a6e4a6775`, opus/high | `0c388ec` | Claude Opus high | wait worker_done; then Opus QA, then CP4 |
+| CP3 Integration, compose, fork e2e | IMPLEMENTED — QA 1 RUNNING on Opus (head `91ca3a7`) | QA task `task_984b1183ea51`/`ctx_ca931025aa41` | `91ca3a7` | Claude Opus 5.5 high (QA) | wait worker_done; local stack `ms-cp3` running |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
