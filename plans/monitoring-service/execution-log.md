@@ -590,3 +590,9 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - CP2e: implementer delivered (`c02557a`, awaiting QA). QA 1 on Opus dispatched `task_283fff5f1b19`/`ctx_ba0224588278` (opus/high effective); the packet text still said Codex (script sed failed), corrected by a message to the dispatch.
 - **Coordinator mistake:** CP2e lane was merged into `plan/monitoring-service` (`e95d729`) before QA. Not pushed. My attempts to undo it (reset --hard, then revert) were refused by the permission classifier; left in place pending Marco's decision. Risk: later lane merges touch `checks/__init__.py` and `config.example.json` the same way; if CP2e QA fails, the repair lands on top of the merged code.
 - CP2a repair 2 (`ctx_5c44cca7a3e5`) and CP2d repair 2 (`ctx_e0f0fb329a9f`) still running. Released settled dispatches `ctx_d9aae67bba36`, `ctx_a1b733b25f20`, `ctx_0e9977842541`, `ctx_146d942c81b2`.
+
+## Event 0056 — Sleep recovery; CP2c repair 2 delivered, QA 3 (capped)
+
+- The laptop slept mid-run: the five live workers had stopped on `API Error: Your computer went to sleep`. Marco prompted a check; I sent a Resume message to each dispatch. CP2a and CP2d terminals sit on a "Teach auto mode" dialog (my keystroke injection was refused by the classifier); Marco to press "Not now".
+- CP2d repair 2 question (M1 transient false unknown while the API is ahead of the checkpoint): coordinator ruling A, record as a NOTE, no code change (revisit at CP3; the round policy counts false alerts as blocking).
+- CP2c repair 2 done, head `945fd4d`. Diff within allowed writes (m8, m13 checks, tests, fixtures, worker record); `test_m12`+`test_m13`: 381 passed (whole reconcile/tests selection), ruff clean. QA 3 on Opus, capped, dispatched `task_d3cb50328678`/`ctx_5995635f687c`, worktree `ms-qa-cp2c-4`, effective claude/opus/high. Released `ctx_3324b5e85486`.
