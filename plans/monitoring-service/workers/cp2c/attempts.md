@@ -91,3 +91,14 @@ LIVE smoke (extra evidence, not a V row; record mode, `alerts.mode: "record"`, t
 - Sweep harness corrections during the attempt (test-side, not findings): the first M13/M8 sweep draft reorganised twice (a "rewrite" reorg below the checkpoint), and started the watch before `activation_block` with confirmations 2 (baseline at the second checkpoint): fixed in the harness before any assertion was trusted.
 - Resulting head: `56a26a9` (+ the docs commit of this attempt)
 - Next action: fresh Codex QA.
+
+<a id="attempt-5"></a>
+## Attempt 5 — repair 2 (QA attempt 2 F1–F5), fresh implementer
+
+- Observed UTC: 2026-10-22 (session interrupted once by a laptop sleep / API error; resumed from the worktree on the coordinator's "Resume" message at 07:06Z) → LIVE 07:10Z → docs
+- Task / Dispatch: `task_6cd7ace72d0e` / `ctx_3324b5e85486`
+- Frozen start head: `80e174b308e7452642cc5c6a8b986598221a5193` (status clean; `reconcile/.venv` CPython 3.12.15 working; baseline 483 passed)
+- Action and concrete outcome: extracted QA attempt 2 Appendix A1–A4 and C1 to scratch; implemented `m13_orphan` settlement (F1), the bounded non-archive fallback (F2), the per-process M8 floor token (F3), `except Exception` in attribution (F4); ported A1–A4 and all 21 C1 scenarios plus 31 own regressions (F1 shorter-chain/resolved-key/restart/second-reorg variants, F2 pruned/archive/down/transient/deep-reorg, F4 malformed variants, settings validation); extended the M13 sweep (regrow, restart while pending, ≤ 1 page per canonical top-up; 40 → 200 cases). RED on `80e174b`: M8 1, M13 42 (18 tests + 24 sweep cases); GREEN now. 7 new falsifiers (21/21). LIVE publicnode confirms the F2 recovery.
+- Test-side corrections during the attempt (not findings): the first draft of the drain-wait test topped up before the baseline (confirmations 2: no baseline yet); the F2 call-count bound counted only the window read (the run also counts the refused full read: bound 2 × 256 + 2 × 64); the RPC-down test compared the watch with `sealed − 6` instead of the stored block.
+- Resulting head: code `1752b33`, falsifiers `6ab3441` (+ the docs commit of this attempt)
+- Next action: fresh QA (Claude Opus 5.5), round policy: correctness/safety findings block, others are notes.
