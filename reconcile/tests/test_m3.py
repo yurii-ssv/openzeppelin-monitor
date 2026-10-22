@@ -710,3 +710,77 @@ def test_class5_fee_increase_onset_is_seen_at_its_block_even_if_healed_before_th
 def test_class11_invalid_configuration_is_a_startup_error(tmp_path, cfg):
     with pytest.raises(SystemExit, match="checks.m3"):
         setup(tmp_path, cfg={"m3": cfg})
+
+
+# ---------------------------------------------------------------- QA cp2a attempt 2: the H1 shape (repair 2)
+# A reorg that lowers the checkpoint below the incident's evidence (a shorter replacement chain, or a node that
+# lags behind the checkpoint): each was red on the frozen head 1154333, green after.
+
+
+def zone_then_lower(tmp_path, below_onset: bool, replace: bool):
+    """Onset observed, warn, then page at age N2 = 20 (one advance per block, confirmations 12); then the checkpoint is
+    lowered below (`below_onset`) or above the onset, either by a node lagging behind it or (`replace`) by a reorg onto
+    a shorter chain whose blocks above the fork are replaced with the same content."""
+    chain, w, cl = setup(tmp_path, confirmations=12, cfg={"m3": {"n_blocks": 5, "n2_blocks": 20}})
+    cl.create(balance=THRESHOLD + 40 * BURN)
+    for _ in range(80):
+        chain.mine()
+        advance(w)
+    inc = open_incidents(w, "m3")[cid_hex()]
+    assert inc["severity"] == "page" and sent(w, "m3") == [("open", "info"), ("escalate", "warn"), ("escalate", "page")]
+    onset = evidence(w)["onset_block"]
+    if replace:
+        chain.reorg(onset - 3 if below_onset else onset + 3)
+        advance(w)
+    else:
+        from fixtures_liquidation import lagging_node
+
+        lagging_node(chain, w, chain.sealed - (onset - 4 if below_onset else onset + 15))
+    assert (w.checkpoint()["block"] < onset) is below_onset and w.checkpoint()["block"] < onset + 20
+    return chain, w, cl
+
+
+@pytest.mark.parametrize("replace", [False, True])
+@pytest.mark.parametrize("below_onset", [False, True])
+def test_qa2_class2_lowered_checkpoint_keeps_the_page_and_never_re_escalates(tmp_path, below_onset, replace):
+    """At the lowered checkpoint the age is short (or the cluster is not liquidatable yet): the page is neither
+    resolved nor lowered, and once the checkpoint is back above its evidence nothing is re-sent."""
+    chain, w, cl = zone_then_lower(tmp_path, below_onset, replace)
+    paged = [("open", "info"), ("escalate", "warn"), ("escalate", "page")]
+    assert sent(w, "m3") == paged and open_incidents(w, "m3")[cid_hex()]["severity"] == "page"
+    for _ in range(45):  # the checkpoint passes the old evidence block
+        chain.mine()
+        advance(w)
+    assert sent(w, "m3") == paged and len(incidents(w, "m3")) == 1
+    assert open_incidents(w, "m3")[cid_hex()]["severity"] == "page"
+    assert w.db.conn.execute("SELECT hold_block FROM m3_zone").fetchone()[0] is None  # re-evaluated above it
+
+
+def test_qa2_class2_lowered_checkpoint_then_the_new_chain_lifts_the_cluster_resolves_once(tmp_path):
+    """The twin: the replacement chain carries a top-up, so once the checkpoint is back above the old evidence the
+    cluster is proven out of the zone: one resolution, never re-paged."""
+    chain, w, cl = zone_then_lower(tmp_path, below_onset=False, replace=True)
+    cl.deposit(value=10**18)
+    advance(w)
+    assert not outbox(w, "kind='resolved'")  # the deposit's block is still below the old evidence
+    for _ in range(45):  # the checkpoint passes the old evidence block
+        chain.mine()
+        advance(w)
+    assert sent(w, "m3") == [("open", "info"), ("escalate", "warn"), ("escalate", "page"), ("resolved", "info")]
+    w.clock.advance(10 * 86_400)
+    chain.mine()
+    advance(w)
+    w.housekeeping()
+    assert not outbox(w, "kind='realert'") and not open_incidents(w, "m3")
+
+
+def test_qa2_class10_restart_while_the_checkpoint_is_lowered_keeps_the_hold(tmp_path):
+    chain, w, cl = zone_then_lower(tmp_path, below_onset=True, replace=False)
+    w = restart(tmp_path, w, cfg={"m3": {"n_blocks": 5, "n2_blocks": 20}}, confirmations=12)
+    w.clock.advance(600)
+    advance(w)
+    assert open_incidents(w, "m3")[cid_hex()]["severity"] == "page"
+    for _ in range(45):  # the checkpoint passes the old evidence block
+        chain.mine()
+        advance(w)
+    assert sent(w, "m3") == [("open", "info"), ("escalate", "warn"), ("escalate", "page")]

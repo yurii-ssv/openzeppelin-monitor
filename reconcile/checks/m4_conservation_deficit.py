@@ -29,11 +29,17 @@ are deleted in the reorg run (they were computed on deleted blocks), and the reo
 equation at the new checkpoint, so the key "deficit" is always re-reported (page), resolved (complete, no
 deficit), or re-reported as UNKNOWN (kept open). The run is complete by construction (every term every run),
 so a restart before the reorg run (durable marker) needs no extra state.
+
+Lowered checkpoint (QA cp2a-2 H1 shape): a reorg onto a shorter chain, or a node lagging behind the checkpoint
+(the framework treats a block the node does not have as not canonical), can put the reorg run's block below the
+latest scan of an open deficit. A scan there is about an earlier block, not about that evidence: the page is kept
+(state `hold` = the latest scan block above the run's block) and not resolved until a complete scan at or above
+that block shows no deficit; while held the check runs at every checkpoint block (`near_set`).
 """
 
 from __future__ import annotations
 
-from checks.base import Check, Ctx, Every, Finding, OnEvents
+from checks.base import Check, Ctx, Every, Finding, NearSetEveryBlock, OnEvents
 from checks.m3_views import (
     GET_BALANCE,
     GET_NETWORK_EARNINGS,
@@ -144,11 +150,21 @@ class M4ConservationDeficit(Check):
         if not config["interval_s"] > 0:
             raise SystemExit(f"checks.m4: need interval_s > 0; got {config}")
         self.views, self.proxy = settings["views"].lower(), settings["proxy"].lower()
-        self.schedule = (Every(config["interval_s"]), OnEvents({"RootCommitted"}))
+        self.schedule = (Every(config["interval_s"]), OnEvents({"RootCommitted"}), NearSetEveryBlock())
+        self.near_set: frozenset = frozenset()  # {KEY} while a deficit is held above the checkpoint
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
+        hold = ctx.state("hold")
         if ctx.reorg_ancestor is not None:
+            if KEY in ctx.reorg_keys or self.open(ctx):  # its latest scan above this block: not disproved here
+                top = ctx.db.conn.execute("SELECT MAX(block) FROM m4_scans WHERE block > ?", (block,)).fetchone()[0]
+                if top is not None:
+                    hold = max(top, hold or 0)
             ctx.db.conn.execute("DELETE FROM m4_scans WHERE block > ?", (ctx.reorg_ancestor,))
+        if hold is not None and block >= hold:
+            hold = None
+        ctx.set_state("hold", hold)
+        self.near_set = frozenset({KEY}) if hold is not None else frozenset()
         s = scan(ctx.rpc, ctx.inventory(block), self.views, self.proxy)
         ctx.db.conn.execute(
             "INSERT OR REPLACE INTO m4_scans VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -172,6 +188,14 @@ class M4ConservationDeficit(Check):
                       f"{eth(deficit)} ETH.\n{terms}{note}\nRunbook: find the computed-zero or long-liquidatable "
                       f"clusters (M3) and liquidate them; escalate (accrued phantom earnings are not clawed back)."),
                 subject={"proxy": self.proxy}, evidence=evidence)]
+        if hold is not None and (KEY in ctx.reorg_keys or self.open(ctx)):
+            return [Finding(check=self.id, key=KEY, severity="page", title="M4 ETH conservation deficit (evidence "
+                            "above the checkpoint)",
+                            body=(f"At block {block} the proxy's ETH covers its liabilities (surplus "
+                                  f"{eth(s['surplus'])} ETH), but the deficit was scanned at block {hold}, above this "
+                                  f"checkpoint (a reorg onto a shorter chain, or a node behind the checkpoint): not "
+                                  f"proof about that block. Kept open until a scan at or above it.\n{terms}"),
+                            subject={"proxy": self.proxy}, evidence={**evidence, "hold_block": hold})]
         if not s["complete"]:
             ctx.health("m4-unknown", (f"M4 cannot conclude at block {block}: the liability sum is incomplete, so a "
                                       f"surplus of {eth(s['surplus'])} ETH is not evidence of no deficit.\n- "

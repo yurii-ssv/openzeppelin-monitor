@@ -56,6 +56,14 @@ or (UNKNOWN) a re-report. It also re-checks every cluster of `m3_tuples` observe
 a deleted block (e.g. by a liquidation the reorg removed) is found again even if the API omits it. A key found again opens/keeps the incident with its onset re-observed at
 the reorg run's block (age restarts, a lower severity is recorded silently). `on_reorg` drops the
 in-memory near set and tuples; a restart before the reorg run replays it (durable marker).
+
+Lowered checkpoint (QA cp2a-2 H1 shape): a reorg onto a shorter chain, or a node lagging behind the checkpoint
+(the framework treats a block the node does not have as not canonical), can put the reorg run's block below
+the block at which a tracked cluster was last evaluated (`m3_zone.last_block`). An evaluation there is about an
+earlier block, not about that evidence: the row is kept with its onset and zero block (`hold_block` = the
+evidence block) and its incident is neither resolved nor lowered until a run at or above `hold_block`
+evaluates it (then the normal rules apply, with the kept onset). While held, the cluster is in the near set (a
+run at every checkpoint block).
 """
 
 from __future__ import annotations
@@ -85,7 +93,7 @@ CREATE TABLE IF NOT EXISTS m3_zone (
   cluster_id TEXT PRIMARY KEY, owner TEXT NOT NULL, operator_ids TEXT NOT NULL,
   onset_block INTEGER NOT NULL, not_liquidatable_before INTEGER, zero_block INTEGER,
   last_block INTEGER NOT NULL, severity TEXT NOT NULL, balance TEXT NOT NULL, burn_rate TEXT NOT NULL,
-  tuple TEXT
+  tuple TEXT, hold_block INTEGER
 );
 CREATE TABLE IF NOT EXISTS m3_tuples (
   cluster_id TEXT NOT NULL, owner TEXT NOT NULL, operator_ids TEXT NOT NULL, tuple TEXT NOT NULL,
@@ -95,6 +103,7 @@ CREATE TABLE IF NOT EXISTS m3_tuples (
 HISTORY = 8  # validated tuples kept per cluster (candidates after a reorg removes the latest change)
 
 WEI = 10**18
+RANK = {"info": 0, "warn": 1, "page": 2}
 
 
 def eth(wei: int) -> str:
@@ -131,7 +140,7 @@ class M3LiquidationZone(Check):
         self.near_set, self.tuples, self.last_full = frozenset(), {}, None
 
     def prepare(self, ctx: Ctx) -> None:
-        ensure_columns(ctx.db.conn, "m3_zone", {"tuple": "TEXT"})
+        ensure_columns(ctx.db.conn, "m3_zone", {"tuple": "TEXT", "hold_block": "INTEGER"})
         self.threshold_period = ctx.params.liquidation_threshold_period
         self.minimum_collateral = ctx.params.minimum_liquidation_collateral
 
@@ -140,13 +149,18 @@ class M3LiquidationZone(Check):
     def rows(self, ctx: Ctx) -> dict:
         return {r["cluster_id"]: dict(r) for r in ctx.db.conn.execute("SELECT * FROM m3_zone")}
 
-    def rewind(self, ctx: Ctx, ancestor: int) -> dict[str, dict]:
+    def rewind(self, ctx: Ctx, ancestor: int, block: int) -> dict[str, dict]:
         """Drop what was derived from blocks above the ancestor; returns the rows whose onset was there (their
-        identity and tuple stay candidates for this run: a tuple is used only if storage validates it)."""
+        identity and tuple stay candidates for this run: a tuple is used only if storage validates it). A row last
+        evaluated above `block` (the checkpoint was lowered below its evidence) is held instead, onset and zero
+        block kept."""
+        ctx.db.conn.execute("UPDATE m3_zone SET hold_block = MAX(COALESCE(hold_block, 0), last_block) "
+                            "WHERE last_block > ?", (block,))
+        held = "COALESCE(hold_block, 0) <= ?"  # rows not held (hold_block at or below this run's block)
         gone = {r["cluster_id"]: dict(r) for r in
-                ctx.db.conn.execute("SELECT * FROM m3_zone WHERE onset_block > ?", (ancestor,))}
-        ctx.db.conn.execute("DELETE FROM m3_zone WHERE onset_block > ?", (ancestor,))
-        ctx.db.conn.execute("UPDATE m3_zone SET zero_block = NULL WHERE zero_block > ?", (ancestor,))
+                ctx.db.conn.execute(f"SELECT * FROM m3_zone WHERE onset_block > ? AND {held}", (ancestor, block))}
+        ctx.db.conn.execute(f"DELETE FROM m3_zone WHERE onset_block > ? AND {held}", (ancestor, block))
+        ctx.db.conn.execute(f"UPDATE m3_zone SET zero_block = NULL WHERE zero_block > ? AND {held}", (ancestor, block))
         ctx.db.conn.execute("UPDATE m3_zone SET not_liquidatable_before = NULL WHERE not_liquidatable_before > ?",
                             (ancestor,))
         if (ctx.state("last_full_block") or -1) > ancestor:
@@ -160,7 +174,7 @@ class M3LiquidationZone(Check):
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
         reorg = ctx.reorg_ancestor is not None
-        self.rewound = self.rewind(ctx, ctx.reorg_ancestor) if reorg else {}
+        self.rewound = self.rewind(ctx, ctx.reorg_ancestor, block) if reorg else {}
         touched, root = set(), False
         for ev in ctx.events():
             if ev.kind in ("RootCommitted", "OperatorFeeExecuted"):
@@ -225,7 +239,9 @@ class M3LiquidationZone(Check):
                                       "blocks": ahead, "at_block": block + ahead, "balance": str(view.balance),
                                       "burn_rate": str(view.burn_rate)})
                 if cid in recheck:
-                    findings.append(self.resolved(ctx, block, cid, tracked.get(cid), "is no longer liquidatable"))
+                    findings.append(self.leave(ctx, block, cid, tracked.get(cid), "is no longer liquidatable"))
+                    if self.held(tracked.get(cid), block):
+                        near.add(cid)
                 continue
             st = status[cid]
             if st.startswith("unknown"):
@@ -235,7 +251,9 @@ class M3LiquidationZone(Check):
                 if cid in must_report:
                     findings.append(self.unknown(ctx, block, cid, tracked.get(cid), st))
             elif cid in recheck:
-                findings.append(self.resolved(ctx, block, cid, tracked.get(cid), st))
+                findings.append(self.leave(ctx, block, cid, tracked.get(cid), st))
+                if self.held(tracked.get(cid), block):
+                    near.add(cid)
         for cid, info in infos.items():
             if (info is not None and info.valid and not status.get(cid, "").startswith("unknown")
                     and (cid in recheck or cid in near)):
@@ -333,6 +351,7 @@ class M3LiquidationZone(Check):
         cid = info.cluster_id
         if row is None:
             row = {"onset_block": block, "zero_block": None, "not_liquidatable_before": last_full_block}
+        hold = row.get("hold_block") if self.held(row, block) else None
         zero = view.balance == 0
         zero_block = (row["zero_block"] or block) if zero else None
         age = block - row["onset_block"]
@@ -345,6 +364,9 @@ class M3LiquidationZone(Check):
             sev, title = "warn", f"M3 cluster still liquidatable after {age} blocks (≥ N = {n}): {short(cid)}"
         else:
             sev, title = "info", f"M3 cluster liquidatable (onset at block {row['onset_block']}): {short(cid)}"
+        if hold is not None and RANK[row["severity"]] > RANK[sev]:  # a lowered checkpoint never lowers it
+            sev, title = row["severity"], (f"M3 cluster liquidatable ({row['severity']} kept until block {hold} is "
+                                           f"re-evaluated): {short(cid)}")
         before = row["not_liquidatable_before"]
         onset_note = (f"first observed liquidatable at block {row['onset_block']} "
                       + (f"(not liquidatable at the sweep of block {before})" if before is not None else
@@ -356,19 +378,41 @@ class M3LiquidationZone(Check):
                 f"threshold {eth(threshold)} ETH.\nLiquidatable for {age} block(s): {onset_note}."
                 + (f"\nComputed zero since block {zero_block}: operator and DAO earnings accrue without backing "
                    f"(feeds M4)." if zero else "")
+                + (f"\nThe checkpoint is below block {hold}, where this incident was last evaluated (a reorg onto a "
+                   f"shorter chain, or a node behind the checkpoint): its severity is kept until that block is "
+                   f"re-evaluated." if hold is not None else "")
                 + "\nRunbook: check that our keeper attempted the liquidation; if not, liquidate manually.")
         ctx.db.conn.execute(
             "INSERT OR REPLACE INTO m3_zone (cluster_id, owner, operator_ids, onset_block, not_liquidatable_before, "
-            "zero_block, last_block, severity, balance, burn_rate, tuple) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (cid, info.owner, json.dumps(list(info.operator_ids)), row["onset_block"], before, zero_block, block, sev,
-             str(view.balance), str(view.burn_rate), tuple_json(info.cluster)))
+            "zero_block, last_block, severity, balance, burn_rate, tuple, hold_block) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cid, info.owner, json.dumps(list(info.operator_ids)), row["onset_block"], before, zero_block,
+             block if hold is None else row["last_block"], sev, str(view.balance), str(view.burn_rate),
+             tuple_json(info.cluster), hold))
         return Finding(
             check=self.id, key=cid, severity=sev, title=title, body=body,
             subject={"cluster_id": cid, "owner": info.owner, "operator_ids": list(info.operator_ids)},
             evidence={"block": block, "onset_block": row["onset_block"], "age_blocks": age, "zero_block": zero_block,
                       "not_liquidatable_before": before, "balance_wei": str(view.balance),
                       "burn_rate_wei_per_block": str(view.burn_rate), "threshold_wei": str(threshold),
-                      "n_blocks": n, "n2_blocks": n2, "validators": info.cluster.validator_count})
+                      "n_blocks": n, "n2_blocks": n2, "validators": info.cluster.validator_count, "hold_block": hold})
+
+    @staticmethod
+    def held(row: dict | None, block: int) -> bool:
+        """The row's evidence is above `block` (a lowered checkpoint): not resolved or lowered before it."""
+        return bool(row and row.get("hold_block") and block < row["hold_block"])
+
+    def leave(self, ctx: Ctx, block: int, cid: str, row: dict | None, why: str) -> Finding:
+        """Out of the zone at `block`: resolved, unless the row is held (its evidence is above `block`)."""
+        if not self.held(row, block):
+            return self.resolved(ctx, block, cid, row, why)
+        return Finding(check=self.id, key=cid, severity=row["severity"],
+                       title=f"M3 cluster liquidatable, evidence above the checkpoint: {short(cid)}",
+                       body=(f"Cluster {cid} was liquidatable since block {row['onset_block']} (last evaluated at "
+                             f"block {row['hold_block']}). The checkpoint is now block {block}, below that evidence (a "
+                             f"reorg onto a shorter chain, or a node behind the checkpoint), where the cluster {why}: "
+                             f"that is not proof about block {row['hold_block']}. Kept open until it is re-evaluated."),
+                       evidence={"block": block, "status": why, "onset_block": row["onset_block"],
+                                 "hold_block": row["hold_block"]})
 
     def resolved(self, ctx: Ctx, block: int, cid: str, row: dict | None, why: str) -> Finding:
         ctx.db.conn.execute("DELETE FROM m3_zone WHERE cluster_id=?", (cid,))

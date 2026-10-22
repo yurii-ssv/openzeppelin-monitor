@@ -346,3 +346,59 @@ def test_class2_resolution_on_a_deleted_block_is_paged_again(tmp_path, confirmat
 def test_class11_invalid_configuration_is_a_startup_error(tmp_path, interval):
     with pytest.raises(SystemExit, match="checks.m4"):
         setup(tmp_path, checks=M4, cfg={"m4": {"interval_s": interval}})
+
+
+# ---------------------------------------------------------------- QA cp2a attempt 2: the H1 shape (repair 2)
+# A reorg that lowers the checkpoint below the deficit's scan (a shorter replacement chain, or a node lagging behind
+# the checkpoint): red on the frozen head 1154333, green after.
+
+
+def deficit_then_lower(tmp_path, replace):
+    chain, w, cl = balanced(tmp_path, surplus=10**15, confirmations=12)
+    for _ in range(12):
+        chain.mine()
+        advance(w)
+    fork = chain.number
+    cl.deposit(OWNER, OPS, value=2 * 10**15)  # the trigger
+    root(chain)
+    for _ in range(20):
+        chain.mine()
+        advance(w)
+    assert sent(w, "m4") == [("open", "page")]
+    scan = w.db.conn.execute("SELECT MAX(block) FROM m4_scans").fetchone()[0]
+    assert scan > fork
+    if replace:
+        chain.reorg(fork)  # the deposit is gone; the new chain is short: the checkpoint falls below the scan
+        advance(w)
+    else:
+        from fixtures_liquidation import lagging_node
+
+        lagging_node(chain, w, chain.sealed - fork + 2)
+    assert w.checkpoint()["block"] < fork
+    return chain, w, cl, scan
+
+
+def test_qa2_class2_lagging_node_below_the_deficit_keeps_the_page_and_never_re_pages(tmp_path):
+    chain, w, cl, scan = deficit_then_lower(tmp_path, replace=False)
+    assert sent(w, "m4") == [("open", "page")] and open_incidents(w, "m4")
+    for _ in range(20):
+        chain.mine()
+        advance(w)
+    assert sent(w, "m4") == [("open", "page")] and len(incidents(w, "m4")) == 1 and open_incidents(w, "m4")
+
+
+def test_qa2_class2_shorter_chain_without_the_trigger_resolves_once_past_the_old_scan(tmp_path):
+    """The twin: the replacement chain has no deposit. The page is kept while the checkpoint is below the old scan,
+    then resolves on a complete scan at or above it, once, and is never re-paged."""
+    chain, w, cl, scan = deficit_then_lower(tmp_path, replace=True)
+    assert sent(w, "m4") == [("open", "page")] and open_incidents(w, "m4")
+    for _ in range(40):
+        chain.mine()
+        advance(w)
+    assert w.checkpoint()["block"] > scan
+    assert sent(w, "m4") == [("open", "page"), ("resolved", "info")] and not open_incidents(w, "m4")
+    w.clock.advance(10 * 86_400)
+    chain.mine()
+    advance(w)
+    w.housekeeping()
+    assert not outbox(w, "kind='realert'") and len(sent(w, "m4")) == 2

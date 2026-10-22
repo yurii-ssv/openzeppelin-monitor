@@ -994,3 +994,39 @@ def test_qa2_m1_three_distinct_deposits_warn(tmp_path):
     assert sent(w, "m14") == [("open", "info"), ("update", "info"), ("escalate", "warn")]
     ev = json.loads(open_incidents(w, "m14")[cid_hex()]["evidence"])
     assert ev["count"] == 3 and ev["liquidations"] == 4
+
+
+@pytest.mark.parametrize("replace", [False, True])
+def test_qa2_class2_lowered_checkpoint_keeps_a_zero_page_and_never_re_escalates(tmp_path, replace):
+    """The H1 shape on the computed-zero page: the hit survives below the lowered checkpoint, but the zero was seen
+    above it. The page is not lowered there, and nothing is re-sent once the checkpoint is back above the zero."""
+    from fixtures_liquidation import lagging_node
+
+    chain, w, cl, path = make(tmp_path, confirmations=12)
+    cl.create(OWNER, OPS2, balance=50 * BURN)
+    chain.mine(12)
+    advance(w)
+    frontrun(chain, cl, path, owner=OWNER, ops=OPS2)
+    H = chain.sealed
+    for _ in range(80):
+        chain.mine()
+        w.clock.advance(600)
+        advance(w)
+    assert sent(w, "m14", "o.kind != 'realert'") == [("open", "info"), ("escalate", "page")]
+    assert w.checkpoint()["block"] > H + 60
+    if replace:
+        chain.reorg(H + 30)  # same content above the fork; the new head is H + 30: checkpoint below the zero
+        w.clock.advance(600)
+        advance(w)
+    else:
+        w.clock.advance(600)
+        lagging_node(chain, w, chain.sealed - (H + 30))
+    assert H < w.checkpoint()["block"] < H + 50 and len(hits(w)) == 1
+    assert open_incidents(w, "m14")[cid_hex(OWNER, OPS2)]["severity"] == "page"
+    for _ in range(70):
+        chain.mine()
+        w.clock.advance(600)
+        advance(w)
+    assert w.checkpoint()["block"] > H + 80
+    assert sent(w, "m14", "o.kind != 'realert'") == [("open", "info"), ("escalate", "page")]
+    assert open_incidents(w, "m14")[cid_hex(OWNER, OPS2)]["severity"] == "page"

@@ -80,7 +80,10 @@ liquidation entry is neither a hit nor absent: it is kept in `m14_pending` ("awa
 its calldata when readable, no block time so it never ages out), holds its cluster's key (or, cluster unknown,
 every open key) at its severity, and is re-derived by the first run after the inbox confirms its block
 (`canonical = 1`; the check runs at every new checkpoint block while such an entry waits, `near_set`), or
-dropped once its block is found orphaned (`canonical = 0`), which is then positive proof.
+dropped once its block is found orphaned (`canonical = 0`), which is then positive proof. Likewise an open
+cluster last evaluated above the reorg run's block (`m14_open.block`: e.g. its computed zero was seen there, or
+a node lagging behind the checkpoint lowered it) is held (`m14_open.hold_block`): neither resolved nor lowered
+until a run at or above that block evaluates it.
 """
 
 from __future__ import annotations
@@ -158,7 +161,7 @@ class M14DepositFrontrun(Check):
     def prepare(self, ctx: Ctx) -> None:
         ensure_columns(ctx.db.conn, "m14_hits", {"block_time": "INTEGER", "version": "TEXT"})
         ensure_columns(ctx.db.conn, "m14_open", {"owner": "TEXT", "operator_ids": "TEXT", "last_hit": "TEXT",
-                                                 "last_deposit": "TEXT"})
+                                                 "last_deposit": "TEXT", "hold_block": "INTEGER"})
 
     # ---- one inbox entry
 
@@ -322,6 +325,9 @@ class M14DepositFrontrun(Check):
         if A is not None:
             ctx.db.conn.execute("DELETE FROM m14_hits WHERE block > ?", (A,))
             ctx.db.conn.execute("DELETE FROM m14_pending WHERE block > ?", (A,))
+            # evaluated above this run's block (a lowered checkpoint): held, never resolved or lowered below it
+            ctx.db.conn.execute("UPDATE m14_open SET hold_block = MAX(COALESCE(hold_block, 0), block) WHERE block > ?",
+                                (block,))
         for p in ctx.db.conn.execute("SELECT * FROM m14_pending WHERE block_time <= ?", (now - window,)).fetchall():
             ctx.db.conn.execute("DELETE FROM m14_pending WHERE inbox_id=?", (p["inbox_id"],))
             notes.append(f"{p['tx_hash']} (block {p['block']}): left the {window} s window unevaluated ({p['reason']})")
@@ -353,7 +359,8 @@ class M14DepositFrontrun(Check):
 
         self.fill_times(ctx)
         pending = [dict(r) for r in ctx.db.conn.execute("SELECT * FROM m14_pending ORDER BY inbox_id")]
-        self.near_set = frozenset(p["inbox_id"] for p in pending if p["block_time"] is None)
+        held = {r[0] for r in ctx.db.conn.execute("SELECT cluster_id FROM m14_open WHERE hold_block > ?", (block,))}
+        self.near_set = frozenset(p["inbox_id"] for p in pending if p["block_time"] is None) | held
         keys = {r[0] for r in ctx.db.conn.execute("SELECT cluster_id FROM m14_open")} | set(ctx.reorg_keys)
         keys |= {r[0] for r in ctx.db.conn.execute("SELECT DISTINCT cluster_id FROM m14_hits WHERE block_time > ?",
                                                    (now - window,))}
@@ -386,17 +393,20 @@ class M14DepositFrontrun(Check):
         maybe = [p for p in pending if p["cluster_id"] in (None, cid)]
         row = ctx.db.conn.execute("SELECT * FROM m14_open WHERE cluster_id=?", (cid,)).fetchone()
         prev = row["severity"] if row else None
+        hold = row["hold_block"] if row and row["hold_block"] and block < row["hold_block"] else None
         if not recent:
-            if maybe and (prev or cid in ctx.reorg_keys):
+            if (maybe or hold) and (prev or cid in ctx.reorg_keys):
                 if prev is None:
                     raise RuntimeError(f"m14: open cluster {cid} has no recorded state and pending entries")
+                why = (f"{len(maybe)} failed liquidation(s) in the window cannot be evaluated yet and may be hits" if maybe
+                       else f"it was last evaluated at block {hold}, above this checkpoint (a reorg onto a shorter "
+                            f"chain, or a node behind the checkpoint), which is not proof about that block")
                 return Finding(check=self.id, key=cid, severity=prev,
                                title=f"M14 deposit front-running, current state UNKNOWN: {short(cid)}",
                                body=(f"Cluster {cid}: no evaluated hit remains in the last {window} s of chain time "
-                                     f"(block {block}), but {len(maybe)} failed liquidation(s) in the window cannot "
-                                     f"be evaluated yet and may be hits. Kept open."),
+                                     f"(block {block}), but {why}. Kept open."),
                                evidence={"block": block, "chain_time": now, "count": 0, "window_s": window,
-                                         "pending": [p["tx_hash"] for p in maybe]})
+                                         "pending": [p["tx_hash"] for p in maybe], "hold_block": hold})
             if not row and cid not in ctx.reorg_keys:
                 return None
             ctx.db.conn.execute("DELETE FROM m14_open WHERE cluster_id=?", (cid,))
@@ -420,14 +430,15 @@ class M14DepositFrontrun(Check):
             sev = "warn"
         else:
             sev = "info"
-        if maybe and prev and RANK[prev] > RANK[sev]:
-            sev = prev  # a pending entry may restore the count or the zero: no lower severity without proof
+        if (maybe or hold) and prev and RANK[prev] > RANK[sev]:
+            sev = prev  # a pending entry or the held evidence may restore the count or the zero: no lower severity
         # a new time (deposit) re-sends an info; before the last_deposit column, the last hit stood for it
         new_time = (last["deposit_tx"] != row["last_deposit"] if row and row["last_deposit"] is not None else
                     last["tx_hash"] != (row["last_hit"] if row else None))
         ctx.db.conn.execute("INSERT OR REPLACE INTO m14_open (cluster_id, severity, block, owner, operator_ids, "
-                            "last_hit, last_deposit) VALUES (?,?,?,?,?,?,?)",
-                            (cid, sev, block, owner, json.dumps(ops), last["tx_hash"], last["deposit_tx"]))
+                            "last_hit, last_deposit, hold_block) VALUES (?,?,?,?,?,?,?,?)",
+                            (cid, sev, block if hold is None else row["block"], owner, json.dumps(ops),
+                             last["tx_hash"], last["deposit_tx"], hold))
         lines = []
         for dep, hs in list(times.items())[-10:]:
             d = hs[0]
@@ -445,6 +456,8 @@ class M14DepositFrontrun(Check):
                 + "\n".join(lines)
                 + (f"\n{len(maybe)} more failed liquidation(s) in the window cannot be evaluated yet." if maybe else "")
                 + (f"\n{zero_note}" if zero_note else "")
+                + (f"\nThe checkpoint is below block {hold}, where this cluster was last evaluated: its severity is "
+                   f"kept until that block is re-evaluated." if hold is not None else "")
                 + "\nRunbook: liquidate with the current tuple (re-read it at the pending block); if the deposits "
                   "continue, escalate (KI #3).")
         return Finding(check=self.id, key=cid, severity=sev, title=titles[sev], body=body,
@@ -452,7 +465,8 @@ class M14DepositFrontrun(Check):
                        evidence={"block": block, "chain_time": now, "hits": [h["tx_hash"] for h in recent],
                                  "count": len(times), "liquidations": len(recent),
                                  "deposits": {dep: [h["tx_hash"] for h in hs] for dep, hs in times.items()},
-                                 "window_s": window, "zero": zero, "pending": [p["tx_hash"] for p in maybe]},
+                                 "window_s": window, "zero": zero, "pending": [p["tx_hash"] for p in maybe],
+                                 "hold_block": hold},
                        revision=last["deposit_tx"] if sev == "info" and new_time else None)
 
     def at_zero(self, ctx: Ctx, block: int, cid: str, owner: str, ops) -> tuple[bool | None, str]:

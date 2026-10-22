@@ -17,11 +17,15 @@ action is scripted — never the check's output. Invariants after every step:
 At the end, with every input restored, the lived worker's open incidents equal those of a fresh worker run
 once on the final chain.
 
-Repair 2 (QA cp2a-2 H1): M14 also runs with `confirmations` > 0 (seeds 60-89), where a reorg from a block near
-the head onto a shorter chain lowers the checkpoint below failed liquidations whose blocks survive. 5. no event
-lost between sweeps: a liquidation the worker already saw (its block was once at or below a checkpoint) and that is
-above the current checkpoint may hold its cluster (UNKNOWN until confirmed) but never lets it resolve, and once its
-block is confirmed again its hit is counted (invariant 3), so a surviving hit is never dropped.
+Repair 2 (QA cp2a-2 H1 and its shape in every check): both sweeps also run with `confirmations` > 0 (M3 seeds
+40-59, M14 seeds 60-89), where a reorg from a block near the head onto a shorter chain lowers the checkpoint
+below evidence whose blocks survive, and both add a step against a node lagging behind the checkpoint (the
+framework treats it as a reorg onto a shorter chain). 5. no event lost between sweeps: a liquidation the worker
+already saw (its block was once at or below a checkpoint) and that is above the current checkpoint may hold its
+cluster (UNKNOWN until confirmed) but never lets it resolve, and once its block is confirmed again its hit is
+counted (invariant 3), so a surviving hit is never dropped. 6. a lowered checkpoint never resolves or lowers: while
+the run's block is below the highest block evaluated so far, every incident open at that block stays open at no
+lower severity (M3: unless its cluster was UNKNOWN there).
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ from fixtures_liquidation import (
     LiquidationChain,
     cid_hex,
     failed_liquidation,
+    lagging_node,
     open_incidents,
     restart,
     setup,
@@ -74,7 +79,8 @@ class Base:
         self.snaps[self.chain.sealed] = copy.deepcopy(self.cl.state)
 
     def state_at(self, block):
-        return self.snaps[max(b for b in self.snaps if b <= block)]
+        """The clusters' state at `block` (nothing changes between their creation and the first snapshot)."""
+        return self.snaps[max([b for b in self.snaps if b <= block], default=min(self.snaps))]
 
     def reorg(self, depth, extra, top=None):
         """Replace the last `depth` blocks below `top` (default: the checkpoint); the new chain is `extra` blocks
@@ -93,12 +99,17 @@ class Base:
 # ---------------------------------------------------------------- M3
 
 
+RANK = {"info": 0, "warn": 1, "page": 2}
+
+
 class M3Sweep(Base):
     N, N2 = 4, 12
 
-    def __init__(self, tmp_path, seed):
+    def __init__(self, tmp_path, seed, confirmations=0):
         self.rng = random.Random(f"m3-sweep:{seed}")
         self.tmp = tmp_path
+        self.conf, self.lag = confirmations, 0
+        self.seen: dict[str, tuple[int, str]] = {}  # key -> (highest run block it was open at, not faulted; severity)
         chain = LiquidationChain()
         stub_params(chain)
         chain.mine()
@@ -111,8 +122,10 @@ class M3Sweep(Base):
         self.mode = "full"
         self.cfg = {"m3": {"n_blocks": self.N, "n2_blocks": self.N2}}
         self.inv = {"api_url": "https://api.invalid", "api_refresh_s": 0}
-        self.chain, self.w, _ = setup(tmp_path, chain=chain, cfg=self.cfg, inventory=self.inv)
+        self.chain, self.w, _ = setup(tmp_path, chain=chain, cfg=self.cfg, inventory=self.inv,
+                                      confirmations=confirmations)
         self.w.inventory.http_get = self.api
+        chain.mine(confirmations)  # the first checkpoint is after the clusters' creation
         self.start = chain.sealed
         self.snaps = {}
         self.run_faults = set()
@@ -140,7 +153,7 @@ class M3Sweep(Base):
     def act(self):
         r, chain, cl = self.rng, self.chain, self.cl
         kind = r.choice(["mine", "mine", "withdraw", "deposit", "liquidate", "api", "api", "fault", "reorg",
-                         "restart"])
+                         "restart", "lag"])
         owner = r.choice(self.ids)
         cid = cluster_id(owner, OPS)
         st = cl.state[cid]
@@ -161,10 +174,15 @@ class M3Sweep(Base):
             else:
                 chain.view_faults[cid] = "revert"
         elif kind == "reorg":
-            self.reorg(r.choice([1, 2, 4]), r.choice([1, 2, 6]))
+            if self.conf:  # from near the head, often onto a chain whose new checkpoint is below surviving blocks
+                self.reorg(r.choice([1, 2, 4, self.conf + 3]), r.choice([1, 2, 6]), top=chain.sealed)
+            else:
+                self.reorg(r.choice([1, 2, 4]), r.choice([1, 2, 6]))
         elif kind == "restart":
-            self.w = restart(self.tmp, self.w, cfg=self.cfg, inventory=self.inv)
+            self.w = restart(self.tmp, self.w, cfg=self.cfg, inventory=self.inv, confirmations=self.conf)
             self.w.inventory.http_get = self.api
+        elif kind == "lag":
+            self.lag = r.choice([2, 5, self.conf + 4])
         else:
             chain.mine()
         self.snapshot()
@@ -174,7 +192,11 @@ class M3Sweep(Base):
         """One worker step; remembers the view faults the check's last committed run saw."""
         before = self.w.db.meta("run:m3")
         faults = {"0x" + c.hex() for c in self.chain.view_faults}
-        advance(self.w)
+        behind, self.lag = min(self.lag, self.chain.sealed - self.start - 2), 0
+        if behind > 0:
+            lagging_node(self.chain, self.w, behind)
+        else:
+            advance(self.w)
         if self.w.db.meta("run:m3") != before:
             self.run_faults = faults
 
@@ -189,8 +211,10 @@ class M3Sweep(Base):
         for row in new_outbox(w, "m3", since):
             if row["kind"] == "resolved":  # 1. no resolve without positive proof
                 assert not truth[row["key"]]["zone"], f"{where}: resolved {row['key']} still in the zone"
+        rb = w.db.meta("run:m3")["block"]  # the last committed run's checkpoint
+        held = {k for k, (b, _) in self.seen.items() if rb < b}  # 6: below its evidence, UNKNOWN until re-evaluated
         for key in opened:  # 2. no open incident without supporting evidence
-            assert truth[key]["zone"] or key in faulted or marker, f"{where}: {key} open without evidence"
+            assert truth[key]["zone"] or key in faulted or marker or key in held, f"{where}: {key} open without evidence"
         if full and not marker:  # 3. no dropped page (the full sweep evaluates every cluster it can see)
             listed = {"full": self.ids, "empty": [], "partial": self.ids[1:]}[self.mode]
             logged = {r[0] for r in w.db.conn.execute("SELECT DISTINCT cluster_id FROM logs")}
@@ -201,19 +225,31 @@ class M3Sweep(Base):
                     assert key in opened, f"{where}: {key} in the zone but not open (mode {self.mode})"
                     if truth[key]["zero"]:
                         assert opened[key]["severity"] == "page", f"{where}: {key} at zero not paged"
-        rb = w.db.meta("run:m3")["block"]  # the last committed run's checkpoint
+        for key in held:  # 6. a lowered checkpoint never resolves or lowers an incident open at a higher run block
+            b, sev = self.seen[key]
+            assert key in opened and RANK[opened[key]["severity"]] >= RANK[sev], \
+                f"{where}: {key} open at {sev} at block {b}, now {opened.get(key, {}).get('severity')}"
         for key, inc in opened.items():  # 4. the age window is anchored at the run's checkpoint
             if inc["last_seen_block"] == rb and key not in faulted and self.truth(self.owner(key), rb)["zone"]:
                 ev = json.loads(inc["evidence"])
                 assert ev["age_blocks"] == rb - ev["onset_block"]
                 want = ("page" if self.truth(self.owner(key), rb)["zero"] or ev["age_blocks"] >= self.N2 else
                         "warn" if ev["age_blocks"] >= self.N else "info")
-                assert inc["severity"] == want, f"{where}: {key} {inc['severity']} != {want} ({ev})"
+                if ev.get("hold_block"):  # held below its evidence: never lower (6)
+                    assert RANK[inc["severity"]] >= RANK[want], f"{where}: {key} {inc['severity']} < {want} ({ev})"
+                else:
+                    assert inc["severity"] == want, f"{where}: {key} {inc['severity']} != {want} ({ev})"
+        for key in list(self.seen):
+            if key not in opened and rb >= self.seen[key][0]:
+                del self.seen[key]
+        for key, inc in opened.items():
+            if key not in faulted and not marker and rb >= self.seen.get(key, (-1, None))[0]:
+                self.seen[key] = (rb, inc["severity"])
 
 
-@pytest.mark.parametrize("seed", range(40))
+@pytest.mark.parametrize("seed", range(60))
 def test_m3_sweep(tmp_path, seed):
-    s = M3Sweep(tmp_path, seed)
+    s = M3Sweep(tmp_path, seed, confirmations=0 if seed < 40 else 3)
     s.advance()
     for step in range(30):
         s.act()
@@ -225,7 +261,8 @@ def test_m3_sweep(tmp_path, seed):
         s.check(full, since, step)
     s.chain.view_faults.clear()
     s.mode = "full"
-    s.chain.mine()
+    top = max([b for b, _ in s.seen.values()], default=0)
+    s.chain.mine(max(1, top + s.conf + 1 - s.chain.sealed))  # the checkpoint is back above every evidence block
     s.w.clock.advance(600)
     s.advance()
     s.check(True, last_rowid(s.w), "final")
@@ -233,7 +270,7 @@ def test_m3_sweep(tmp_path, seed):
     fresh_path.mkdir()
     _, fresh = make_worker(fresh_path, only=["m3"], chain=s.chain, views=VIEWS, checks=s.cfg, inventory=s.inv,
                            start_block=s.w.cfg.start_block, activation_block=s.w.cfg.activation_block,
-                           clock=FakeClock(s.w.clock.now))
+                           clock=FakeClock(s.w.clock.now), confirmations=s.conf)
     fresh.inventory.http_get = s.api
     advance(fresh)
     lived, oracle = open_incidents(s.w, "m3"), open_incidents(fresh, "m3")
@@ -268,6 +305,8 @@ class M14Sweep(Base):
         self.deposits: list[tuple[int, int, bytes, int]] = []  # (block, tx position, cluster, value)
         self.unreadable: dict[str, dict] = {}
         self.orphans: list[dict] = []  # labels a reorg removed (their inbox lines stay in the file)
+        self.seen: dict[str, tuple[int, str]] = {}  # key -> (highest run block it was open at; severity)
+        self.lag = 0
         self.max_cp = 0  # the highest checkpoint so far: a label at or below it was seen by the worker
         self.start = chain.sealed  # reorgs never remove the clusters' creation
         self.snaps = {}
@@ -331,7 +370,7 @@ class M14Sweep(Base):
     def act(self):
         r, chain, cl = self.rng, self.chain, self.cl
         kind = r.choice(["attack", "attack", "attack", "mine", "mine", "mine", "topup", "withdraw", "restore", "reorg",
-                         "restart"])
+                         "restart", "lag"])
         if kind == "attack":
             self.attack()
         elif kind == "mine":
@@ -362,9 +401,18 @@ class M14Sweep(Base):
         elif kind == "restart":
             self.w = restart(self.tmp, self.w, checks=("m14",), inbox={"path": str(self.path)},
                              confirmations=self.conf)
+        elif kind == "lag":
+            self.lag = r.choice([2, 5, self.conf + 4])
         else:
             chain.mine()
         self.snapshot()
+
+    def advance(self):
+        behind, self.lag = min(self.lag, self.chain.sealed - self.start - 2), 0
+        if behind > 0:
+            lagging_node(self.chain, self.w, behind)
+        else:
+            advance(self.w)
 
     def oracle(self, cp):
         now = self.chain.timestamp(cp)
@@ -403,6 +451,12 @@ class M14Sweep(Base):
         want, unread, held = self.oracle(cp)
         opened = open_incidents(w, "m14")
         where = f"step {step} at block {cp}"
+        rb = w.db.meta("run:m14")["block"]
+        for key, (b, sev) in self.seen.items():  # 6. a lowered checkpoint never resolves or lowers
+            if rb < b:
+                held.add(key)
+                assert key in opened and RANK[opened[key]["severity"]] >= RANK[sev], \
+                    f"{where}: {key} open at {sev} at block {b}, now {opened.get(key, {}).get('severity')}"
         for row in new_outbox(w, "m14", since):
             if row["kind"] == "resolved":  # 1
                 assert row["key"] not in want and row["key"] not in held and not unread, \
@@ -415,6 +469,12 @@ class M14Sweep(Base):
                 ev = json.loads(opened[key]["evidence"])
                 assert opened[key]["severity"] == sev, f"{where}: {key} {opened[key]['severity']} != {sev}"
                 assert ev["count"] == count and ev["chain_time"] == self.chain.timestamp(cp), where  # 4
+        for key in list(self.seen):
+            if key not in opened and rb >= self.seen[key][0]:
+                del self.seen[key]
+        for key, inc in opened.items():
+            if not marker and rb >= self.seen.get(key, (-1, None))[0]:
+                self.seen[key] = (rb, inc["severity"])
 
 
 @pytest.mark.parametrize("seed", range(90))
@@ -425,12 +485,12 @@ def test_m14_sweep(tmp_path, seed):
         s.act()
         since = last_rowid(s.w)
         s.w.clock.advance(600)
-        advance(s.w)
+        s.advance()
         s.max_cp = max(s.max_cp, s.w.checkpoint()["block"])
         s.check(since, step)
     for tx in list(s.unreadable):
         s.chain.txs[tx] = s.unreadable.pop(tx)
-    top = max([lb["block"] for lb in s.labels + s.orphans], default=0)
+    top = max([lb["block"] for lb in s.labels + s.orphans] + [b for b, _ in s.seen.values()], default=0)
     s.chain.mine(max(1, top + s.conf + 1 - s.chain.sealed))  # every inbox line's block is confirmed
     s.w.clock.advance(600)
     advance(s.w)

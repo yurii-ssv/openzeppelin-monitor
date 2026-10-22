@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 
 from fakechain import PROXY, FakeChain, FakeClock, Revert, _enc, _topic_addr
-from harness import VIEWS, make_worker, stub_params
+from harness import VIEWS, advance, make_worker, stub_params
 
 from checks.m3_views import (
     GET_BALANCE,
@@ -302,6 +302,18 @@ def restart(tmp_path, w, checks=("m3",), cfg=None, **over):
     _, w2 = make_worker(tmp_path, only=list(checks), chain=w.rpc.chain, views=VIEWS, checks=cfg or {},
                         start_block=w.cfg.start_block, activation_block=w.cfg.activation_block, **over)
     return w2
+
+
+def lagging_node(chain, w, behind: int) -> None:
+    """One worker step against a node whose head is `behind` blocks below the chain's (a stale backend behind a load
+    balancer): the framework treats a checkpoint the node does not have as not canonical, a reorg onto a shorter
+    chain, although no block was replaced; the checkpoint falls to the last recorded block the node has."""
+    saved = chain.number
+    chain.number -= behind
+    try:
+        advance(w)
+    finally:
+        chain.number = saved
 
 
 def incidents(w, check):
