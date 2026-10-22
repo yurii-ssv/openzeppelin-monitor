@@ -1,0 +1,54 @@
+{
+ "block": 26247429,
+ "rpc": "https://ethereum-rpc.publicnode.com",
+ "api": "https://api.ssv.network/api/v4/mainnet",
+ "api_get_urls": [
+  "https://api.ssv.network/api/v4/mainnet/clusters?perPage=1000&page=1",
+  "https://api.ssv.network/api/v4/mainnet/clusters?perPage=1000&page=2",
+  "https://api.ssv.network/api/v4/mainnet/clusters?perPage=1&page=1",
+  "https://api.ssv.network/api/v4/mainnet/clusters?perPage=1&page=1"
+ ],
+ "inventory": {
+  "block": 26247429,
+  "clusters": 1908,
+  "eth": 882,
+  "ssv_legacy": 1026,
+  "absent": 0,
+  "valid": 1908,
+  "invalid": 0,
+  "from_api": 1908,
+  "from_logs": 0,
+  "tuple_from_logs": 0,
+  "tuple_from_api": 1908,
+  "operators": 1936
+ },
+ "api_pagination_total": 1908,
+ "api_total_error": null,
+ "protocol_word0": "0x47b0faab87000000000003b27d00000bb8018fa7390000015a016bc530",
+ "dao_validator_count": 346,
+ "legacy_active_valid_validators": 346,
+ "legacy": 1026,
+ "legacy_active": 567,
+ "gap": null,
+ "controls": {
+  "empty": {
+   "rows": 0,
+   "gap": "its active legacy clusters hold 0 validators, daoValidatorCount is 346; the SSV API listed no clusters (pagination.total 1908); an empty listing is never complete; the SSV API listed 0 clusters of its pagination.total 1908 (clusters known only from the scanned logs not counted)"
+  },
+  "empty_total_0": {
+   "rows": 0,
+   "gap": "its active legacy clusters hold 0 validators, daoValidatorCount is 346; the SSV API listed no clusters (pagination.total 0); an empty listing is never complete"
+  },
+  "short_by_one_legacy_row": {
+   "rows": 1907,
+   "gap": "its active legacy clusters hold 306 validators, daoValidatorCount is 346; the SSV API listed 1907 clusters of its pagination.total 1908 (clusters known only from the scanned logs not counted)"
+  },
+  "short_inert_row_offset_by_a_log_only_cluster": {
+   "rows": 1907,
+   "log_only": 1,
+   "dropped": "0x001212635fa54b194287e1a9c1fc3cd7c6d7f536247fd7d713883f25c4efca27",
+   "gap": "the SSV API listed 1907 clusters of its pagination.total 1908 (clusters known only from the scanned logs not counted)"
+  }
+ },
+ "pass": true
+}

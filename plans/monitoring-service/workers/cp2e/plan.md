@@ -182,3 +182,68 @@ NOT RUN: V2e.7 / LIVE ledger (long rows; carried from QA attempt 1), older falsi
   missing only inert legacy clusters, at a first run (no on-chain legacy-cluster count).
 Next: fresh Opus QA (capped, D15) on the lane head.
 ```
+
+<a id="repair-3"></a>
+## Repair 3 — QA attempt 3 finding F1 (fresh implementer, Claude Opus high)
+
+- Live authority: Orca task `task_517a6c9b022b`, dispatch `ctx_116bf746a1a4`. Model `claude-opus-5-5`, effort high.
+- Frozen start head: `00235da1a8dbd47e1b7bbd6629c192bc74617a18` (QA evidence commit on top of `31b7a77`), porcelain 0; venv `reconcile/.venv` present. Read in full: `qa/cp2e-attempt-3.md` (F1, §2, ledger, N1–N4, Appendix A; scratch `probes3/test_qa3.py`). Round policy: three failed QA rounds, the next QA is capped and uses D15. Owner scope note: one narrow fix, its regressions, no mutation campaign. N1–N4 (NOTEs) not addressed (N3 is closed as a side effect: M6 shares the guard). Not merged with `plan/monitoring-service` (allowed, not needed: no shared file changed).
+- Changed paths (`git diff 00235da --name-only`): `reconcile/checks/{m6_legacy_coverage,m7_ssv_solvency}.py` (one comparison + docstrings), `reconcile/tests/{test_m6,test_m7}.py`, `workers/cp2e/**` (this section, attempts.md #attempt-7, `live_completeness.py` F1-shaped control, `evidence/repair3-*`, the LIVE json), the CP2e status line in `plan.md`. No CP1B frozen file, no `qa/**`, no `execution-log.md`, no config key, no fixture change.
+
+### Design change (amends the repair-1 "Completeness (F1)" row, leg 2)
+
+| Item | Repair-3 decision | Why |
+|---|---|---|
+| Leg (2) of `inventory_gap` | compares **only the distinct cluster ids the API pages listed** (`from_api`: inventory entries with `"api"` in `sources`, so a row repeated across pages counts once) with `pagination.total`; `from_api < total` → gap. Clusters only the scanned logs know are no longer counted. Missing / non-integer / negative / unreadable total → gap (unchanged); leg (1) `daoValidatorCount` and the repair-2 empty-listing rule unchanged | **Coordinator ruling** (repair-3 brief). `pagination.total` counts API rows only; `len(inv.clusters)` (API ∪ logs) let every log-only cluster (registered after the API's index point, or during an indexer stall) offset one dropped row, and an inert legacy row (0 validators, so invisible to leg 1) then missed the M7 first-run baseline (QA cp2e-3 F1; mainnet 42 such clusters, 2,235.6 SSV) |
+| Behaviour on the gap | unchanged: M6 `m6-unknown` health + summary/digest "UNKNOWN … lower bound"; M7 `unknown["inventory"]` → health, no baseline, open keys re-reported unchanged, upper-bound page logic unchanged | — |
+
+**Known residual (recorded, owner coordinator / spec; QA N4):** a *self-consistent* partial page — `pagination.total` agrees with the rows it serves — missing only inert legacy clusters, with `daoValidatorCount` matching, at a first run or on a new database, is invisible to both legs: there is no on-chain count of legacy clusters (only of their validators). After a baseline the `m7_legacy` id check catches a listed id that disappears.
+**New fail-safe side effect (NOTE, not a false clean):** the listing is cached up to `inventory.api_refresh_s` (600 s) and the total is read fresh at each full run; a cluster the API indexes between the two reads makes `from_api < total` for that run only (UNKNOWN health, nothing resolved, no baseline). Before repair 3 the cluster's log entry masked it. The hourly M6 sweep and the daily M7 run find the cache older than 600 s and refetch in the same run, so the window is the seconds between the two GETs.
+
+### State table — repair-3 re-pass (every persisted table/marker and every off-chain input)
+
+Same columns as the repair-1/2 tables: (a) empty, (b) error, (c) reorg 1 / N incl. an already resolved key, (d) restart between detection and handling, (e) same-block ordering, (f) window anchoring, (g) partial. "as R2" = the repair-2 cell (re-run green at this head). **R3** marks a cell that was wrong at `31b7a77` (regression red there, green now).
+
+| State / input | (a) empty | (b) error | (c) reorg, resolved key | (d) restart | (e) same block | (f) window | (g) partial |
+|---|---|---|---|---|---|---|---|
+| SSV API listing | as R2 (an answer without an API row is a gap whatever its total; logs next to it don't help) | as R2 (check-error, retried) | **R3** `…_at_every_point[reorg-{1,2}]`: the reorg run meets a short page offset by 1 / 2 log-only clusters → UNKNOWN, revisions unchanged, nothing resolved (green on `31b7a77` too: the `m7_legacy` id check); sweep fault `short_masked` (both sweeps, exhaustive) | **R3** `…_at_every_point[lost_database-{1,2}]` (new data dir: no `m7_legacy`, only the guard) — red on `31b7a77` | n/a | rows cached ≤ `api_refresh_s`, total fresh per full run (side effect above) | **R3** short page with the true total offset by log-only clusters (QA P1): `test_m7_p1_short_page_masked_by_a_log_only_cluster_first_run`, `test_m7_p1_masking_persists_on_the_next_daily_run`, `…_at_every_point[first-{1,2}]` (2 log-only clusters for 1 dropped row: more slack than needed), M6 `test_m6_short_page_offset_by_a_log_only_cluster_is_unknown` — all red on `31b7a77`; control (no log-only cluster) `test_m7_p1_control_short_page_alone_is_unknown` green on both; duplicates across pages: distinct ids (as R1); **residual** self-consistent partial page (above) |
+| SSV API `pagination.total` | absent → gap (as R1); 0 never completes an empty page (as R2) | GET fails → gap (as R1) | read at every reorg run | stateless | n/a | fresh per run | non-integer/negative → gap (as R1); **R3** compared with API rows only |
+| Scanned logs as inventory source (`db.latest_cluster_events`) | no log-only clusters → same result as before | n/a (framework) | rewound with the reorg (framework); a log-only cluster on a deleted block no longer influences completeness at all | as R2 | as R2 | as R2 | **R3** a log-only cluster is still evaluated (its tuple validates against storage) but never vouches for the API's completeness |
+| Storage `daoValidatorCount` | as R2 | as R2 (raise) | read at the run block | stateless | n/a | pinned | as R2 |
+| Storage cluster slots, token, `lastOperatorId` | as R1 | as R1 | as R1 | stateless | n/a | pinned | as R1 |
+| Views `eth_call` | as R1 | as R1 | as R1 | n/a | n/a | pinned | as R1 |
+| Params | as R1 | as R1 | as R1 | as R1 | as R1 | as R1 | n/a |
+| Stored logs (cluster events for M6 event runs; unstake events for M7) | as R1 | n/a | as R1 | as R1 | as R1 | as R1 | n/a |
+| eth_getLogs prefix (`check:m7:unstake_prefix`) | NOTE N1 (QA, not in scope; Q11 still fails) | as R1 | as R1 | as R1 | as R1 | fixed range | as R1 |
+| `m6_clusters`, `m6_obs` | as R1 (the gap changes no row write) | n/a | as R1 | as R1 | n/a | as R1 | n/a |
+| M6 open incidents | a gap resolves nothing (sweep `short_masked`: no resolve without proof, health every faulted run) | — | as R1 + sweep `short_masked` | as R1 + sweep restarts | — | — | as R1 |
+| `check:m6:summary`, digest | as R2; **R3** short page offset by a log-only cluster sets `inventory_gap` (QA N3) | as R1 | as R1 | as R1 | n/a | as R1 | as R1 |
+| `m7_legacy` (ids) | first run / new database: empty, only the guard protects it — **R3** the guard now sees F1's page | n/a | as R1 | as R1 | n/a | n/a | as R1 |
+| M7 incidents `surplus-floor`, `surplus` | **R3** no baseline from F1's page; after recovery one baseline at the true surplus (−4 SSV) and the page (P1 port second half); the next-day leak is never read as exactly 1 SSV (persistence port) | as R1 | `[reorg-*]`, sweep `short_masked` | `[lost_database-*]` | — | as R1 | upper-bound page unchanged |
+| Inbox, proof API, Blockscout, block timestamps | not consumed by M6/M7 (n/a) | | | | | | |
+
+### Adversarial sweep (extended)
+
+Both committed sweeps gain the fault `short_masked` (a short page with the true total — it drops the row of the cluster under attack — next to one ETH cluster registered on the new chain and known only from the logs). It runs **exhaustively** outside the seed (4 stories × confirmations {0, 3} × depth {1, N} × restart {none, detected, before} = 48 cases per check), so the seeded draws of the earlier faults are unchanged. In the M7 cases the attacked legacy cluster is inert (0 validators, 100 SSV) and a listed inert bystander (0 SSV) keeps the page non-empty — F1's shape exactly. Invariants after every step as before: no resolve without positive proof, no open incident without supporting evidence, no dropped page for surviving evidence (health on every faulted run, open pages kept), no window anchored on stale data, no event lost between sweeps, never a second baseline. Honest limit: as in repair 2, the sweep applies the fault after a baseline, where `m7_legacy` (M7) and `daoValidatorCount` (M6: the attacked cluster has a validator) already make the run UNKNOWN, so these 96 cases are green on `31b7a77` too; F1's first-run / new-database shape is pinned by the red tests above.
+
+### Repair-3 completion handoff (≤ 250 words, also the `worker_done` summary)
+
+```text
+Task / live dispatch: task_517a6c9b022b / ctx_116bf746a1a4 (CP2e repair 3, Claude Opus high)
+Assignment outcome: QA cp2e-3 F1 repaired (one narrow fix); fresh capped QA (D15) required.
+Base -> resulting commit: 00235da -> lane head in the CP2e status line (code tested at 0117e54)
+Changed paths: checks/{m6_legacy_coverage,m7_ssv_solvency}.py (one comparison + docstrings),
+  tests/{test_m6,test_m7}.py, workers/cp2e/** (plan.md Repair 3, attempts.md #attempt-7,
+  live_completeness.py F1-shaped control, evidence/repair3-*, live-completeness-26247429.json), plan.md status.
+F1: leg (2) of inventory_gap compares only the distinct API rows with pagination.total; log-only clusters
+  no longer offset a dropped row (coordinator ruling). Missing/unparseable total, leg (1), empty rule unchanged.
+Regressions: QA P1 + persistence ported, control kept, 8-case point x log-only class test, M6 twin (N3):
+  7 red on 31b7a77, green; QA probes3 7/7 green; sweeps + exhaustive fault short_masked (96 cases).
+Verification: V2x.1 150+173; V2x.2 3; V2x.3 5; V2x.4 2; reorg 23; sweep 216; V2x.6 563 passed, ruff clean;
+  12 falsifiers red->green (R5a/R5b new), porcelain 0.
+LIVE: guard at 26,247,429: 346 = 346, 1,908 API rows = total 1,908, gap none; 4 controls gap incl. F1 shape.
+NOT RUN: V2e.7 / LIVE ledger (long rows; carried from QA attempt 1), older falsifiers listed in #attempt-7;
+  subgraph DEFERRED. N1/N2/N4 not addressed. Residual NOTE: a self-consistent partial page (total agrees with
+  its rows) missing only inert legacy clusters at a first run (no on-chain legacy-cluster count).
+Next: fresh Opus QA (capped, D15) on the lane head.
+```
