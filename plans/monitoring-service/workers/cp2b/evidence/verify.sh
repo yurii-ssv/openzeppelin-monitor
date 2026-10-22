@@ -28,6 +28,18 @@ PY
 echo "== QA attempt-1 reproducer as published (two of its setups predate F6, see plan.md Repair 1)"
 PYTHONPATH=reconcile:reconcile/tests $PY -m pytest -q -p no:cacheprovider -rf "$QA/test_independent.py" 2>&1 | grep -E "^FAILED|passed|failed" | sed "s|$QA/||"
 echo "exit ${PIPESTATUS[0]}"
+# repair 2: the QA attempt-2 reproducers ported, and the QA attempt-2 file as published (N1, a NOTE, not repaired)
+for f in m9 m11; do run "qa2 regressions $f" reconcile/tests/test_$f.py -k qa2; done
+QA2=$(mktemp -d)
+python3 - "$QA2" <<'PY'
+import pathlib, sys
+s = pathlib.Path("plans/monitoring-service/qa/cp2b-attempt-2.md").read_text()
+code = s.split("<!-- BEGIN test_qa2.py -->\n```python\n", 1)[1].split("\n```\n<!-- END test_qa2.py -->", 1)[0]
+(pathlib.Path(sys.argv[1]) / "test_qa2.py").write_text(code + "\n")
+PY
+echo "== QA attempt-2 reproducer as published (N1 second weak commit is a NOTE, not in the repair brief)"
+PYTHONPATH=reconcile:reconcile/tests $PY -m pytest -q -p no:cacheprovider -rf "$QA2/test_qa2.py" 2>&1 | grep -E "^FAILED|passed|failed" | sed "s|$QA2/||"
+echo "exit ${PIPESTATUS[0]}"
 run "V2x.6 suite" reconcile/tests
 echo "== V2x.6 ruff: reconcile/.venv/bin/ruff check reconcile"
 reconcile/.venv/bin/ruff check reconcile; echo "exit $?"
