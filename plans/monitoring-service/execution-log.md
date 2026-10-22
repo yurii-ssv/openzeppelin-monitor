@@ -634,3 +634,8 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - QA 3 (Opus, `ctx_e51adc5a9a75`, QA commit `8bd225e`) on `6191a36`: FAIL. Repair 2 fixes confirmed (QA2-F1..F4); two pre-existing BLOCKING defects found by new scenarios: QA3-F1 resolved M11 zero-update outage re-reported (3 false pages + 1 warn) as it slides out of `history_rounds`; QA3-F2 a lone dissenting voter's round counts as agreement and heals the dissent page. Notes N1-N3 (N3: weekly proof comparison 273 s on mainnet, CP3).
 - Failed rounds for CP2b: 3. Lane fast-forwarded to `8bd225e`; repair 3 dispatched `task_91e058ddc685`/`ctx_7ddd5de19cbc` (opus/high effective). Next QA (4th) stays capped. Released `ctx_e51adc5a9a75`.
+
+## Event 0060 — Fenced Codex QA sessions resumed after the sleep
+
+- The fenced Codex CP2d QA 2 (`ctx_af1a03ee06d3`) delivered a late worker_done for its report (`qa/cp2d-attempt-2.md`); the report is already in the lane (`cba2fb3`, coordinator commit), `ms-qa-cp2d-2` is at `cba2fb3`, no new content. No action.
+- The fenced Codex CP2c QA 2 (`ms-qa-cp2c-2`, head under test `c6b0a63`, i.e. before repair 2) resumed and sent an escalation: M12 misses a >0.04 ETH daily-spend warning with even one missed slot, and partial `eth_feeHistory` data can resolve an existing runway page without error. These are NOT in the verified CP2c record (QA 3 on `945fd4d` passed). To be checked against `945fd4d` once its report is committed (or by a direct reproducer on the lane); not acted on yet.
