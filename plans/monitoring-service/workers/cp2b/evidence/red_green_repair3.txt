@@ -39,9 +39,12 @@ RED   test_r3_seed_295_late_confirmed_votes_do_not_retract_an_attribution
 RED   test_r3_chain_halt_with_confirmations_waits_for_the_tail_control
 RED   test_r3_reorg_removing_the_commit_that_settled_a_dissent_resolves_with_the_reorg_text
 
+GREEN test_r3_qa3_control_cadence_page_resolved_by_a_reorg_that_adds_the_commit_is_not_reopened (QA attempt-3 control, adapted to the horizon ruling: chain-time gap)
+
 ## existing tests changed by repair 3 (new semantics, see plan.md Repair 3)
 RED   test_rpc_budget_no_eth_call_per_sweep_with_350_clusters
 GREEN test_qa2_f1_reorg_removing_the_superseding_commit_reopens_the_failed_round
+GREEN test_a_round_superseded_within_its_30_minutes_still_fails_at_its_deadline (assertion added: c is its own incident; re-guards R2-F1-own)
 
 ## sweep cases RED on the frozen code (70 of 106; updated independent model + new invariants + exploration seeds)
 test_sweep_m11[0]

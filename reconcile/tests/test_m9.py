@@ -1494,3 +1494,27 @@ def test_r3_reorg_removing_the_commit_that_settled_a_dissent_resolves_with_the_r
     tick(w, oc, 2)
     res = [r["text"] for r in sent(w, "m9", "kind='resolved'") if r["ikey"] == "dissent:3"]
     assert "dissent:3" not in open_keys(w, "m9") and len(res) == 1 and REORG_TEXT in res[0], (res, open_keys(w, "m9"))
+
+
+def test_r3_qa3_control_cadence_page_resolved_by_a_reorg_that_adds_the_commit_is_not_reopened(tmp_path):
+    """QA attempt-3 control, ADAPTED to the horizon ruling (repair 3): the 9.5 h gap is produced in chain time (blocks
+    without a RootCommitted) instead of a clock-only halt with two unconfirmed blocks (which now waits, the accepted
+    limitation). A deep reorg brings a chain with a RootCommitted inside the gap: the page resolves and is not re-sent
+    across a restart."""
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    oc.round()
+    tick(w, oc, 5)
+    oc.c.elapse(2860)
+    tick(w, oc, 3)
+    assert open_keys(w, "m9") == {"cadence": "page"}
+    fork = oc.c.number - 1
+    oc.reorg(fork, latest=oc.latest)
+    oc.c.mine(3)
+    oc.round()
+    tick(w, oc, 5)
+    assert open_keys(w, "m9") == {}, open_keys(w, "m9")
+    n = len(sent(w, "m9"))
+    w = restart(tmp_path, w, oc)
+    tick(w, oc, 5, seconds=60)
+    assert len(sent(w, "m9")) == n and open_keys(w, "m9") == {}
