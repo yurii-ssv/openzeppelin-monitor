@@ -20,6 +20,7 @@ id, `active` (the condition holds at the checkpoint) and `evidence_block` (where
 | active | its finding (opens / keeps / escalates / re-sends on a new `revision`); an earlier episode of the same key that occurred and healed without being reported (after the baseline), or the reported one that changed (new `revision`) and healed between two sweeps, is sent first |
 | healed, reported and still open in the book | `resolve=True` with the episode's resolution text; preceded by its finding when it changed (new `revision`) since it was reported, so a change that appeared and healed between two sweeps is still sent |
 | healed, never reported, `evidence_block` > baseline | its finding then `resolve=True` (reported once, e.g. after downtime); not for a clean evaluation (`occurred=False`) |
+| healed, already resolved, derived again with another `revision` and an `evidence_block` above the row's last report | its finding then `resolve=True`, once (a reorg replaced its evidence and the new chain holds more, e.g. a failed round that joined a resolved run); a shrunk or unchanged episode sends nothing |
 | healed, never reported, at or below the baseline | nothing (history before the check's first run) |
 | unknown (an input is unavailable) | the last reported finding again, unchanged (stays open; nothing sent) |
 | book row whose episode is no longer derived | non-reorg run: resolved; reorg run (evidence above the ancestor): row deleted and the key left to the framework's re-find rule ("evidence left the canonical chain", README §6.2) |
@@ -309,6 +310,14 @@ class EpisodeBook:
                        severity=f["severity"], title=f["title"], body=f["body"], subject=f["subject"],
                        evidence=f["evidence"], revision=f["revision"], resolution=f["resolution"])
 
+    @staticmethod
+    def _regrown(e: Episode, r) -> bool:
+        """A resolved (closed) row whose episode is derived again with another revision, established after the row
+        was last reported: a reorg replaced its evidence and the canonical chain now holds more (e.g. a failed round
+        that joined an already resolved run of failed rounds). What it became was never sent."""
+        return (bool(r["closed"]) and e.occurred and e.revision is not None
+                and e.revision != json.loads(r["finding"])["revision"] and e.evidence_block > r["reported_block"])
+
     def apply(self, ctx: Ctx, episodes: list[Episode], unknown_keys: frozenset[str] = frozenset()) -> list[Finding]:
         """Findings for this run's episodes. `unknown_keys`: keys the run could not evaluate (an input is
         unavailable): their open episodes are re-reported unchanged, never resolved."""
@@ -335,6 +344,8 @@ class EpisodeBook:
                     elif (r is not None and not r["closed"]
                           and e.revision != json.loads(r["finding"])["revision"]):
                         out.append(self._finding(e))  # the reported one grew and healed while a later one began
+                    elif r is not None and self._regrown(e, r):
+                        out.append(self._finding(e))  # a resolved one re-established with more evidence
                 out.append(self._finding(cur))
                 self._store(cur, ctx.block, closed=False)
                 for e in eps:  # older episodes of the same key are covered by the active one
@@ -352,7 +363,7 @@ class EpisodeBook:
                         out.append(self._finding(e, resolve=True))
                         resolved = True
                     self._store(e, ctx.block, closed=True)
-                elif r is None and e.occurred and e.evidence_block > base:
+                elif (r is None and e.occurred and e.evidence_block > base) or (r is not None and self._regrown(e, r)):
                     out += [self._finding(e), self._finding(e, resolve=True)]
                     resolved = True
                     self._store(e, ctx.block, closed=True)

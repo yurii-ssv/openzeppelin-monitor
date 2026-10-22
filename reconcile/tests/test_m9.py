@@ -1373,3 +1373,57 @@ def test_r3_one_slot_voting_twice_does_not_make_another_slot_a_dissenter(tmp_pat
     oc.vote(x, 1)
     tick(w, oc, 200)
     assert open_keys(w, "m9") == {"failed-round": "page", "split": "warn"}, open_keys(w, "m9")
+
+
+def test_r3_a_lower_blocknum_failing_after_a_higher_one_is_sent_before_the_heal(tmp_path):
+    """Found by the repair-3 wider sweep (class 5, event lost between sweeps): a stray vote for X+1 comes first,
+    round X's first vote 3 blocks later. X+1 fails first (page); X fails 36 s later and a superseding commit heals
+    both before the next sweep. The incident's revision named only the highest member, so X was never sent: now
+    every member is part of the revision and X is sent before the resolution."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    x = oc.c.number - 2
+    b = oc.c.number
+    oc.vote(x + 1, 4)  # mined in block b
+    oc.c.mine(2)
+    oc.vote(x, 1)  # mined in block b + 3
+    tick(w, oc, b + TIMEOUT_BLOCKS + 2 - oc.c.number)  # sealed b + 151: past X+1's deadline only
+    texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"]
+    assert open_keys(w, "m9") == {"failed-round": "page"} and all(f"blockNum {x} " not in t for t in texts), texts
+    oc.c.mine(10)  # past X's deadline, no sweep
+    oc.round()  # a later blockNum commits: both can no longer commit
+    tick(w, oc, 2)
+    texts = [r["text"] for r in sent(w, "m9", "kind != 'resolved'") if r["ikey"] == "failed-round"]
+    assert any(f"{x}, {x + 1}" in t for t in texts), texts
+    assert open_keys(w, "m9") == {} and sent(w, "m9")[-1]["kind"] == "resolved"
+
+
+def test_r3_reorg_growing_an_already_resolved_failed_round_run_sends_the_new_member(tmp_path):
+    """Found by the repair-3 wider sweep (class 2: reorg of a resolved key): round A failed (page) and was resolved by
+    round B's commit. A reorg beyond the confirmation window removes B's commit (B's votes stay): on the new chain B
+    fails too and a later commit closes both. B is a failed round never sent: the resolved run is reported again
+    with B (once), then resolved; a restart sends nothing more."""
+    oc, w = oracle_worker(tmp_path, confirmations=2)
+    tick(w)
+    a = oc.c.number - 1
+    oc.vote(a, 1)
+    tick(w, oc, TIMEOUT_BLOCKS + 5)
+    assert open_keys(w, "m9") == {"failed-round": "page"}
+    b = oc.c.number - 1
+    oc.vote(b, 1)
+    oc.vote(b, 2)
+    fork = oc.c.number
+    oc.vote(b, 4)  # B commits: A can no longer commit
+    tick(w, oc, 4)
+    assert open_keys(w, "m9") == {} and sent(w, "m9")[-1]["kind"] == "resolved"
+    oc.reorg(fork, latest=0, refs={b})  # B's commit (and fourth vote) leave the chain
+    oc.c.mine(TIMEOUT_BLOCKS + 5)  # B's 30 min pass on the new chain
+    oc.round()  # a later blockNum commits: A and B can no longer commit
+    tick(w, oc, 4)
+    texts = [r["text"] for r in sent(w, "m9", "kind != 'resolved'") if r["ikey"] == "failed-round"]
+    assert any(f"{a}, {b}" in t for t in texts), texts
+    assert open_keys(w, "m9") == {} and sent(w, "m9")[-1]["kind"] == "resolved"
+    n = len(sent(w, "m9"))
+    w = restart(tmp_path, w, oc)
+    tick(w, oc, 4, seconds=60)
+    assert len(sent(w, "m9")) == n

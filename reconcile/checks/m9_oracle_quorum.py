@@ -164,6 +164,14 @@ class M9OracleQuorum(Check):
                 lo = mid
         return hi
 
+    def settled_block(self, st) -> int:
+        """Where a settled round's settlement (and so a dissent attributed in it) was established: its closing commit
+        when that came inside its 30 min or the deadline has not passed, else the first block past the deadline. A
+        reorg run that removes it leaves the dissent to the re-find rule ("evidence left the canonical chain")."""
+        if st.close is not None and (self.times(st.close.block) <= st.deadline or not self.now > st.deadline):
+            return max(st.close.block, st.last_vote_block)
+        return self.block_after(st.deadline, st.last_vote_block, self.block)
+
     def failed_rounds(self, states) -> list[Episode]:
         """Failed rounds grouped into runs that end at the same commit (a late commit of the run's round or a
         superseding one): one incident per run, re-sent for every further failed round (`revision`). A round that
@@ -213,7 +221,8 @@ class M9OracleQuorum(Check):
                       + (f" Failed rounds since the last commit: {', '.join(map(str, refs))}." if len(refs) > 1 else "")
                       + early + " The oracle has no retry: the next target waits for the next round. Check every slot's "
                       "build (#93157)."),
-                subject={"ref_block": rnd.ref}, revision=str(rnd.ref),
+                # every member: a lower blockNum that fails after a higher one (a stray vote) is a new revision too
+                subject={"ref_block": rnd.ref}, revision=",".join(map(str, refs)),
                 evidence={"failed_rounds": refs, "votes": [vote_json(v) for v in rnd.votes],
                           "first_vote_at": last.first_at, "deadline_at": last.deadline, "distinct_roots": roots},
                 resolution=resolution))
@@ -312,7 +321,7 @@ class M9OracleQuorum(Check):
                 body += f" {longest} >= {streak_n} in a row: the quorum margin is gone."
             return Episode(
                 key=f"dissent:{slot}", episode=f"dissent:{slot}:{first.ref}", active=active,
-                evidence_block=first.last_vote_block, severity=sev,
+                evidence_block=self.settled_block(first), severity=sev,
                 title=f"Oracle slot {slot} dissent ({n} round{'s' if n > 1 else ''}, {e['run']} in a row)", body=body,
                 subject={"slot": slot}, revision=f"{first.ref}:{last.ref}",
                 evidence={"rounds": [{"ref_block": st.ref, "voted_roots": roots, "reference": st.reference}

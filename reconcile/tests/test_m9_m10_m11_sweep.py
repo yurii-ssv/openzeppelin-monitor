@@ -199,6 +199,7 @@ class Sweep:
     def step(self, blocks=0, seconds=0.0):
         self.log.append(("step", blocks, seconds))
         before = (open_keys(self.w, "m9"), open_keys(self.w, "m10"))
+        self.runs_before = {cid: self.w.db.meta(f"run:{cid}") for cid in ("m9", "m10")}
         mode = self.rng.random()
         if mode < 0.06:  # RPC outage: the step fails; no incident may change
             self.oc.c.mine(blocks)
@@ -220,7 +221,8 @@ class Sweep:
         exp9, exp10, *_ = expected_m9_m10(self.w, self.oc, self.start, self.conf)
         for cid, exp, prev in (("m9", exp9, before[0]), ("m10", exp10, before[1])):
             got = open_keys(self.w, cid)
-            if (self.w.db.meta(f"run:{cid}") or {}).get("at") == self.w.clock():
+            # a run happened in this step iff its record changed (a step of 0 blocks and 0 s keeps the clock)
+            if self.w.db.meta(f"run:{cid}") != self.runs_before[cid]:
                 assert got == exp, self.trace(f"{cid} open {got} != expected {exp}")
             else:
                 assert got == prev, self.trace(f"{cid} changed without a run")
@@ -364,6 +366,7 @@ class Sweep:
     def final(self):
         """No event lost between sweeps: every failed round, rotation during an open round and duplicate assignment
         on the final chain was sent; every resolution was either the reorg text or of a key no longer expected."""
+        tick(self.w, self.oc, self.conf + 1, seconds=60)  # one healthy run of both checks at the final state first
         _, _, rounds, rotations, commits = expected_m9_m10(self.w, self.oc, self.start, self.conf)
         text9 = "\n".join(r["text"] for r in sent(self.w, "m9", "kind != 'resolved'") if r["ikey"] == "failed-round")
         text10 = "\n".join(r["text"] for r in sent(self.w, "m10", "kind != 'resolved'")
@@ -418,6 +421,7 @@ class UpdaterSweep:
         mode = self.rng.random()
         self.log.append(("step", blocks, seconds, round(mode, 2)))
         before = open_keys(u.w, "m11")
+        self.run_before = u.w.db.meta("run:m11")
         resolved_before = len(sent(u.w, "m11", "kind='resolved'"))
         self.sent_before = len(sent(u.w, "m11"))
         row = u.w.db.conn.execute("SELECT evidence FROM incidents WHERE check_id='m11' AND key='state-mismatch' "
@@ -464,7 +468,8 @@ class UpdaterSweep:
     def check(self, before, resolved_before, partial, down, removed):
         u = self.u
         got = open_keys(u.w, "m11")
-        if (u.w.db.meta("run:m11") or {}).get("at") != u.w.clock():
+        # a run happened in this step iff its record changed (a step of 0 blocks and 0 s keeps the clock)
+        if u.w.db.meta("run:m11") == self.run_before:
             assert got == before, self.trace("m11 changed without a run")
             return
         closed, cp = self.closed_rounds()
@@ -605,6 +610,8 @@ class UpdaterSweep:
             st["root"] = min(st["root"], u.ssv.latest_root)
         u.api.ref = u.ssv.latest_root
         u.set_eb(self.eb, leaves={self.bad: 99} if self.bad else None)
+        if self.bad:  # the API now serves the mismatching leaf at the root that is the latest again
+            self.rounds[-1]["bad_seen"] = True
         self.step(1)
 
     def reorg(self):
@@ -636,6 +643,7 @@ class UpdaterSweep:
     def final(self):
         """No event lost between sweeps: every closed zero-update round of the final chain was sent."""
         u = self.u
+        tick(u.w, u.oc, 1, seconds=300)  # one healthy run first: the last random step may have been an RPC outage
         text = "\n".join(r["text"] for r in sent(u.w, "m11", "kind != 'resolved'") if r["ikey"] == "liveness")
         closed, cp = self.closed_rounds()
         for r in closed:
@@ -645,6 +653,6 @@ class UpdaterSweep:
                 assert str(r["ref"]) in text, self.trace(f"zero round {r['ref']} never sent")
 
 
-@pytest.mark.parametrize("seed", range(20))
+@pytest.mark.parametrize("seed", range(60))
 def test_sweep_m11(tmp_path, seed):
     UpdaterSweep(tmp_path, seed).run(16)
