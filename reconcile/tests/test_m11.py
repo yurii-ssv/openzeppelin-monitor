@@ -860,3 +860,226 @@ def test_weekly_tracking_survives_a_restart(tmp_path):
     u.set_eb(32, leaves={u.cids[2]: 48})
     u.close()
     assert open_keys(u.w, "m11") == {"state-mismatch": "warn"} and u.api.calls == calls + 1
+
+
+# ---------------------------------------------------------------- repair 2: QA attempt 2 (qa/cp2b-attempt-2.md)
+
+
+def dying_api(u, answers=1, error="TimeoutError: timed out"):
+    """The proof API answers `answers` requests, then every request fails with a transport error."""
+    from checks.m11_updater_liveness import ProofApiError
+
+    calls = {"n": 0}
+    real = u.api.get
+
+    def flaky(url, timeout):
+        calls["n"] += 1
+        if calls["n"] > answers:
+            raise ProofApiError(error)
+        return real(url, timeout)
+
+    u.w.checks["m11"].http_get = flaky
+    return calls
+
+
+def test_qa2_f2_proof_api_dying_mid_comparison_is_bounded(tmp_path):
+    """QA2-F2 reproducer: the API answers once, then times out for every request: `proof_api_abort_after` (3)
+    consecutive transport failures make it unreachable for the run, also after a leaf was received; the zero-round
+    proof and the weekly comparison of the same run share that verdict (1 + 3 GETs for 20 clusters)."""
+    u = UpdaterWorld(tmp_path, n=20)
+    tick(u.w)
+    calls = dying_api(u)
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11").get("liveness") == "warn"
+    assert calls["n"] == 1 + 3, f"{calls['n']} proof GETs for 20 clusters after the API died"
+    proof = u.w.db.meta("check:m11:zero_proof")["result"]
+    assert proof["checked"] == 1 and len(proof["unknown"]) == 19  # nothing dropped: UNKNOWN, retried
+    assert sum("not asked" in x["reason"] for x in proof["unknown"]) == 16
+    assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api-partial%'").fetchone()
+    tick(u.w, u.oc, 1, seconds=300)  # next run: at most abort_after more GETs while the API is still dead
+    assert calls["n"] == 1 + 3 + 3
+    u.w.checks["m11"].http_get = u.api.get  # the API is back: every unknown cluster is compared
+    tick(u.w, u.oc, 1, seconds=300)
+    assert not u.w.db.meta("check:m11:zero_proof")["result"]["unknown"]
+
+
+def test_qa2_f2_a_mismatching_leaf_received_before_the_api_died_still_pages(tmp_path):
+    """The abort keeps every answer in hand: a leaf that differs from the chain, received before the API died,
+    escalates the zero round to a page (the unknown rest is retried)."""
+    u = UpdaterWorld(tmp_path, n=10)
+    tick(u.w)
+    dying_api(u, answers=2)
+    u.round(updates=())
+    u.set_eb(32, leaves={min(u.cids): 64})  # the first cluster asked (inventory order)
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "page"}
+    assert "not comparable yet" in incidents(u.w, "m11")[0]["body"]
+
+
+def test_qa2_f2_slow_api_is_bounded_by_the_run_budget(tmp_path):
+    """Bounded run time: an API that answers, but slowly (each answer 100 s of wall time here), stops being asked
+    once the run has waited `proof_api_run_budget_s`; the clusters not asked are UNKNOWN and asked in later runs."""
+    u = UpdaterWorld(tmp_path, n=20, checks={"proof_api_run_budget_s": 450})
+    tick(u.w)
+    chk = u.w.checks["m11"]
+    wall = {"t": 0.0}
+    chk.monotonic = lambda: wall["t"]
+    real = u.api.get
+
+    def slow(url, timeout):
+        wall["t"] += 100
+        return real(url, timeout)
+
+    chk.http_get = slow
+    u.round(updates=())
+    u.close()
+    assert u.api.calls == 5  # 5 x 100 s >= 450 s: the run stops asking
+    proof = u.w.db.meta("check:m11:zero_proof")["result"]
+    assert proof["checked"] == 5 and len(proof["unknown"]) == 15
+    assert all("run budget" in x["reason"] for x in proof["unknown"])
+    for _ in range(3):
+        tick(u.w, u.oc, 1, seconds=300)
+    assert not u.w.db.meta("check:m11:zero_proof")["result"]["unknown"] and u.api.calls == 20
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+
+
+def test_qa2_f2_api_dead_from_the_start_stays_an_error_not_clean(tmp_path):
+    """Control (class 1): no answer at all is the error path (warn, says so), never 'all match'."""
+    u = UpdaterWorld(tmp_path, n=10)
+    tick(u.w)
+    calls = dying_api(u, answers=0)
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"} and calls["n"] == 3
+    assert "Proof API check not possible" in incidents(u.w, "m11")[0]["body"]
+
+
+def test_qa2_f3_reorg_removing_the_round_that_aged_a_mismatch(tmp_path):
+    """QA2-F3 reproducer: the mismatch is seen at R1 and R2 (warn); a reorg beyond the confirmation window removes
+    R2's RootCommitted: on the canonical chain the mismatch is at one root only, so the key is not derived and the
+    framework resolves it ("evidence left the canonical chain"). A later root that still mismatches warns again."""
+    u = UpdaterWorld(tmp_path, confirmations=2)
+    tick(u.w, u.oc, 4)
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[1]: 64})
+    u.close()
+    assert "state-mismatch" not in open_keys(u.w, "m11")
+    tick(u.w, u.oc, 50)
+    fork = u.c.number
+    u.round(updates=(0,))
+    u.set_eb(32, leaves={u.cids[1]: 64})
+    u.close()
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    u.c.reorg(fork)  # the second commit and everything after leave the chain
+    u.api.ref = u.w.db.meta("check:m11:state_evals")[0]["ref"]
+    u.c.mine(20)
+    tick(u.w, u.oc, 5)
+    assert len(u.w.db.meta("check:m11:state_evals")) == 1
+    assert "state-mismatch" not in open_keys(u.w, "m11")
+    (res,) = sent(u.w, "m11", "kind='resolved'")
+    assert REORG_TEXT in res["text"]
+    u.round(updates=(0,))  # the cluster still mismatches at the next root: older than one round again
+    u.set_eb(32, leaves={u.cids[1]: 64})
+    u.close(extra=10)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+
+
+def test_qa2_f3_reorg_keeping_the_aging_round_with_the_api_down_keeps_the_mismatch(tmp_path):
+    """Twin: the reorg orphans the evaluation of R2 but keeps R2's commit and the API is down: the latest root is not
+    evaluated again, so the age is unknown, not disproved: the warn stays, nothing is resolved."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    mismatch_older_than_one_round(u, cluster=1, leaf=64)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"}
+    u.c.reorg(u.c.number - 2)
+    u.api.down = True
+    u.c.mine(3)
+    tick(u.w)
+    assert open_keys(u.w, "m11") == {"state-mismatch": "warn"} and not sent(u.w, "m11", "kind='resolved'")
+
+
+def downtime_rounds(u, normal, zero_first=True):
+    u.round(updates=() if zero_first else (0,))
+    u.c.elapse(400)
+    for _ in range(normal):
+        u.c.elapse(2000)
+        u.round(updates=(0,))
+        u.c.elapse(400)
+
+
+def test_qa2_f4_zero_round_older_than_history_rounds_after_downtime(tmp_path):
+    """QA2-F4 reproducer (class 6): the worker is down for 8 rounds; the first had 0 updater txs (warn), the rest
+    are normal. Every closed round no run evaluated is evaluated once: the zero round is reported (open + its
+    resolution), once, also across a later restart."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    downtime_rounds(u, 7)
+    w = u.restart()
+    tick(w, u.oc, 2)
+    kinds = [(r["ikey"], r["kind"]) for r in sent(w, "m11")]
+    assert kinds == [("liveness", "open"), ("liveness", "resolved")], kinds
+    w = u.restart(w)
+    tick(w, u.oc, 2, seconds=600)
+    assert len(sent(w, "m11")) == 2
+
+
+def test_qa2_f4_zero_round_within_history_rounds_after_downtime_control(tmp_path):
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    downtime_rounds(u, 5)
+    w = u.restart()
+    tick(w, u.oc, 2)
+    kinds = [(r["ikey"], r["kind"]) for r in sent(w, "m11")]
+    assert kinds == [("liveness", "open"), ("liveness", "resolved")], kinds
+
+
+def test_qa2_f4_revert_rate_round_older_than_history_rounds_after_downtime(tmp_path):
+    """The same cap for the revert-rate rule: a round whose updates mostly reverted, 8 rounds before the restart."""
+    u = UpdaterWorld(tmp_path, n=4)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.fail("MustUseLatestRoot", ref, i=2)
+    u.c.elapse(400)
+    for _ in range(7):
+        u.c.elapse(2000)
+        u.round(updates=(0,))
+        u.c.elapse(400)
+    w = u.restart()
+    tick(w, u.oc, 2)
+    kinds = [(r["ikey"], r["kind"]) for r in sent(w, "m11")]
+    assert ("revert-rate", "open") in kinds and ("revert-rate", "resolved") in kinds, kinds
+
+
+def test_qa2_f4_rounds_before_the_first_run_stay_history(tmp_path):
+    """Benign twin: the zero round closed before the check's first run: history (baseline), not reported, and the
+    first run asks for no more than history_rounds rounds' senders."""
+    u = UpdaterWorld(tmp_path)
+    downtime_rounds(u, 7)
+    tick(u.w, u.oc, 2)
+    assert sent(u.w, "m11") == []
+    assert u.w.db.meta("run:m11")["rpc_calls"].get("eth_getTransactionByHash", 0) <= 6
+
+
+def test_qa2_f4_reorg_lowers_the_evaluated_mark(tmp_path):
+    """Reorg rule of `check:m11:evaluated_upto`: a reorg below the newest evaluated commit lowers the mark to the
+    ancestor, so a round re-included on the new chain below the old mark is still evaluated (history_rounds 1 here
+    makes the mark decide): the new chain's zero round, healed by its next round before the worker runs, is
+    reported once."""
+    u = UpdaterWorld(tmp_path, n=4, checks={"history_rounds": 1})
+    tick(u.w)
+    fork = u.c.number
+    u.round(updates=(0,))
+    u.close()
+    u.round(updates=(0,))
+    u.close()
+    assert sent(u.w, "m11") == [] and u.w.db.meta("check:m11:evaluated_upto") > fork + 300
+    u.c.reorg(fork)
+    u.ssv.latest_root = 0  # the model's root moves back with the chain
+    u.round(updates=())  # re-included below the old mark, now without updater txs
+    u.c.mine(305)
+    u.round(updates=(1,))
+    u.close(extra=20)
+    kinds = [(r["ikey"], r["kind"]) for r in sent(u.w, "m11")]
+    assert kinds == [("liveness", "open"), ("liveness", "resolved")], kinds

@@ -87,6 +87,7 @@
       "proof_api": "https://ssv-oracle.ssv.network/api/v1",
       "proof_api_timeout_s": 15,
       "proof_api_abort_after": 3,
+      "proof_api_run_budget_s": 600,
       "full_state_interval_s": 604800,
       "seconds_per_block": 12,
       "require_inbox": true

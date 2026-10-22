@@ -17,6 +17,12 @@ index), so a rotation earlier in the same block already moves the expectation.
 | revert rate on our updates > 10 % in a round | `revert-rate` | warn | gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block) inside the latest closed window / (those + successful updater txs); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox) |
 | weekly full-state leaf comparison, mismatch older than one round | `state-mismatch` | warn | every `full_state_interval_s` the comparison over all such clusters at the latest closed root; each mismatching or unknown cluster is compared again at every later closed root (and unknown ones every run). A cluster mismatching at two consecutive evaluated roots is older than one round: warn. Resolved only by positive proof (every reported cluster compared again and matching); an unknown or unevaluated reported cluster keeps the incident (API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED, health message, retried every run) |
 
+Bounded cost: one run asks the proof API at most once per cluster; after `proof_api_abort_after` consecutive transport
+failures or `proof_api_run_budget_s` of waiting it asks nothing more in that run, and the clusters not asked are
+UNKNOWN (retried next run, never read as a match). Every closed round no finished run evaluated
+(`check:m11:evaluated_upto`, lowered to the ancestor in a reorg run) is evaluated in addition to the last
+`history_rounds`, so a condition that occurred and healed during a long downtime is still reported once.
+
 `updateClusterBalance` from other senders -> info is the Monitor's (CP1A template). Persisted state and its reorg
 rule: `m11_senders` (tx hash -> sender, block; rows above the ancestor deleted in the reorg run and re-read),
 `m11_block_times` (BlockTimes), `check:m11:zero_proof`, `check:m11:state_evals` (the last three evaluated
@@ -30,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import urllib.error
 import urllib.request
 from types import SimpleNamespace
@@ -115,10 +122,11 @@ class M11UpdaterLiveness(Check):
         "revert_rate": 0.10,
         "updater": None,  # null: the live address of oracle slot `updater_slot`
         "updater_slot": 4,
-        "history_rounds": 6,  # closed rounds re-derived per run (bounds the sender lookups)
+        "history_rounds": 6,  # closed rounds re-derived per run (+ any closed round not evaluated yet, e.g. downtime)
         "proof_api": "https://ssv-oracle.ssv.network/api/v1",
         "proof_api_timeout_s": 15,
-        "proof_api_abort_after": 3,  # consecutive transport failures that make the API "unreachable"
+        "proof_api_abort_after": 3,  # consecutive transport failures that make the API "unreachable" for the run
+        "proof_api_run_budget_s": 600,  # wall time one run may spend waiting for the proof API (rest: UNKNOWN)
         "full_state_interval_s": 604_800,
         "seconds_per_block": 12,
         "require_inbox": True,  # the revert-rate rule needs the failed-transaction inbox (inbox.path)
@@ -140,6 +148,16 @@ class M11UpdaterLiveness(Check):
         self.times = BlockTimes(TIMES)
         self.window = config["update_window_s"]
         self.http_get = http_get_json
+        self.monotonic = time.monotonic
+        self.reset_api()
+
+    def reset_api(self) -> None:
+        """Per-run proof API state: the answers of this run (shared by the zero-round proof and the weekly
+        comparison) and its bound (QA2-F2): after `proof_api_abort_after` consecutive transport failures, or once
+        the run has waited `proof_api_run_budget_s` for the API, nothing more is asked in this run; the clusters
+        not asked are UNKNOWN (kept, retried next run), so the single-threaded worker is never held for hours."""
+        self.answers: dict[str, object] = {}
+        self.api_failures, self.api_spent, self.api_stop = 0, 0.0, None
 
     def prepare(self, ctx: Ctx) -> None:
         if self.config["updater"]:
@@ -175,17 +193,26 @@ class M11UpdaterLiveness(Check):
             ctx.db.conn.execute("DELETE FROM m11_senders WHERE block>?", (ctx.reorg_ancestor,))
         self.times.begin(ctx, self.config["seconds_per_block"])
         self.now = self.times.horizon()
-        self.answers: dict[str, object] = {}  # proof API answers of this run (the zero round and the weekly share)
+        self.reset_api()
         commits = list(ctx.db.events_after(FIRST, block, frozenset({"RootCommitted"})))
         self.rotations = [ev for ev in ctx.db.events_after(FIRST, block, frozenset({"OracleReplaced"}))
                           if ev.extra["oracleId"] == self.config["updater_slot"]]
+        # the last `history_rounds` closed rounds, and every closed round no finished run has evaluated yet (QA2-F4:
+        # a zero round that occurred and healed while the worker was down longer than history_rounds is still
+        # reported); before the first run only history_rounds (earlier rounds are history: the book's baseline)
+        mark = ctx.state("evaluated_upto")
+        if mark is not None and ctx.reorg_ancestor is not None:
+            mark = min(mark, ctx.reorg_ancestor)  # rounds re-included above the ancestor are new
         closed: list = []
         for c in reversed(commits):  # commits are in chain order: the closed ones are a prefix
-            if self.now > self.times(c.block) + self.window:
-                closed.append(c)
-                if len(closed) == self.config["history_rounds"]:
-                    break
+            if self.now <= self.times(c.block) + self.window:
+                continue
+            if len(closed) >= self.config["history_rounds"] and (mark is None or c.block <= mark):
+                break
+            closed.append(c)
         closed.reverse()
+        # the newest closed commit evaluated; at the first run without one, the checkpoint (later commits are new)
+        ctx.set_state("evaluated_upto", closed[-1].block if closed else block if mark is None else mark)
         rounds = [self.round_stats(ctx, c, block) for c in closed]
         episodes = self.liveness(ctx, rounds, block)
         unknown: set[str] = set()
@@ -428,9 +455,17 @@ class M11UpdaterLiveness(Check):
                        f"{len(newest['unknown'])} cluster(s) UNKNOWN ({fmt_unknown(newest['unknown'])}); retried "
                        f"every run.", dedup=f"proof-api-weekly-partial:{newest['ref']}")
         proven = newest is not None and all(status(newest, c) in ("match", "gone") for c in reported)
-        if not aged and reported and not proven:
+        # a reported cluster seen mismatching at the newest root only, with no earlier evaluated root on the canonical
+        # chain or a definite match there, the newest being the latest closed root (an evaluation that could not be
+        # redone after a reorg leaves the latest root unevaluated: unknown): "older than one round" is definitively
+        # not established (QA2-F3: a reorg removed the round that aged it). The key is not derived: a reorg run leaves
+        # it to the re-find rule ("evidence left the canonical chain"); a later round that still mismatches warns again
+        definite = newest is not None and latest is not None and newest["ref"] == latest.ref_block and all(
+            status(newest, c) in ("match", "gone") or (status(newest, c) == "mismatch" and (
+                prev is None or status(prev, c) in ("match", "gone"))) for c in reported)
+        if not aged and reported and not definite:
             return [], True  # an open incident whose clusters are not all compared again: unknown, never clean
-        if not aged and not reported:
+        if not aged and (not reported or not proven):
             return [], False
         since = {m["cluster"]: prev["ref"] for m in aged} if prev else {}
         digest = hashlib.sha1(",".join(sorted(m["cluster"] for m in aged)).encode()).hexdigest()[:12]
@@ -447,6 +482,19 @@ class M11UpdaterLiveness(Check):
                       "checked": newest["checked"], "compared_again": [] if aged else sorted(reported)},
             resolution=(f"Leaf comparison at blockNum {ref}: every reported cluster ({len(reported)}) was compared "
                         f"again and matches its leaf (or is no longer an active ETH cluster)."))], False
+
+    @staticmethod
+    def _use(ci, body, ref: int, leaves: dict, unknown: list) -> None:
+        """One proof API answer: a usable leaf at blockNum `ref`, or an UNKNOWN cluster with the reason."""
+        if isinstance(body, ProofApiError):
+            unknown.append({"cluster": ci.cluster_id, "reason": str(body)[:80]})
+        elif not isinstance(body, dict) or "effectiveBalance" not in body:
+            unknown.append({"cluster": ci.cluster_id, "reason": str(body.get("error") if isinstance(body, dict)
+                                                                 else "unexpected shape")[:80]})
+        elif int(body.get("referenceBlock", -1)) != ref:
+            unknown.append({"cluster": ci.cluster_id, "reason": f"API at referenceBlock {body.get('referenceBlock')}"})
+        else:
+            leaves[ci.cluster_id] = (ci, int(body["effectiveBalance"]))
 
     def compare_leaves(self, ctx: Ctx, ref: int, block: int, only: set[str] | None = None) -> dict:
         """Leaf EB (proof API, at blockNum `ref`) vs getEffectiveBalance at `block` for every active ETH cluster with
@@ -465,40 +513,31 @@ class M11UpdaterLiveness(Check):
             return {"checked": 0, "mismatches": [], "unknown": unknown, "gone": [],
                     "error": "no active ETH cluster in the inventory"}
         base = self.config["proof_api"].rstrip("/")
-        leaves, failures = {}, 0
-        answers = getattr(self, "answers", {})
+        leaves = {}
+        answers = self.answers
         for ci in clusters:
-            try:
-                if ci.cluster_id not in answers:
-                    try:
-                        answers[ci.cluster_id] = self.http_get(f"{base}/proof/{ci.cluster_id}",
-                                                               self.config["proof_api_timeout_s"])
-                    except ProofApiError as exc:
-                        answers[ci.cluster_id] = exc
-                body = answers[ci.cluster_id]
-                if isinstance(body, ProofApiError):
-                    raise body
-                failures = 0
-            except ProofApiError as exc:
-                failures += 1
-                unknown.append({"cluster": ci.cluster_id, "reason": str(exc)[:80]})
-                if failures >= self.config["proof_api_abort_after"] and not leaves:
-                    done = {u["cluster"] for u in unknown}
-                    unknown += [{"cluster": c.cluster_id, "reason": "not asked (API unreachable)"} for c in clusters
-                                if c.cluster_id not in done]
-                    return {"checked": 0, "mismatches": [], "unknown": unknown, "gone": gone, "error": str(exc)}
-                continue
-            if not isinstance(body, dict) or "effectiveBalance" not in body:
-                unknown.append({"cluster": ci.cluster_id, "reason": str(body.get("error") if isinstance(body, dict)
-                                                                     else "unexpected shape")[:80]})
-                continue
-            if int(body.get("referenceBlock", -1)) != ref:
-                unknown.append({"cluster": ci.cluster_id, "reason": f"API at referenceBlock {body.get('referenceBlock')}"})
-                continue
-            leaves[ci.cluster_id] = (ci, int(body["effectiveBalance"]))
+            if ci.cluster_id not in answers:
+                if self.api_stop is not None:  # bounded run: UNKNOWN, retried next run (never dropped)
+                    unknown.append({"cluster": ci.cluster_id, "reason": f"not asked ({self.api_stop})"[:120]})
+                    continue
+                t0 = self.monotonic()
+                try:
+                    answers[ci.cluster_id] = self.http_get(f"{base}/proof/{ci.cluster_id}",
+                                                           self.config["proof_api_timeout_s"])
+                    self.api_failures = 0
+                except ProofApiError as exc:
+                    answers[ci.cluster_id] = exc
+                    self.api_failures += 1
+                    if self.api_failures >= self.config["proof_api_abort_after"]:
+                        self.api_stop = f"API unreachable: {self.api_failures} consecutive failures, last {exc}"[:120]
+                finally:
+                    self.api_spent += self.monotonic() - t0
+                if self.api_stop is None and self.api_spent >= self.config["proof_api_run_budget_s"]:
+                    self.api_stop = f"run budget of {self.config['proof_api_run_budget_s']} s for the proof API spent"
+            self._use(ci, answers[ci.cluster_id], ref, leaves, unknown)
         if not leaves and clusters:
             return {"checked": 0, "mismatches": [], "unknown": unknown, "gone": gone,
-                    "error": f"no leaf at blockNum {ref} for any of {len(clusters)} clusters"}
+                    "error": self.api_stop or f"no leaf at blockNum {ref} for any of {len(clusters)} clusters"}
         items = list(leaves.values())
         calls = [(self.settings["views"], get_eb_calldata(ci)) for ci, _ in items]
         res = ctx.rpc.call_many(calls, block) if calls else []
