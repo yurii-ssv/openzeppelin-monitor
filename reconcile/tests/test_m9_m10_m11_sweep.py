@@ -82,13 +82,15 @@ def expected_m9_m10(w, oc, start, confirmations, timeout=1800, max_gap=32_400):
     settled_rounds = []
     for ref in sorted(rounds):
         votes = rounds[ref]
-        if ref < start:
-            continue
         deadline = oc.c.ts(votes[0]["pos"][0]) + timeout
         c_own, close = own(ref), closing(ref)
-        failed = not (close and oc.c.ts(close["pos"][0]) <= deadline) and now > deadline
+        # spec M9 line 1, literally: no RootCommitted of this blockNum within 30 min (any stored vote, start_block or
+        # not); open while no commit closed the round (a later blockNum's commit makes it un-committable)
+        failed = not (c_own and oc.c.ts(c_own["pos"][0]) <= deadline) and now > deadline
         if failed and close is None:
             exp["failed-round"] = "page"
+        if ref < start:
+            continue
         settled = close is not None or now > deadline
         roots = [v["root"] for v in votes]
         if c_own:
@@ -250,7 +252,8 @@ class Sweep:
     def act(self):
         oc, rng = self.oc, self.rng
         kind = rng.choice(["ok", "ok", "dissent", "dissent", "skip", "skip", "fail", "late", "tie", "split", "build",
-                           "rotate_open", "rotate_between", "dup_transient", "dup_persist", "stall", "downtime"])
+                           "rotate_open", "rotate_between", "dup_transient", "dup_persist", "stall", "downtime",
+                           "stray_early", "stray_late"])
         self.log.append(("act", kind))
         self.min_fork = oc.c.number  # no reorg below the round being voted (its blockNum would be in the future)
         ref = oc.c.number - 1
@@ -306,6 +309,14 @@ class Sweep:
             oc.replace(a, oc.slots[b])
             self.maybe_step()
             oc.replace(a, self.new_key())
+        elif kind in ("stray_early", "stray_late"):  # QA2-F1: one slot proposes a blockNum the quorum does not use
+            stray = ref - 1 if kind == "stray_early" else ref + 1
+            if kind == "stray_late":
+                oc.c.mine(2)
+            if stray > oc.latest:
+                oc.vote(stray, slots[3])
+            self.maybe_step()
+            oc.round(ref=ref, voters=tuple(slots[:3]), variants=bad)
         elif kind == "stall":  # no block, the clock moves (a chain that stopped)
             self.step(0, seconds=rng.choice([20 * 60, 40 * 60, 5 * 3600]))
         elif kind == "downtime":  # blocks and time pass while the worker is not stepping
@@ -332,9 +343,9 @@ class Sweep:
         cp = self.w.checkpoint()["block"]
         now = horizon(self.w, oc, cp, self.conf)
         for ref, votes in rounds.items():
-            close = min((c for c in commits if c["ref"] >= ref), key=lambda c: c["pos"], default=None)
+            own = next((c for c in commits if c["ref"] == ref), None)
             deadline = oc.c.ts(votes[0]["pos"][0]) + 1800
-            if ref >= self.start and not (close and oc.c.ts(close["pos"][0]) <= deadline) and now > deadline:
+            if not (own and oc.c.ts(own["pos"][0]) <= deadline) and now > deadline:  # literal rule (QA2-F1)
                 assert str(ref) in text9, self.trace(f"failed round {ref} never sent")
         held = dict(SLOTS)
         for r in rotations:
@@ -382,12 +393,15 @@ class UpdaterSweep:
         self.reported = [m["cluster"] for m in json.loads(row[0])["mismatches"]] if row else []
         api_mode = self.rng.random()
         removed = {}
+        failures = u.api.failures
         if api_mode < 0.15:
             u.api.down = True  # (counted as partial below: nothing may resolve on it)
-        elif api_mode < 0.4:  # partial: one leaf missing
+        elif api_mode < 0.3:  # partial: one leaf missing
             cid = self.rng.choice(u.cids)
             if cid in u.api.leaves:
                 removed[cid] = u.api.leaves.pop(cid)
+        elif api_mode < 0.4:  # QA2-F2: the API answers a few requests, then every request times out
+            u.api.fail_after = u.api.calls + self.rng.choice([0, 1, 2])
         try:
             if mode < 0.06:
                 u.c.mine(blocks)
@@ -403,7 +417,10 @@ class UpdaterSweep:
             tick(u.w, u.oc, blocks, seconds=seconds)
         finally:
             u.api.down = False
+            u.api.fail_after = None
             u.api.leaves.update(removed)
+        # bounded cost (QA2-F2): one run stops asking after proof_api_abort_after consecutive transport failures
+        assert u.api.failures - failures <= 3, self.trace(f"{u.api.failures - failures} failed proof GETs in a step")
         self.check(before, resolved_before, partial=api_mode < 0.4, down=api_mode < 0.15, removed=set(removed))
 
     def closed_rounds(self):
@@ -461,10 +478,18 @@ class UpdaterSweep:
     def act(self):
         u, rng = self.u, self.rng
         kind = rng.choice(["ours", "ours", "zero", "other", "revert", "rotate_same_block", "mismatch", "fix",
-                           "stall", "reorg"])
+                           "stall", "reorg", "deep_reorg", "downtime"])
         self.log.append(("act", kind))
         if kind == "reorg":
             return self.reorg()
+        if kind == "deep_reorg":
+            return self.deep_reorg()
+        if kind == "downtime":  # QA2-F4: more rounds than history_rounds pass while the worker is not stepping
+            for _ in range(rng.choice([3, 7, 8])):
+                u.c.elapse(2000)
+                self.new_round(rng.choice(["ours", "ours", "zero", "other"]))
+                u.c.elapse(400)
+            return self.step(1)
         if kind == "stall":
             return self.step(0, seconds=rng.choice([30 * 60, 61 * 60, 3 * 3600]))
         if kind == "mismatch":
@@ -477,8 +502,14 @@ class UpdaterSweep:
             u.api.leaves = {c: self.eb for c in u.cids}
             self.bad = None
             return
+        self.new_round(kind)
+        if rng.random() < 0.5:
+            self.step(rng.choice([1, 100]))
+
+    def new_round(self, kind):
+        u = self.u
         ref = u.commit()
-        rnd = {"commit": u.c.sealed, "ref": ref, "txs": [], "reverts": 0, "bad_seen": bool(self.bad)}
+        rnd = {"commit": u.c.sealed, "ref": ref, "txs": [], "reverts": 0, "bad_seen": bool(self.bad), "rotated": False}
         self.rounds.append(rnd)
         if kind in ("ours", "revert"):
             u.update(0, eb=32 + 1 + ref % 7, sender=self.updater)
@@ -497,9 +528,27 @@ class UpdaterSweep:
             u.update(0, eb=32 + 1 + ref % 7, sender=new)
             rnd["txs"].append({"block": u.c.sealed, "sender": new, "updater": new, "ok": True})
             self.updater = new
+            rnd["rotated"] = True
         u.set_eb(self.eb, leaves={self.bad: 99} if self.bad else None)
-        if rng.random() < 0.5:
-            self.step(rng.choice([1, 100]))
+
+    def deep_reorg(self):
+        """QA2-F3 class: a reorg (beyond any confirmation window) that removes the last round(s) with their updates
+        and the evaluations they aged; the model is rewound with the chain (the rounds left the canonical chain)."""
+        u = self.u
+        n = self.rng.choice([1, 2])
+        if len(self.rounds) < n + 1 or any(r["rotated"] for r in self.rounds[-n:]):
+            return
+        fork = self.rounds[-n]["commit"]
+        self.log.append(("deep_reorg", fork, n))
+        u.c.reorg(fork)
+        del self.rounds[-n:]
+        u.oc.stub()
+        u.ssv.latest_root = self.rounds[-1]["ref"]
+        for st in u.ssv.clusters.values():
+            st["root"] = min(st["root"], u.ssv.latest_root)
+        u.api.ref = u.ssv.latest_root
+        u.set_eb(self.eb, leaves={self.bad: 99} if self.bad else None)
+        self.step(1)
 
     def reorg(self):
         """A reorg of the empty blocks after the last round (the rounds' own blocks are kept: the model of
@@ -525,6 +574,18 @@ class UpdaterSweep:
             self.step(self.rng.choice([0, 1, 305, 310]), seconds=self.rng.choice([0, 0, 120]))
             self.step(self.rng.choice([1, 26]), seconds=self.rng.choice([0, 300]))
         self.step(310)
+        self.final()
+
+    def final(self):
+        """No event lost between sweeps: every closed zero-update round of the final chain was sent."""
+        u = self.u
+        text = "\n".join(r["text"] for r in sent(u.w, "m11", "kind != 'resolved'") if r["ikey"] == "liveness")
+        closed, cp = self.closed_rounds()
+        for r in closed:
+            mine = [t for t in r["txs"] if t["ok"] and u.c.ts(t["block"]) <= u.c.ts(r["commit"]) + 3600
+                    and t["sender"] == t["updater"]]
+            if not mine:
+                assert str(r["ref"]) in text, self.trace(f"zero round {r['ref']} never sent")
 
 
 @pytest.mark.parametrize("seed", range(20))

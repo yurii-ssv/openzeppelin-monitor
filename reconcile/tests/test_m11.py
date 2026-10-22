@@ -1083,3 +1083,26 @@ def test_qa2_f4_reorg_lowers_the_evaluated_mark(tmp_path):
     u.close(extra=20)
     kinds = [(r["ikey"], r["kind"]) for r in sent(u.w, "m11")]
     assert kinds == [("liveness", "open"), ("liveness", "resolved")], kinds
+
+
+def test_a_reported_zero_run_that_grew_and_healed_while_a_new_one_began_is_sent(tmp_path):
+    """Found by the repair-2 sweep (class 5, book level): zero round A is reported (warn); while the worker is down,
+    zero round B makes it two in a row (page), C heals it and zero round D begins. The grown episode (page, A and B)
+    is sent before the new active one (D, warn): the page-worthy second zero round is not lost."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    a = u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "warn"}
+    u.c.elapse(2000)
+    b = u.round(updates=())
+    u.c.elapse(2400)
+    u.round(updates=(0,))
+    u.c.elapse(2400)
+    d = u.round(updates=())
+    u.c.elapse(400)
+    w = u.restart()
+    tick(w, u.oc, 2)
+    msgs = [(r["severity"], r["text"]) for r in sent(w, "m11")][1:]
+    assert len(msgs) == 2 and msgs[0][0] == "page" and f"{a}, {b}" in msgs[0][1], msgs
+    assert msgs[1][0] == "warn" and str(d) in msgs[1][1] and open_keys(w, "m11") == {"liveness": "warn"}

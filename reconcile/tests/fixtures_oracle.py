@@ -290,20 +290,23 @@ OPS = (1, 2, 3, 4)
 
 class FakeProofApi:
     """`{proof_api}/proof/{clusterId}`: the leaf EB at `ref`, `{"error": "cluster not found"}` for unknown ids
-    (the live API's answer, measured 2026-10-21), ProofApiError while `down`."""
+    (the live API's answer, measured 2026-10-21), ProofApiError while `down` or once `fail_after` requests were
+    answered (an API that dies mid-comparison); `failures` counts the failed requests."""
 
     def __init__(self):
         self.leaves: dict[str, int] = {}
         self.ref: int | None = None
         self.down = False
-        self.calls = 0
+        self.fail_after: int | None = None
+        self.calls = self.failures = 0
 
     def get(self, url: str, timeout: float) -> dict:
         from checks.m11_updater_liveness import ProofApiError
 
         self.calls += 1
-        if self.down:
-            raise ProofApiError("URLError: [Errno 61] Connection refused")
+        if self.down or (self.fail_after is not None and self.calls > self.fail_after):
+            self.failures += 1
+            raise ProofApiError("URLError: [Errno 61] Connection refused" if self.down else "TimeoutError: timed out")
         cid = url.rsplit("/", 1)[1]
         if cid not in self.leaves:
             return {"error": "cluster not found"}
