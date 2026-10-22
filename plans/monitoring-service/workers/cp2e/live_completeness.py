@@ -9,7 +9,9 @@ the worker's own InventoryCache (all SSV API v4 pages + storage validation, D8/D
     `daoValidatorCount` (StorageProtocol word 0), and the listing must hold the API's `pagination.total` — the
     production guard must say None (complete) on a healthy mainnet, or the checks would be UNKNOWN for ever;
   * negative controls on the same block: an empty API page (with the true total), a self-consistent empty page
-    (total 0; repair 2, QA cp2e-2 F1) and a listing one row short must each report a gap.
+    (total 0; repair 2, QA cp2e-2 F1), a listing one row short, and (repair 3, QA cp2e-3 F1) a listing short of
+    one inert legacy row (0 validators, positive balance) next to one cluster known only from the logs must each
+    report a gap.
 Exit 0 when the positive case is complete and both controls report a gap; 1 otherwise.
 """
 
@@ -20,6 +22,7 @@ import json
 import logging
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "reconcile"))
@@ -83,6 +86,24 @@ def main(argv=None) -> int:
                                  http_get=lambda url, s=served, t=t: {"clusters": s, "pagination": {
                                      "pages": 1, "total": t}})
             controls[name] = {"rows": len(served), "gap": inventory_gap(ctx(neg), neg.get(block))}
+        # QA cp2e-3 F1: drop one inert legacy row (its balance is an M7 claim no validator count reveals) and add
+        # one cluster only the logs know (a copy of an ETH cluster under an unused id, sources {"logs"})
+        inert = next((r for r in rows if not r.get("migrated") and r.get("active")
+                      and int(r.get("validatorCount", 0)) == 0 and int(r.get("balance", 0)) > 0), None)
+        eth = next((x for x in inv.clusters.values() if x.version == "ETH"), None)
+        if inert is not None and eth is not None:
+            served = [r for r in rows if r is not inert]
+            neg = InventoryCache(db, lambda b: Chain(rpc, b), PROXY, clock=lambda: 0.0, api_base=args.api,
+                                 http_get=lambda url, s=served: {"clusters": s, "pagination": {
+                                     "pages": 1, "total": total}})
+            masked = neg.get(block)
+            fake = replace(eth, cluster_id="0x" + "ee" * 32, sources=frozenset({"logs"}))
+            masked.clusters = {**masked.clusters, fake.cluster_id: fake}
+            controls["short_inert_row_offset_by_a_log_only_cluster"] = {
+                "rows": len(served), "log_only": 1, "dropped": inert.get("clusterId"),
+                "gap": inventory_gap(ctx(neg), masked)}
+        else:
+            controls["short_inert_row_offset_by_a_log_only_cluster"] = {"gap": None, "error": "no inert legacy row"}
         report["controls"] = controls
     ok = gap is None and all(v["gap"] for v in controls.values())
     report["pass"] = ok
