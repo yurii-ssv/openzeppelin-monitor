@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from fakechain import PROXY, FakeChain, FakeClock, MiniSSV, _enc, _topic_addr
 from harness import VIEWS, advance, api_row, make_worker, stub_params
 
-from eb_storage import MAIN_BASE, cluster_id, keccak, u256
+from eb_storage import MAIN_BASE, cluster_id, keccak, namespace, u256
 
 CLUSTER_T = "(uint32,uint64,uint64,bool,uint256)"
 SEL = {name: "0x" + keccak(f"{name}(address,uint64[],{CLUSTER_T})".encode())[:4].hex()
@@ -29,6 +29,23 @@ MIN_COLL_SSV = 10**16  # test value, below PERIOD_SSV × BURN so the period rule
 API = "https://api.invalid/api/v4/mainnet"
 TOKEN_SLOT = MAIN_BASE + 7
 LAST_OP_SLOT = MAIN_BASE + 8
+DAO_SLOT = namespace("ssv.network.storage.protocol")  # StorageProtocol word 0: daoValidatorCount in bits 32..63
+
+
+class LegacySSV(MiniSSV):
+    """MiniSSV that also keeps the SSV-side `daoValidatorCount` in storage, as ProtocolLib.updateDAOSSV does on
+    chain: the validators of the active legacy clusters (a liquidation, migration or validator removal lowers it).
+    `dao_offset` models a cluster the fixture's API and logs do not know about."""
+
+    dao_offset = 0
+
+    def _persist(self, cid, st) -> None:
+        super()._persist(cid, st)
+        self.sync_dao()
+
+    def sync_dao(self) -> None:
+        count = sum(st["count"] for st in self.clusters.values() if st["version"] == "SSV" and st["active"])
+        self.c.write(DAO_SLOT, (count + self.dao_offset) << 32)
 
 
 @dataclass
@@ -48,9 +65,11 @@ class LegacyWorld:
     def __init__(self, tmp_path, only=("m6",), checks=None, clock=None, chain=None, params=None, **over):
         self.tmp_path = tmp_path
         self.chain = chain or FakeChain()
-        self.ssv = MiniSSV(self.chain)
+        self.ssv = LegacySSV(self.chain)
         self.clock = clock or FakeClock()
         self.rows: list[dict] = []
+        self.api_total: int | None = None  # pagination.total the fake API reports (None: the rows it serves)
+        self.api_fault: str | None = None  # None | "empty" | "empty_total0" | "short" | "error" | "no_total"
         self.refs: list[Ref] = []
         self.only, self.checks, self.over = list(only), checks or {}, over
         stub_params(self.chain, **{"liquidation_threshold_period_ssv": PERIOD_SSV,
@@ -72,7 +91,19 @@ class LegacyWorld:
         return self.w
 
     def http_get(self, url):
-        return {"clusters": [r for r in self.rows if r is not None], "pagination": {"pages": 1}}
+        """The fake SSV API v4: every row on one page with its `pagination.total`; `api_fault` serves an empty
+        listing, a listing short of its first row (both with the true total), a self-consistent empty listing
+        (total 0), an error, or no total."""
+        rows = [r for r in self.rows if r is not None]
+        total = len(rows) if self.api_total is None else self.api_total
+        if self.api_fault == "error":
+            raise OSError("SSV API unreachable")
+        if self.api_fault in ("empty", "empty_total0"):
+            rows, total = [], 0 if self.api_fault == "empty_total0" else total
+        elif self.api_fault == "short":
+            rows = rows[1:]
+        pagination = {"pages": 1} if self.api_fault == "no_total" else {"pages": 1, "total": total}
+        return {"clusters": rows, "pagination": pagination}
 
     # ---- clusters
 

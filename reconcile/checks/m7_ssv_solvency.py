@@ -24,9 +24,13 @@ operator count of 0 next to existing legacy clusters leaves a claim unpriced. Th
 upper bound of the surplus: below the floor it still pages (more claims can only lower it); otherwise a
 health message says M7 cannot evaluate and the open incidents are re-reported unchanged.
 
-Completeness guard: `m7_legacy` remembers every legacy cluster id the inventory listed; one that disappears
-from the inventory while storage still holds it as `VERSION_SSV` is an unpriced claim (UNKNOWN), not a
-smaller liability. Ids leave the table only when storage says the cluster was migrated or no longer exists.
+Completeness guards: every run checks the inventory with `m6_legacy_coverage.inventory_gap` (the chain's
+SSV-side `daoValidatorCount` against the listed legacy validators, and the API's `pagination.total` against
+the distinct API rows, log-only clusters not counted (QA cp2e-3 F1); an API answer without a single cluster always), so an empty or short API page at a first run, or
+on a new database, is UNKNOWN and never a baseline without the legacy balances (QA cp2e-1 F1, cp2e-2 F1). `m7_legacy` remembers every legacy cluster id the
+inventory listed; one that disappears from the inventory while storage still holds it as `VERSION_SSV` is an
+unpriced claim (UNKNOWN), not a smaller liability. Ids leave the table only when storage says the cluster was
+migrated or no longer exists.
 
 Reorg rule (README §6.2): every run (reorg runs included) recomputes the whole ledger at its block from the
 canonical chain and reports both keys (a finding, `resolve=True`, or an UNKNOWN re-report), so
@@ -42,6 +46,7 @@ from checks.base import Check, Ctx, Every, Finding
 from checks.m6_legacy_coverage import (
     _ssv,
     call_each,
+    inventory_gap,
     legacy_balances,
     open_incidents,
     require_views,
@@ -179,6 +184,9 @@ class M7SsvSolvency(Check):
                 unknown[f"operator:{j + 1}"] = str(exc)
 
         inv = ctx.inventory(block)
+        gap = inventory_gap(ctx, inv)
+        if gap:
+            unknown["inventory"] = f"legacy inventory incomplete: {gap}"
         legacy = [c for c in inv.clusters.values() if c.version == "SSV"]
         if legacy and last_op == 0:
             unknown["operators"] = f"lastOperatorId is 0 while {len(legacy)} legacy clusters exist"
@@ -219,7 +227,7 @@ class M7SsvSolvency(Check):
             "unstake_withdrawals": n_wd, "legacy_cluster_balances": clusters, "legacy_clusters_priced": len(values),
             "legacy_clusters_inactive": sum(1 for c in legacy if c.valid and not c.cluster.active),
             "operator_earnings": operators, "operators": last_op, "network_earnings": network, "claims": claims,
-            "surplus": proxy_ssv - claims, "ssv_token": token,
+            "surplus": proxy_ssv - claims, "ssv_token": token, "inventory_gap": gap,
         }, unknown
 
     def unstakes(self, ctx: Ctx, block: int) -> tuple[int, int, int, int]:

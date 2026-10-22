@@ -1,0 +1,24 @@
+# frozen head b6f90b104eafcfcd204a79bdd40252bf7f407221 code + repair-1 regression tests/fixtures (code unchanged); 2026-10-22T09:02Z
+ M reconcile/tests/fixtures_legacy.py
+ M reconcile/tests/test_m6.py
+ M reconcile/tests/test_m7.py
+?? plans/monitoring-service/workers/cp2e/evidence/repair1-red-on-frozen-code.txt
+FAILED reconcile/tests/test_m6.py::test_m6_liquidatable_longer_than_half_window_warns
+FAILED reconcile/tests/test_m6.py::test_m6_benign_liquidatable_exactly_half_window_stays_silent
+FAILED reconcile/tests/test_m6.py::test_m6_backdated_start_of_a_cluster_that_just_crossed_is_now
+FAILED reconcile/tests/test_m6.py::test_m6_thresholds_from_chain_back_dating_uses_the_live_minimum_collateral
+FAILED reconcile/tests/test_m6.py::test_m6_first_sweep_with_an_empty_api_listing_is_unknown_not_clean
+FAILED reconcile/tests/test_m6.py::test_m6_listing_short_of_its_total_or_without_one_is_unknown[short]
+FAILED reconcile/tests/test_m6.py::test_m6_listing_short_of_its_total_or_without_one_is_unknown[no_total]
+FAILED reconcile/tests/test_m6.py::test_m6_unreadable_api_total_is_unknown_not_clean
+FAILED reconcile/tests/test_m6.py::test_m6_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count
+FAILED reconcile/tests/test_m6.py::test_m6_restart_on_a_lost_database_with_an_empty_api_is_unknown
+FAILED reconcile/tests/test_m6.py::test_m6_digest_of_an_incomplete_inventory_says_unknown_not_zero
+FAILED reconcile/tests/test_m7.py::test_m7_first_run_with_an_empty_api_listing_is_unknown_not_a_baseline
+FAILED reconcile/tests/test_m7.py::test_m7_incomplete_inventory_still_pages_when_the_upper_bound_is_below_the_floor
+FAILED reconcile/tests/test_m7.py::test_m7_listing_short_of_its_total_or_without_one_is_unknown[short]
+FAILED reconcile/tests/test_m7.py::test_m7_listing_short_of_its_total_or_without_one_is_unknown[no_total]
+FAILED reconcile/tests/test_m7.py::test_m7_unreadable_api_total_is_unknown_not_a_change
+FAILED reconcile/tests/test_m7.py::test_m7_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count
+FAILED reconcile/tests/test_m7.py::test_m7_restart_on_a_lost_database_with_an_empty_api_is_unknown
+18 failed, 60 passed in 0.47s
