@@ -13,7 +13,7 @@ index), so a rotation earlier in the same block already moves the expectation.
 |---|---|---|---|
 | a `RootCommitted` with 0 updater txs within 60 min | `liveness` | warn | the latest closed round has no `ClusterBalanceUpdated` (its `blockNum`) inside the window in a tx sent by the updater of that tx's position; re-sent per zero round (`revision`) |
 | ... and the proof API shows clusters whose on-chain EB differs from the leaf | `liveness` | page | the zero round's leaves (`{proof_api}/proof/{clusterId}` at the same `referenceBlock`) vs `getEffectiveBalance` (Views) for every active ETH cluster with validators of the inventory. A cluster without a usable leaf (no answer, `cluster not found`, another `referenceBlock`, an unvalidated tuple) is UNKNOWN: a partial answer never reads as "all match"; the unknown clusters are retried every run until compared. API unreachable: stays warn, says so, health message, retried |
-| two consecutive committed rounds with 0 updates | `liveness` | page | trailing zero rounds >= `zero_rounds_page` |
+| two consecutive committed rounds with 0 updates | `liveness` | page | trailing zero rounds >= `zero_rounds_page`; a run reaching back past the evaluated rounds is followed back to its first zero round (the episode id and the round count stay those of the whole outage while it slides out of `history_rounds`) |
 | revert rate on our updates > 10 % in a round | `revert-rate` | warn | gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block) inside the latest closed window / (those + successful updater txs); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox) |
 | weekly full-state leaf comparison, mismatch older than one round | `state-mismatch` | warn | every `full_state_interval_s` the comparison over all such clusters at the latest closed root; each mismatching or unknown cluster is compared again at every later closed root (and unknown ones every run). A cluster mismatching at two consecutive evaluated roots is older than one round: warn. Resolved only by positive proof (every reported cluster compared again and matching); an unknown or unevaluated reported cluster keeps the incident (API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED, health message, retried every run) |
 
@@ -214,7 +214,7 @@ class M11UpdaterLiveness(Check):
         # the newest closed commit evaluated; at the first run without one, the checkpoint (later commits are new)
         ctx.set_state("evaluated_upto", closed[-1].block if closed else block if mark is None else mark)
         rounds = [self.round_stats(ctx, c, block) for c in closed]
-        episodes = self.liveness(ctx, rounds, block)
+        episodes = self.liveness(ctx, self.zero_lead(ctx, commits, closed, rounds, block) + rounds, block)
         unknown: set[str] = set()
         if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
             ctx.health("m11-inbox", "M11 revert-rate rule not evaluated: the failed-transaction inbox is not configured "
@@ -261,6 +261,24 @@ class M11UpdaterLiveness(Check):
         others = {ev.tx_hash for ev in events} - mine
         return {"commit": commit, "start": start, "end": end, "events": events, "senders": senders,
                 "ours": sorted(mine), "others": sorted(others)}
+
+    def zero_lead(self, ctx: Ctx, commits: list, closed: list, rounds: list[dict], block: int) -> list[dict]:
+        """The zero rounds before the evaluated ones that belong to the same run (QA3-F1): when the earliest evaluated
+        round has no update, the run is followed back through the stored commits to its first zero round, so the
+        episode keeps the id of the outage's first round while the window slides (a resolved outage is never
+        derived again as a new, shorter one) and the text counts every round of it. Bounded by the outage length
+        (block times and senders are cached)."""
+        lead: list[dict] = []
+        if not rounds or rounds[0]["ours"]:
+            return lead
+        i = next(k for k, c in enumerate(commits) if c is closed[0])
+        while i > 0:
+            i -= 1
+            r = self.round_stats(ctx, commits[i], block)
+            if r["ours"]:
+                break
+            lead.insert(0, r)
+        return lead
 
     def liveness(self, ctx: Ctx, rounds: list[dict], block: int) -> list[Episode]:
         out = []

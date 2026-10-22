@@ -21,6 +21,7 @@ from __future__ import annotations
 import copy
 import json
 import random
+import re
 
 import pytest
 from fixtures_oracle import (
@@ -95,10 +96,11 @@ def expected_m9_m10(w, oc, start, confirmations, timeout=1800, max_gap=32_400):
         roots = [v["root"] for v in votes]
         if c_own:
             reference = c_own["root"]
-        elif settled:
-            top = max(roots.count(r) for r in set(roots))
-            leaders = {r for r in roots if roots.count(r) == top}
-            reference = leaders.pop() if len(leaders) == 1 else None
+        elif settled:  # the root most distinct slots voted, when unique and voted by >= 2 slots (QA3-F2)
+            slots_of = {r: {v["slot"] for v in votes if v["root"] == r} for r in set(roots)}
+            top = max(len(b) for b in slots_of.values())
+            leaders = {r for r, b in slots_of.items() if len(b) == top}
+            reference = leaders.pop() if len(leaders) == 1 and top >= 2 else None
         else:
             reference = None
         superseded = c_own is None and any(c["ref"] > ref for c in commits)
@@ -117,7 +119,10 @@ def expected_m9_m10(w, oc, start, confirmations, timeout=1800, max_gap=32_400):
             by.setdefault(v["slot"], set()).add(v["root"])
         for slot in set(by) | set(state):
             if slot in by and by[slot] == {reference}:
-                state.pop(slot, None)
+                if any(o != slot and reference in r for o, r in by.items()):
+                    state.pop(slot, None)  # positive proof: another slot voted the same root
+                elif slot in state:
+                    state[slot][0] = 0  # agreeing with itself only: neither heals nor extends (QA3-F2)
             elif slot in by:
                 st = state.setdefault(slot, [0, 0])
                 st[0] += 1
@@ -166,6 +171,7 @@ class Sweep:
         self.log = []
         self.fresh = 0
         self.min_fork = 0
+        self.resolved_seen = 0
         self.bad_build = False
         self.snaps = [(self.oc.c.number, copy.deepcopy(self.state()))]
         mine = self.oc.c.mine
@@ -218,6 +224,26 @@ class Sweep:
                 assert got == exp, self.trace(f"{cid} open {got} != expected {exp}")
             else:
                 assert got == prev, self.trace(f"{cid} changed without a run")
+        self.check_dissent_proof()
+
+    def check_dissent_proof(self):
+        """No resolve without positive proof (QA3-F2): a dissent resolution names a round of the canonical chain in
+        which the slot voted one root only and another slot voted that same root (or it carries the reorg text)."""
+        rows = sent(self.w, "m9", "kind='resolved'")
+        logs, _ = stored_logs(self.w, self.oc)
+        wrp = TOPIC0["WeightedRootProposed"]
+        for r in rows[self.resolved_seen:]:
+            if not r["ikey"].startswith("dissent:") or REORG_TEXT in r["text"]:
+                continue
+            slot, ref = int(r["ikey"].split(":")[1]), int(re.search(r"in round (\d+)", r["text"]).group(1))
+            by: dict[int, set[str]] = {}
+            for lg in logs:
+                if lg["topics"][0] == wrp and int(lg["topics"][2], 16) == ref:
+                    by.setdefault(int(lg["data"][2 + 128: 2 + 192], 16), set()).add(lg["topics"][1])
+            own = by.get(slot, set())
+            assert len(own) == 1 and any(o != slot and own <= roots for o, roots in by.items()), self.trace(
+                f"dissent:{slot} resolved by round {ref} without another slot voting its root: {by}")
+        self.resolved_seen = len(rows)
 
     def trace(self, msg):
         return f"seed {self.seed} conf {self.conf}: {msg}\nactions: {self.log[-25:]}"
@@ -253,7 +279,7 @@ class Sweep:
         oc, rng = self.oc, self.rng
         kind = rng.choice(["ok", "ok", "dissent", "dissent", "skip", "skip", "fail", "late", "tie", "split", "build",
                            "rotate_open", "rotate_between", "dup_transient", "dup_persist", "stall", "downtime",
-                           "stray_early", "stray_late"])
+                           "stray_early", "stray_late", "lone"])
         self.log.append(("act", kind))
         self.min_fork = oc.c.number  # no reorg below the round being voted (its blockNum would be in the future)
         ref = oc.c.number - 1
@@ -317,6 +343,9 @@ class Sweep:
                 oc.vote(stray, slots[3])
             self.maybe_step()
             oc.round(ref=ref, voters=tuple(slots[:3]), variants=bad)
+        elif kind == "lone":  # QA3-F2: one slot votes, the others are down; the round times out
+            vote(rng.choice([3, 3, slots[0]]))
+            self.step(rng.choice([150, 160]), seconds=rng.choice([0, 31 * 60]))
         elif kind == "stall":  # no block, the clock moves (a chain that stopped)
             self.step(0, seconds=rng.choice([20 * 60, 40 * 60, 5 * 3600]))
         elif kind == "downtime":  # blocks and time pass while the worker is not stepping
@@ -378,6 +407,8 @@ class UpdaterSweep:
         self.log = []
         self.updater = SLOTS[4]
         self.fresh = 0
+        self.liveness_refs: set[int] = set()  # zero rounds named by every liveness message sent so far
+        self.chain_rewritten = False  # a deep reorg since the last liveness message (it may legitimately re-open)
 
     def trace(self, msg):
         return f"seed {self.seed}: {msg}\nactions: {self.log[-25:]}"
@@ -388,6 +419,7 @@ class UpdaterSweep:
         self.log.append(("step", blocks, seconds, round(mode, 2)))
         before = open_keys(u.w, "m11")
         resolved_before = len(sent(u.w, "m11", "kind='resolved'"))
+        self.sent_before = len(sent(u.w, "m11"))
         row = u.w.db.conn.execute("SELECT evidence FROM incidents WHERE check_id='m11' AND key='state-mismatch' "
                                   "AND state='open'").fetchone()
         self.reported = [m["cluster"] for m in json.loads(row[0])["mismatches"]] if row else []
@@ -454,6 +486,16 @@ class UpdaterSweep:
                 assert got["liveness"] == "warn" or mismatch_seen, self.trace("page without a mismatching leaf")
         else:
             assert "liveness" not in got, self.trace(f"liveness open without a zero round: {got}")
+        # no duplicated alert (QA3-F1): a new liveness incident names a zero round no earlier liveness message named,
+        # unless a deep reorg rewrote the chain since (its healing round may have left the canonical chain)
+        for r in sent(u.w, "m11")[self.sent_before:]:
+            if r["ikey"] != "liveness" or r["kind"] == "resolved":
+                continue
+            refs = {int(x) for x in re.search(r"for blockNum ([\d, ]+) \(last", r["text"]).group(1).split(", ")}
+            if r["kind"] == "open" and not self.chain_rewritten:
+                assert refs - self.liveness_refs, self.trace(f"resolved outage {sorted(refs)} reported again")
+            self.liveness_refs |= refs
+            self.chain_rewritten = False
         if "revert-rate" in got:
             assert any(r["reverts"] for r in closed), self.trace("revert-rate open without a revert")
         elif closed and closed[-1]["reverts"] and u.w.db.conn.execute(
@@ -478,7 +520,7 @@ class UpdaterSweep:
     def act(self):
         u, rng = self.u, self.rng
         kind = rng.choice(["ours", "ours", "zero", "other", "revert", "rotate_same_block", "mismatch", "fix",
-                           "stall", "reorg", "deep_reorg", "downtime"])
+                           "stall", "reorg", "deep_reorg", "downtime", "outage"])
         self.log.append(("act", kind))
         if kind == "reorg":
             return self.reorg()
@@ -490,6 +532,14 @@ class UpdaterSweep:
                 self.new_round(rng.choice(["ours", "ours", "zero", "other"]))
                 u.c.elapse(400)
             return self.step(1)
+        if kind == "outage":  # QA3-F1: a multi-round outage, then normal rounds slide it out of history_rounds
+            for _ in range(rng.choice([2, 4, 7])):
+                self.new_round("zero")
+                self.step(305)
+            for _ in range(rng.choice([1, 7])):
+                self.new_round("ours")
+                self.step(310)
+            return
         if kind == "stall":
             return self.step(0, seconds=rng.choice([30 * 60, 61 * 60, 3 * 3600]))
         if kind == "mismatch":
@@ -540,6 +590,7 @@ class UpdaterSweep:
             return
         fork = self.rounds[-n]["commit"]
         self.log.append(("deep_reorg", fork, n))
+        self.chain_rewritten = True
         u.c.reorg(fork)
         del self.rounds[-n:]
         u.oc.stub()

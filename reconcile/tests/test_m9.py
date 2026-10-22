@@ -1123,3 +1123,109 @@ def test_reorg_replacing_a_vote_block_rereads_its_timestamp(tmp_path):
     assert open_keys(w, "m9") == {}
     tick(w, seconds=600)
     assert open_keys(w, "m9") == {"failed-round": "page"}
+
+
+# ---------------------------------------------------------------- repair 3 (QA attempt 3)
+
+
+def _dissent_page(oc, w, n=3):
+    for _ in range(n):
+        tick(w, oc, 10)
+        oc.round(variants={3: 1}, voters=(3, 1, 2, 4))
+        tick(w, oc, 5)
+    assert open_keys(w, "m9").get("dissent:3") == ("page" if n >= 3 else "warn"), open_keys(w, "m9")
+
+
+def _dissent_resolutions(w):
+    return [r["text"] for r in sent(w, "m9", "kind='resolved'") if r["ikey"] == "dissent:3"]
+
+
+def test_qa3_f2_stray_single_vote_round_is_not_positive_proof_that_a_dissenting_slot_agrees(tmp_path):
+    """QA3-F2 reproducer (class 1: degenerate input read as positive proof): after a dissent page, slot 3 alone
+    proposes blockNum X-1 while slots 1, 2, 4 commit X. The stray round has one voter: no reference to agree with;
+    the page stays open (also across a restart)."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w)
+    tick(w, oc, 10)
+    x = oc.c.number - 1
+    oc.vote(x - 1, 3, variant=1)
+    oc.round(ref=x, voters=(1, 2, 4))
+    tick(w, oc, 200)  # past X-1's 30 min (a failed round of its own, QA2-F1)
+    assert open_keys(w, "m9").get("dissent:3") == "page" and not _dissent_resolutions(w), open_keys(w, "m9")
+    w = restart(tmp_path, w, oc)
+    tick(w, oc, 5, seconds=60)
+    assert open_keys(w, "m9").get("dissent:3") == "page" and not _dissent_resolutions(w)
+
+
+def test_qa3_f2_timed_out_round_with_only_the_dissenter_voting_does_not_heal_its_page(tmp_path):
+    """QA3-F2 reproducer: the other three slots are down, only slot 3 votes, the round times out (failed round,
+    page). Slot 3's lone root is not a reference: dissent:3 stays at page."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w)
+    tick(w, oc, 10)
+    x = oc.c.number - 1
+    oc.vote(x, 3, variant=1)
+    tick(w, oc, 200)
+    keys = open_keys(w, "m9")
+    assert keys.get("failed-round") == "page" and keys.get("dissent:3") == "page" and not _dissent_resolutions(w), keys
+
+
+def test_qa3_f2_self_referential_committed_root_does_not_heal(tmp_path):
+    """Self-referential reference: quorum lowered to one slot, slot 3 alone commits its own root (a weak commit,
+    page). Slot 3 "voting the committed root" proves nothing, so dissent:3 is not healed."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w)
+    oc.set_quorum(2500)
+    tick(w, oc, 10)
+    oc.round(voters=(3,), variants={3: 1})
+    tick(w, oc, 5)
+    keys = open_keys(w, "m9")
+    assert keys.get("weak-commit") == "page" and keys.get("dissent:3") == "page" and not _dissent_resolutions(w), keys
+
+
+def test_qa3_f2_lone_voter_round_does_not_extend_the_dissent_run(tmp_path):
+    """Neither heal nor extend: dissent, dissent, a round only slot 3 voted (times out), dissent: the lone round is
+    no attributable dissent, it breaks the run like a tied round: warn, not page; nothing resolved."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w, 2)
+    tick(w, oc, 10)
+    oc.vote(oc.c.number - 1, 3, variant=1)
+    tick(w, oc, 200)
+    tick(w, oc, 10)
+    oc.round(variants={3: 1}, voters=(3, 1, 2, 4))
+    tick(w, oc, 5)
+    assert open_keys(w, "m9").get("dissent:3") == "warn" and not _dissent_resolutions(w), open_keys(w, "m9")
+
+
+def test_qa3_f2_timed_out_round_where_another_slot_votes_the_same_root_heals_control(tmp_path):
+    """Benign twin: a timed-out round in which slots 3 and 1 vote the same root (two distinct slots: a reference)
+    is positive proof that slot 3 agrees: the page resolves with its agreement text."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w)
+    tick(w, oc, 10)
+    x = oc.c.number - 1
+    oc.vote(x, 3)
+    oc.vote(x, 1)
+    tick(w, oc, 200)
+    assert "dissent:3" not in open_keys(w, "m9"), open_keys(w, "m9")
+    assert _dissent_resolutions(w) and f"in round {x}" in _dissent_resolutions(w)[0], _dissent_resolutions(w)
+
+
+def test_qa3_f2_one_slot_voting_one_root_twice_is_no_reference(tmp_path):
+    """Distinct slots, not votes: slot 3 votes its root from its old and from its new address (an owner rotation
+    inside the round); still one slot: no reference, the dissent page stays."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    _dissent_page(oc, w)
+    tick(w, oc, 10)
+    x = oc.c.number - 1
+    oc.vote(x, 3, variant=1)
+    oc.voted.discard((x, oc.root(x, 1), 3))  # the contract keys AlreadyVoted by address: the new key may vote
+    oc.vote(x, 3, variant=1, oracle="0x" + "33" * 20)
+    tick(w, oc, 200)
+    assert open_keys(w, "m9").get("dissent:3") == "page" and not _dissent_resolutions(w), open_keys(w, "m9")

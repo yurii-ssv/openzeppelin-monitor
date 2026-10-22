@@ -8,7 +8,7 @@ and reports, through the episode book (`m9_episodes`):
 | proposed, no `RootCommitted` within 30 min | `failed-round` | page | no `RootCommitted` of the round's own `blockNum` with a chain timestamp within `round_timeout_s` of its first vote, once the horizon (m9_oracle_common `BlockTimes`: the checkpoint's timestamp, or the clock when blocks stop) is past that deadline (the literal spec rule: a later `blockNum`'s commit does not make the round committed); consecutive failed rounds are one incident re-sent per failed round (`revision`), healed by a late commit or a superseding commit; a round already superseded inside its 30 min (a slot proposed a `blockNum` the quorum did not use) is its own incident, sent at its deadline with its resolution |
 | no `RootCommitted` for > 9 h | `cadence` | page | horizon − timestamp of the last commit block (or of `start_block`) > `max_commit_gap_s`: the clock keeps it growing while blocks or events stop; healed by the next commit. A gap that opened and closed while the worker was not evaluating is reported once from the commits' timestamps |
 | two roots for one `blockNum` | `split` | warn | as soon as a round has two distinct roots and no reference root yet (not committed and inside its 30 min, or settled with tied roots): immediate, unattributed; healed when the round settles with a reference root (the dissent moves to `dissent:<slot>`) or a later round commits |
-| two roots for one `blockNum`, attributed | `dissent:<slot>` | warn | per settled round (committed, superseded or timed out), a slot that voted any root other than the reference root (committed root; for an uncommitted round the unique plurality root), also when the same slot voted the reference root too (e.g. across an owner change); re-sent per new dissenting round (`revision`); healed only by positive proof: the slot votes the reference root and nothing else in a settled round |
+| two roots for one `blockNum`, attributed | `dissent:<slot>` | warn | per settled round (committed, superseded or timed out), a slot that voted any root other than the reference root (committed root; for an uncommitted round the root the most distinct slots voted, when unique and voted by >= 2 slots), also when the same slot voted the reference root too (e.g. across an owner change); re-sent per new dissenting round (`revision`); healed only by positive proof: the slot votes the reference root and nothing else in a settled round and another slot voted that root too (a round only the slot voted, or a committed root only the slot backed, is no proof: it neither heals nor extends, it breaks the run like a tied round) |
 | three dissenting rounds in a row from one slot | `dissent:<slot>` | page | the same incident escalates when `dissent_streak` consecutive settled rounds have a dissent from the slot; a round the slot did not vote in, or a tied round, breaks the run (it does not heal the incident) |
 | committed with < 3 distinct slots for the committed root | `weak-commit` | page | distinct `oracleId`s voting the committed root < `min_committing_slots`, or < the votes the round's own `quorum`/weight data require; healed by the next adequate commit |
 | a slot absent from the committed root in the last 6 rounds | `absent:<slot>` | warn | active slot ids from the live parameters; needs `absent_rounds` committed rounds of history (else not evaluated) |
@@ -123,8 +123,8 @@ class M9OracleQuorum(Check):
     def round_state(self, hist: History, rnd: Round) -> SimpleNamespace:
         """One round at this run: its deadline (chain time of the first vote + `round_timeout_s`), the commit that
         closed it (own or superseding, any time), whether it is settled (closed, or the horizon is past the deadline)
-        and its reference root (the committed root; for a settled uncommitted round the unique plurality root;
-        None while unsettled or tied)."""
+        and its reference root (the committed root; for a settled uncommitted round the root the most distinct slots
+        voted, when unique and voted by at least two slots; None while unsettled, tied or voted by one slot only)."""
         first_at = self.times(rnd.first_vote.block)
         deadline = first_at + self.config["round_timeout_s"]
         close = hist.closing_event(rnd)
@@ -132,12 +132,14 @@ class M9OracleQuorum(Check):
         if rnd.commit is not None:
             reference = rnd.commit.root
         elif settled:
-            counts: dict[str, int] = {}
+            # distinct slots per root: a root only one slot voted is no reference (QA3-F2: a lone voter would
+            # otherwise "agree" with itself), nor is a tie
+            backers: dict[str, set[int]] = {}
             for v in rnd.votes:
-                counts[v.root] = counts.get(v.root, 0) + 1
-            top = max(counts.values())
-            leaders = [r for r, n in counts.items() if n == top]
-            reference = leaders[0] if len(leaders) == 1 else None
+                backers.setdefault(v.root, set()).add(v.slot)
+            top = max(len(b) for b in backers.values())
+            leaders = [r for r, b in backers.items() if len(b) == top]
+            reference = leaders[0] if len(leaders) == 1 and top >= 2 else None
         else:
             reference = None
         # spec M9: no RootCommitted *for this blockNum* within 30 min; a later blockNum's commit closes the round
@@ -290,8 +292,9 @@ class M9OracleQuorum(Check):
 
     def dissent(self, states) -> list[Episode]:
         """Per slot, an episode from its first dissenting settled round until positive proof of agreement (it votes
-        the reference root and nothing else in a settled round). Inside it, the run of consecutive dissenting rounds
-        sets the severity: any settled round in which the slot did not dissent (no vote, or tied roots) breaks it."""
+        the reference root and nothing else in a settled round, and another slot voted that root too). Inside it, the
+        run of consecutive dissenting rounds sets the severity: any settled round in which the slot did not dissent
+        (no vote, tied roots, a one-slot round or a root only the slot backed) breaks it."""
         streak_n = self.config["dissent_streak"]
         out = []
         eps: dict[int, dict] = {}  # slot -> {"rounds": [(state, roots)], "run": n, "max_run": n}
@@ -323,14 +326,17 @@ class M9OracleQuorum(Check):
             by_slot: dict[int, set[str]] = {}
             for v in st.rnd.votes:
                 by_slot.setdefault(v.slot, set()).add(v.root)
-            if st.reference is None:  # tied: no slot's dissent is attributable, every run is broken
+            if st.reference is None:  # tied or one-slot round: no dissent attributable, every run is broken
                 for e in eps.values():
                     e["run"] = 0
                 continue
             for slot in sorted(set(by_slot) | set(eps)):
                 roots = by_slot.get(slot)
                 if roots and roots == {st.reference}:
-                    if slot in eps:
+                    if not any(s != slot and st.reference in r for s, r in by_slot.items()):
+                        if slot in eps:  # self-referential: no other slot voted that root, no proof (QA3-F2)
+                            eps[slot]["run"] = 0
+                    elif slot in eps:
                         out.append(episode(slot, eps.pop(slot), False, healed_by=st.ref))
                 elif roots:
                     e = eps.setdefault(slot, {"rounds": [], "run": 0, "max_run": 0})

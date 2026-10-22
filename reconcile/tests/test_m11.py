@@ -1125,3 +1125,170 @@ def test_qa2_f4_a_failing_run_after_downtime_does_not_advance_the_evaluated_mark
     tick(w, u.oc, 1, seconds=300)
     kinds = [(r["ikey"], r["kind"]) for r in sent(w, "m11")]
     assert kinds == [("liveness", "open"), ("liveness", "resolved")], kinds
+
+
+# ---------------------------------------------------------------- repair 3 (QA attempt 3)
+
+
+def _kinds(w):
+    return [(r["ikey"], r["severity"], r["kind"]) for r in sent(w, "m11")]
+
+
+def _outage(u, zero_rounds):
+    """One normal round, `zero_rounds` rounds without updater txs, then the round that heals them."""
+    u.round(updates=(0,))
+    u.close()
+    for _ in range(zero_rounds):
+        u.round(updates=())
+        u.close()
+    u.round(updates=(1,))
+    u.close()
+
+
+def test_qa3_f1_two_zero_rounds_sliding_out_of_history_are_not_reported_again(tmp_path):
+    """QA3-F1 reproducer (classes 6, 10): two zero rounds page, the next round heals them; while the outage slides
+    out of the last `history_rounds` closed rounds nothing is sent again (it kept the id of its first round)."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    _outage(u, 2)
+    before = _kinds(u.w)
+    assert [k for _, _, k in before] == ["open", "escalate", "resolved"], before
+    for _ in range(8):
+        u.round(updates=(0,))
+        u.close()
+    assert _kinds(u.w)[len(before):] == [], [r["text"][:160] for r in sent(u.w, "m11")[len(before):]]
+
+
+def test_qa3_f1_long_zero_outage_recovery_sends_no_further_pages(tmp_path):
+    """QA3-F1 reproducer: a 7-round outage (longer than history_rounds 6) is one incident whose texts count all 7
+    rounds (open page / its resolution not understated); after the resolution, eight normal rounds stay silent."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    _outage(u, 7)
+    rows = sent(u.w, "m11")
+    assert len({r["incident_id"] for r in rows}) == 1 and rows[-1]["kind"] == "resolved", _kinds(u.w)
+    assert "0 updates for 7 committed round(s)" in rows[-2]["text"], rows[-2]["text"][:200]
+    assert "0 updates for 7 committed round(s)" in rows[-1]["text"], rows[-1]["text"][:200]
+    n = len(rows)
+    for _ in range(8):
+        u.round(updates=(0,))
+        u.close()
+    assert _kinds(u.w)[n:] == [], [r["text"][:160] for r in sent(u.w, "m11")[n:]]
+
+
+def test_qa3_f1_ongoing_outage_longer_than_history_keeps_one_incident_and_counts_every_round(tmp_path):
+    """(f) window anchoring: an outage still going on after 9 rounds is one incident (no resolve/reopen as its first
+    round leaves the window), re-sent per round with the full count."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.round(updates=(0,))
+    u.close()
+    for _ in range(9):
+        u.round(updates=())
+        u.close()
+    rows = sent(u.w, "m11")
+    assert open_keys(u.w, "m11") == {"liveness": "page"}
+    assert len({r["incident_id"] for r in rows}) == 1 and "resolved" not in [r["kind"] for r in rows], _kinds(u.w)
+    assert "0 updates for 9 committed round(s)" in rows[-1]["text"], rows[-1]["text"][:200]
+
+
+def test_qa3_f1_restart_while_a_resolved_outage_slides_out_is_silent(tmp_path):
+    """(d) restart between detection and handling: the worker restarts (twice) while the resolved 7-round outage
+    leaves the history window; nothing is sent again."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    _outage(u, 7)
+    n = len(sent(u.w, "m11"))
+    w = u.w
+    for i in range(8):
+        u.round(updates=(0,))
+        if i in (2, 5):
+            w = u.restart(w)
+            u.w = w
+        u.close()
+    assert len(sent(u.w, "m11")) == n, _kinds(u.w)[n:]
+
+
+def test_qa3_f1_outage_during_downtime_is_reported_once_and_not_again_while_it_slides(tmp_path):
+    """Downtime (QA2-F4 marker) with a 3-round outage inside it: reported once (page + resolution) after the restart,
+    then silent while the outage leaves the history window."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    u.round(updates=(0,))
+    u.c.elapse(2400)
+    for _ in range(3):
+        u.round(updates=())
+        u.c.elapse(2400)
+    for _ in range(2):
+        u.round(updates=(1,))
+        u.c.elapse(2400)
+    w = u.restart()
+    u.w = w
+    tick(w, u.oc, 2)
+    kinds = _kinds(w)
+    assert kinds == [("liveness", "page", "open"), ("liveness", "info", "resolved")], kinds
+    for _ in range(8):
+        u.round(updates=(0,))
+        u.close()
+    assert _kinds(u.w) == kinds, _kinds(u.w)
+
+
+def test_qa3_f1_reorg_beyond_confirmations_removing_the_healing_round_of_a_resolved_outage_reopens_it(tmp_path):
+    """(c) reorg that removes the evidence of an ALREADY RESOLVED key: the round that healed a 2-round outage is
+    replaced (depth > confirmations) by a round without updater txs: the outage holds again on the canonical chain
+    and is reported (supported by evidence); a later healing round resolves it once, and nothing follows."""
+    u = UpdaterWorld(tmp_path, confirmations=2)
+    tick(u.w)
+    u.round(updates=(0,))
+    u.close()
+    u.round(updates=())
+    u.close()
+    u.round(updates=())
+    u.close()
+    fork = u.c.number
+    latest = u.ssv.latest_root
+    u.round(updates=(1,))
+    u.close()
+    assert open_keys(u.w, "m11") == {} and [k for _, _, k in _kinds(u.w)] == ["open", "escalate", "resolved"]
+    u.c.reorg(fork)
+    u.ssv.latest_root = latest
+    u.round(updates=())  # the replacement round: no updater tx
+    u.close()
+    assert open_keys(u.w, "m11") == {"liveness": "page"}, _kinds(u.w)
+    assert "0 updates for 3 committed round(s)" in sent(u.w, "m11")[-1]["text"]
+    u.round(updates=(1,))
+    u.close()
+    n = len(sent(u.w, "m11"))
+    assert open_keys(u.w, "m11") == {} and sent(u.w, "m11")[-1]["kind"] == "resolved"
+    for _ in range(8):
+        u.round(updates=(0,))
+        u.close()
+    assert len(sent(u.w, "m11")) == n, _kinds(u.w)[n:]
+
+
+def test_qa3_f1_reorg_re_including_the_healing_round_of_a_resolved_outage_is_silent(tmp_path):
+    """Benign twin of the row above (reorg depth 1 inside the confirmation window and N beyond it): the healing round
+    is re-included with its updater txs: the resolved outage is not reported again."""
+    for conf in (0, 2):
+        (tmp_path / f"c{conf}").mkdir()
+        u = UpdaterWorld(tmp_path / f"c{conf}", confirmations=conf)
+        tick(u.w)
+        u.round(updates=(0,))
+        u.close()
+        for _ in range(2):
+            u.round(updates=())
+            u.close()
+        fork = u.c.number
+        latest = u.ssv.latest_root
+        u.round(updates=(1,))
+        u.close()
+        n = len(sent(u.w, "m11"))
+        u.c.reorg(fork)
+        u.ssv.latest_root = latest
+        u.c.mine(2)  # the healing round again on the new chain (one blockNum later: the model keeps cluster roots)
+        u.round(updates=(1,))
+        u.close()
+        for _ in range(7):
+            u.round(updates=(0,))
+            u.close()
+        assert len(sent(u.w, "m11")) == n and open_keys(u.w, "m11") == {}, (conf, _kinds(u.w)[n:])
