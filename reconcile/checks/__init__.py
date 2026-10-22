@@ -14,6 +14,7 @@ from checks import m3_liquidation_zone, m4_conservation_deficit, m14_deposit_fro
 from checks import m8_supply_floor, m12_wallet_burn, m13_retired_keys  # noqa: F401, E402
 
 # --- CP2d: cluster integrity and capacity (M1, M2)
+from checks import m1_stale_tuple, m2_operator_capacity  # noqa: F401, E402
 
 # --- CP2e: legacy SSV (M6, M7)
 from checks import m6_legacy_coverage, m7_ssv_solvency  # noqa: F401, E402

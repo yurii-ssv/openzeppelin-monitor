@@ -91,6 +91,18 @@
         "0x3A98EE5f80268Ed91F8A5880d93468b76a9F3bB4": "old oracle slot 4 + EB updater (key leaked 2026-10-05)",
         "0x4BC656B34De23896fa6069C9862F355b740401aF": "old liquidator (drained 2026-10-06)"
       }
+    },
+    "m1": {
+      "interval_s": 600,
+      "receipt_window_blocks": 1000,
+      "our_senders": ["0x16A503C901615E6e21AA78cFcaFf11822fc2b617", "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0"],
+      "inbox_functions": ["updateClusterBalance", "liquidate", "liquidateSSV"]
+    },
+    "m2": {
+      "interval_s": 600,
+      "early_headroom": 900,
+      "velocity_window_blocks": 7200,
+      "inbox_functions": ["migrateClusterToETH", "reactivate"]
     }
   }
 }
