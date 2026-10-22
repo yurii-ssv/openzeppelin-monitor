@@ -33,7 +33,7 @@ ROWS = [
      "    liabilities = clusters + operators + network + (pool or 0)",
      [T4 + "test_staking_pool_is_not_added_as_a_separate_liability"]),
     ("F8", M4, '        if not s["complete"]:', "        if False:", ["reconcile/tests/test_m4.py"]),
-    ("F9", M4, '            ctx.db.conn.execute("DELETE FROM m4_scans WHERE block > ?", (ctx.reorg_ancestor,))',
+    ("F9", M4, '            ctx.db.conn.execute("DELETE FROM m4_scans WHERE block > ?", (A,))',
      "            pass", [T4 + "test_reorg_removing_the_deficit_resolves_and_never_repages"]),
     ("F10", M14, 'dust = [ev for ev in deposits if int(ev.extra.get("value", 0)) < burn]',
      'dust = [ev for ev in deposits if int(ev.extra.get("value", 0)) <= burn]',

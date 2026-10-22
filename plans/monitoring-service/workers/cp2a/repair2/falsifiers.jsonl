@@ -1,0 +1,61 @@
+{"id": "F1", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.50s"}
+{"id": "F2", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "F3", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.17s"}
+{"id": "F4", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "2 failed in 0.33s"}
+{"id": "F5", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "F6", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "1 failed in 0.14s"}
+{"id": "F7", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "1 failed in 0.14s"}
+{"id": "F8", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "7 failed, 26 passed in 0.38s"}
+{"id": "F9", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "2 failed in 0.15s"}
+{"id": "F10", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.18s"}
+{"id": "F11", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.20s"}
+{"id": "F12", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "F13", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "F14", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "2 failed in 0.21s"}
+{"id": "F15", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "QF14", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "R1-H1", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "2 failed in 0.17s"}
+{"id": "R1b-H1", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "R2-H2", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.20s"}
+{"id": "R3-H2", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "R4-H3", "file": "reconcile/checks/m3_views.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "R5-M1", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "R6-M2", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "R7-M3", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.18s"}
+{"id": "R8-sweep12", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "R9-sweep13", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "R10-sweep3", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.18s"}
+{"id": "R12-sweep21", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.22s"}
+{"id": "R11-silent", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.19s"}
+{"id": "C5", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "C11-m3", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "4 failed in 0.19s"}
+{"id": "C11-m4", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "2 failed in 0.14s"}
+{"id": "C11-m14", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "3 failed in 0.26s"}
+{"id": "S1-H1", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "51 failed, 9 passed in 1.43s"}
+{"id": "S2-M2", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "42 failed, 48 passed in 3.69s"}
+{"id": "S3-M1", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "22 failed, 68 passed in 4.04s"}
+{"id": "S4-M3", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "34 failed, 56 passed in 3.96s"}
+{"id": "S5-H3", "file": "reconcile/checks/m3_views.py", "exit": 1, "restored": true, "tail": "30 failed, 60 passed in 3.97s"}
+{"id": "S6-H2", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "2 failed, 88 passed in 4.29s"}
+{"id": "R2-H1a", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "4 failed in 0.42s"}
+{"id": "R2-H1b", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.21s"}
+{"id": "R2-H1c", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "4 failed in 0.33s"}
+{"id": "R2-M1a", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.20s"}
+{"id": "R2-M1b", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.20s"}
+{"id": "R2-M3a", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "4 failed in 0.33s"}
+{"id": "R2-M3c", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "2 failed, 2 passed in 0.37s"}
+{"id": "R2-M4a", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "1 failed in 0.15s"}
+{"id": "R2-M4b", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "1 failed in 0.16s"}
+{"id": "R2-M14", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "2 failed in 0.32s"}
+{"id": "R2-M14c", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed, 3 passed in 0.22s"}
+{"id": "R2-M14d", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed in 0.23s"}
+{"id": "R2-M3d", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "3 failed, 1 passed in 0.37s"}
+{"id": "R2-proof", "file": "reconcile/checks/m3_views.py", "exit": 1, "restored": true, "tail": "2 failed in 0.20s"}
+{"id": "S7-H1", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "15 failed, 75 passed in 4.25s"}
+{"id": "S8-M1", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "17 failed, 73 passed in 3.46s"}
+{"id": "S9-M3hold", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "20 failed, 40 passed in 1.90s"}
+{"id": "S11-freeze", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed, 89 passed in 3.32s"}
+{"id": "S10-M14hold", "file": "reconcile/checks/m14_deposit_frontrun.py", "exit": 1, "restored": true, "tail": "1 failed, 89 passed in 3.44s"}
+{"id": "QF3", "file": "reconcile/checks/m3_liquidation_zone.py", "exit": 1, "restored": true, "tail": "1 failed, 3 warnings in 0.35s"}
+{"id": "QF4", "file": "reconcile/checks/m4_conservation_deficit.py", "exit": 1, "restored": true, "tail": "1 failed, 3 warnings in 0.30s"}
+porcelain reconcile/checks: ''
