@@ -502,6 +502,12 @@ class UpdaterSweep:
                 "SELECT COUNT(*) FROM inbox WHERE canonical IS NULL").fetchone()[0] == 0:
             assert False, self.trace("the latest closed round has a counted revert but no revert-rate incident")
         for r in sent(u.w, "m11", "kind='resolved'")[resolved_before:]:
+            if r["ikey"] == "revert-rate" and REORG_TEXT not in r["text"]:
+                # positive proof: a closed round after the last one with a revert in which the updater sent a
+                # transaction and none reverted (a round with nothing sent proves nothing)
+                bad = max((i for i, rd in enumerate(closed) if rd["reverts"]), default=-1)
+                assert any(not rd["reverts"] and any(t["ok"] and t["sender"] == t["updater"] for t in rd["txs"])
+                           for rd in closed[bad + 1:]), self.trace("revert-rate resolved without a clean round")
             if r["ikey"] == "state-mismatch" and REORG_TEXT not in r["text"]:
                 # positive proof: the API answered every reported cluster at this step and it matches the chain
                 assert self.reported and not down and all(c not in removed and u.api.leaves.get(c) == self.eb

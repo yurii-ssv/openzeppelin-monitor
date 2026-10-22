@@ -1292,3 +1292,44 @@ def test_qa3_f1_reorg_re_including_the_healing_round_of_a_resolved_outage_is_sil
             u.round(updates=(0,))
             u.close()
         assert len(sent(u.w, "m11")) == n and open_keys(u.w, "m11") == {}, (conf, _kinds(u.w)[n:])
+
+
+def test_r3_revert_rate_is_not_healed_by_a_round_without_any_updater_transaction(tmp_path):
+    """Found by the repair-3 generalisation (class 1, the QA3-F2 class in M11): a round in which the updater sent
+    nothing has no revert rate (0/0); it is not proof that the rate is back under 10 %. The warn stays (the zero round
+    is the liveness rule's), and the next round with updater transactions heals it, naming that round."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn"}
+    u.round(updates=())
+    u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn", "liveness": "warn"}, _kinds(u.w)
+    clean = u.round(updates=(0, 1))
+    u.close()
+    assert open_keys(u.w, "m11") == {}
+    res = [r["text"] for r in sent(u.w, "m11", "kind='resolved'") if r["ikey"] == "revert-rate"]
+    assert len(res) == 1 and f"blockNum {clean} is under 10%" in res[0], res
+
+
+def test_r3_revert_rate_open_while_it_slides_out_of_history_is_kept(tmp_path):
+    """(class 6) The open revert-rate round leaves the last `history_rounds` closed rounds while every later round is
+    a zero round: no positive proof, so it stays open (no "no longer observed" resolution); a clean round heals it."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    ref = u.round(updates=(0,))
+    u.fail("MustUseLatestRoot", ref, i=1)
+    u.close()
+    for _ in range(8):
+        u.round(updates=())
+        u.close()
+    assert open_keys(u.w, "m11") == {"revert-rate": "warn", "liveness": "page"}, _kinds(u.w)
+    assert not [r for r in sent(u.w, "m11", "kind='resolved'") if r["ikey"] == "revert-rate"]
+    u.round(updates=(0,))
+    u.close()
+    assert open_keys(u.w, "m11") == {}
+    w = u.restart()
+    tick(w, u.oc, 2, seconds=600)
+    assert open_keys(w, "m11") == {} and len([r for r in sent(w, "m11") if r["ikey"] == "revert-rate"]) == 2

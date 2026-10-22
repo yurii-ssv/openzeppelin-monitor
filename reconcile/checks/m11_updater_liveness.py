@@ -14,7 +14,7 @@ index), so a rotation earlier in the same block already moves the expectation.
 | a `RootCommitted` with 0 updater txs within 60 min | `liveness` | warn | the latest closed round has no `ClusterBalanceUpdated` (its `blockNum`) inside the window in a tx sent by the updater of that tx's position; re-sent per zero round (`revision`) |
 | ... and the proof API shows clusters whose on-chain EB differs from the leaf | `liveness` | page | the zero round's leaves (`{proof_api}/proof/{clusterId}` at the same `referenceBlock`) vs `getEffectiveBalance` (Views) for every active ETH cluster with validators of the inventory. A cluster without a usable leaf (no answer, `cluster not found`, another `referenceBlock`, an unvalidated tuple) is UNKNOWN: a partial answer never reads as "all match"; the unknown clusters are retried every run until compared. API unreachable: stays warn, says so, health message, retried |
 | two consecutive committed rounds with 0 updates | `liveness` | page | trailing zero rounds >= `zero_rounds_page`; a run reaching back past the evaluated rounds is followed back to its first zero round (the episode id and the round count stay those of the whole outage while it slides out of `history_rounds`) |
-| revert rate on our updates > 10 % in a round | `revert-rate` | warn | gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block) inside the latest closed window / (those + successful updater txs); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox) |
+| revert rate on our updates > 10 % in a round | `revert-rate` | warn | gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block) inside the latest closed window / (those + successful updater txs); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox); healed only by a later round in which the updater sent transactions at a rate at or under the threshold (a round without any updater transaction proves nothing), the open round staying evaluated while it is older than `history_rounds` |
 | weekly full-state leaf comparison, mismatch older than one round | `state-mismatch` | warn | every `full_state_interval_s` the comparison over all such clusters at the latest closed root; each mismatching or unknown cluster is compared again at every later closed root (and unknown ones every run). A cluster mismatching at two consecutive evaluated roots is older than one round: warn. Resolved only by positive proof (every reported cluster compared again and matching); an unknown or unevaluated reported cluster keeps the incident (API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED, health message, retried every run) |
 
 Bounded cost: one run asks the proof API at most once per cluster; after `proof_api_abort_after` consecutive transport
@@ -222,7 +222,7 @@ class M11UpdaterLiveness(Check):
         elif inbox_unavailable(ctx) or inbox_gate_pending(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance"):
             unknown.add("revert-rate")
         else:
-            episodes += self.revert_rate(ctx, rounds)
+            episodes += self.revert_rate(ctx, self.revert_lead(ctx, commits, closed, block) + rounds)
         full, full_unknown = self.state_mismatch(ctx, commits, closed[-1] if closed else None, block)
         episodes += full
         if full_unknown:
@@ -332,33 +332,52 @@ class M11UpdaterLiveness(Check):
             resolution=(f"The updater sent {len(healed['ours'])} update(s) for blockNum {healed['commit'].ref_block}."
                         if healed else ""))
 
+    def revert_lead(self, ctx: Ctx, commits: list, closed: list, block: int) -> list[dict]:
+        """The rounds from an open revert-rate incident's round up to the evaluated ones, when it is older than them:
+        it stays derived (and open) until a later round proves a rate under the threshold, instead of reading its
+        slide out of `history_rounds` as a recovery."""
+        row = ctx.db.conn.execute(f"SELECT finding FROM {TABLE} WHERE key='revert-rate' AND closed=0").fetchone()
+        if row is None or not closed:
+            return []
+        ref = json.loads(row["finding"])["subject"].get("ref_block")
+        i = next((k for k, c in enumerate(commits) if c.ref_block == ref), None)
+        end = next(k for k, c in enumerate(commits) if c is closed[0])
+        if i is None or i >= end:
+            return []  # in the evaluated rounds, or no longer stored (a reorg: the book's rule)
+        return [self.round_stats(ctx, c, block) for c in commits[i:end]]
+
     def revert_rate(self, ctx: Ctx, rounds: list[dict]) -> list[Episode]:
         rows = [r for r in inbox_rows(ctx, UPDATE_CLUSTER_BALANCE_SELECTOR, "updateClusterBalance")
                 if rounds and r["block"] >= rounds[0]["commit"].block
                 and (r["sender"] or "").lower() in self.updaters_in(r["block"])]
         at = self.times.get([r["block"] for r in rows])
-        out = []
-        for i, rd in enumerate(rounds):
+        stats = []  # per round: (counted reverts, benign reverts, total, rate or None when nothing was sent)
+        for rd in rounds:
             c = rd["commit"]
             reverts = [r for r in rows if r["block"] >= c.block and rd["start"] <= at[r["block"]] <= rd["end"]]
-            if not reverts:
-                continue
             benign, counted = [], []
             for r in reverts:
                 (benign if self.benign(ctx, r, rd) else counted).append(r)
             total = len(rd["ours"]) + len(counted)
-            rate = len(counted) / total if total else 0.0
-            if rate <= self.config["revert_rate"]:
+            stats.append((counted, benign, total, len(counted) / total if total else None))
+        out = []
+        for i, rd in enumerate(rounds):
+            c = rd["commit"]
+            counted, benign, total, rate = stats[i]
+            if rate is None or rate <= self.config["revert_rate"]:
                 continue
+            # healed only by a later round in which the updater sent something at a rate under the threshold: a
+            # round without any updater transaction proves nothing (0/0, the liveness rule's case)
+            clean = next((j for j in range(i + 1, len(rounds)) if stats[j][3] is not None
+                          and stats[j][3] <= self.config["revert_rate"]), None)
             m1 = [r["tx_hash"] for r in counted if r["revert_name"] == "IncorrectClusterState"]
             names: dict[str, int] = {}
             for r in counted:
                 names[r["revert_name"] or r["revert_selector"] or "unresolved"] = names.get(
                     r["revert_name"] or r["revert_selector"] or "unresolved", 0) + 1
-            latest = i == len(rounds) - 1
             who = self.updater_at((c.block, c.tx_index))
             out.append(Episode(
-                key="revert-rate", episode=f"revert-rate:{c.ref_block}", active=latest, evidence_block=c.block,
+                key="revert-rate", episode=f"revert-rate:{c.ref_block}", active=clean is None, evidence_block=c.block,
                 severity="warn",
                 title=f"EB updater revert rate {rate:.0%} for blockNum {c.ref_block}",
                 body=(f"{len(counted)} of {total} updateClusterBalance txs from {short(who)} reverted in the "
@@ -371,10 +390,9 @@ class M11UpdaterLiveness(Check):
                 subject={"updater": who, "ref_block": c.ref_block}, revision=str(c.ref_block),
                 evidence={"reverted": [r["tx_hash"] for r in counted][:50], "benign": [r["tx_hash"] for r in benign][:50],
                           "successful": len(rd["ours"]), "m1_handoff": m1, "reasons": names},
-                resolution="The updater's revert rate is back under the threshold."))
-        if out and not out[-1].active:
-            out[-1].resolution = (f"Revert rate for blockNum {rounds[-1]['commit'].ref_block} is under "
-                                  f"{self.config['revert_rate']:.0%}.")
+                resolution=("" if clean is None else
+                            f"Revert rate for blockNum {rounds[clean]['commit'].ref_block} is under "
+                            f"{self.config['revert_rate']:.0%} ({len(stats[clean][0])} of {stats[clean][2]} reverted).")))
         return out
 
     def benign(self, ctx: Ctx, row, rd: dict) -> bool:
