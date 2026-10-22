@@ -885,3 +885,7 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - QA 1 (Opus, `ctx_ca931025aa41`, commit `8f59453`) on `91ca3a7`: FAIL. F1 BLOCKING (lost page): after the catch-up, live blocks stay silent while any check has not committed its silent run; one transient RPC error suffices; event-derived findings in that window are never sent (real M13 reproducer). NOTEs: F2 HTTP error with a non-JSON-RPC body defeats failover (raises, no false clean); F3 M11 text 'retried every run'; F4 Kubernetes liveness probe would restart on RPC outages; F5 (pre-existing since CP1B) a second RPC outage within 6 h is never announced.
 - Lane fast-forwarded to `8f59453`; repair 1 dispatched `task_833791dccdfb`/`ctx_926e07c5cccb` (opus/high effective): F1 plus F5, F2, F3, F4 (F5 is the only page-route signal that monitoring stopped). Released `ctx_ca931025aa41`.
+
+## Event 0079 — CP3 repair 1 delivered; QA 2 on Opus
+
+- CP3 repair 1 done, head `c3e1234`. Diff outside workers/cp3 within the CP3 allowed writes (eb_reconcile.py, rpc.py, metrics.py, m11, READMEs, deploy/README.md, tests, plan status line); coordinator re-run: 2242 passed, ruff clean; stack `ms-cp3` rebuilt and up. QA 2 dispatched `task_76fb1e0cd4af`/`ctx_c0f064ab122e` (`ms-qa-cp3-2`, opus/high effective). Released `ctx_926e07c5cccb`.
