@@ -6,6 +6,8 @@ Run: reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_m2.py
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fakechain import keys
 from fixtures_cluster import (
@@ -637,3 +639,128 @@ def test_m2_inbox_transaction_lookup_returning_nothing_raises(tmp_path):
         w.run_checks()
     assert w.db.conn.execute("SELECT COUNT(*) FROM m2_reverts").fetchone()[0] == 0
     assert w.db.meta("cursor:inbox:m2", 0) == 0
+
+
+# ---------------------------------------------------------------- QA attempt 2 regressions (repair 2)
+
+
+def api_row_now(ssv, owner, ops, delta=0):
+    st = ssv._get(owner, ops)[1]
+    return api_row(owner, ops, st["count"], st["nfi"], st["index"], st["active"], st["balance"] + delta,
+                   migrated=False)
+
+
+def restart_m2(tmp_path, chain, w, rows, **m2):
+    _, w2 = make_worker(tmp_path, only=["m2"], chain=chain, views=VIEWS, clock=w.clock,
+                        checks={"m2": {"velocity_window_blocks": 20, "early_headroom": 1, **m2}},
+                        inventory={"api_url": "https://api.invalid", "api_refresh_s": 0},
+                        start_block=w.cfg.start_block, activation_block=w.cfg.activation_block)
+    w2.inventory.http_get = lambda url: {"clusters": list(rows), "pagination": {"pages": 1}}
+    return w2
+
+
+@pytest.mark.parametrize("restart_now", [False, True])
+def test_m2_reorg_orphaning_the_resolution_restores_the_canonical_tuple_and_reopens_hard(tmp_path, restart_now):
+    """QA attempt 2 F1 (M2): hard resolved on a tuple and an ETH count of an orphaned block; the API then omits the
+    cluster (another one still listed: a partial answer). The tuple validated before the fork is kept (history), so
+    the reorg run finds the cluster blocked again on canonical storage (also after a restart between rewind and
+    run)."""
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    advance(w)
+    assert "hard:1" in open_keys(w)
+    legacy(ssv, rows, owner="0x" + "b2" * 20, ops=(5, 6, 7, 8), count=1)
+    for op in (5, 6, 7, 8):
+        set_operator(chain, op, eth=0, ssv=1, private=True)
+    chain.mine()
+    tick(w, chain)
+    fork = chain.number
+    cid, st = ssv._get(LEG, LEG_OPS)
+    st["balance"] += 7
+    ssv._persist(cid, st)
+    rows[0] = api_row_now(ssv, LEG, LEG_OPS)
+    set_operator(chain, 1, eth=2_900, ssv=20, private=True)
+    tick(w, chain)
+    assert "hard:1" not in open_keys(w)
+    chain.reorg(fork)
+    st["balance"] -= 7
+    set_operator(chain, 1, eth=2_981, ssv=20, private=True)
+    chain.mine(2)
+    rows[:] = [r for r in rows if r["ownerAddress"] != LEG]
+    if restart_now:
+        w.check_reorg()
+        w.scan()
+        w = restart_m2(tmp_path, chain, w, rows)
+    advance(w)
+    assert "hard:1" in open_keys(w) and w.db.meta("reorg:m2") is None
+    assert [a for a in alerts(w) if a[2] == "hard:1"][-1] == ("warn", "open", "hard:1")
+
+
+def test_m2_reorg_of_a_resolved_hard_without_a_canonical_tuple_raises_and_keeps_the_marker(tmp_path):
+    """The only validated tuple came from the orphaned blocks: the resolved hard key cannot be re-evaluated on the
+    new chain (blocked count, unknown tuple), so the reorg run raises; a valid API tuple then reopens it."""
+    chain, w, ssv, rows = setup(tmp_path, eth=2_981, private=True, m2={"early_headroom": 1})
+    rows[0] = api_row_now(ssv, LEG, LEG_OPS, delta=1)  # wrong hash before the fork: never validated
+    advance(w)
+    assert "hard:1" not in open_keys(w)
+    fork = chain.number
+    cid, st = ssv._get(LEG, LEG_OPS)
+    st["balance"] += 7
+    ssv._persist(cid, st)
+    rows[0] = api_row_now(ssv, LEG, LEG_OPS)
+    tick(w, chain)
+    assert "hard:1" in open_keys(w)
+    set_operator(chain, 1, eth=2_900, ssv=20, private=True)
+    tick(w, chain)
+    assert "hard:1" not in open_keys(w)
+    chain.reorg(fork)
+    st["balance"] -= 7
+    set_operator(chain, 1, eth=2_981, ssv=20, private=True)
+    chain.mine(2)
+    rows[0] = api_row_now(ssv, LEG, LEG_OPS, delta=1)
+    advance(w)
+    assert w.db.meta("reorg:m2") is not None and "hard:1" not in open_keys(w)
+    assert outbox(w, "kind='health' AND check_id='m2' AND text LIKE '%cannot re-evaluate%hard:1%'")
+    rows[0] = api_row_now(ssv, LEG, LEG_OPS)
+    chain.mine()
+    advance(w)
+    assert w.db.meta("reorg:m2") is None and "hard:1" in open_keys(w)
+
+
+def test_m2_tuple_history_is_bounded_and_keeps_the_newest_tuple_below_the_reorg_depth(tmp_path):
+    chain, w, ssv, rows = setup(tmp_path, eth=2_000, private=True, m2={"early_headroom": 1}, reorg_search_depth=6)
+    advance(w)
+    cid, st = ssv._get(LEG, LEG_OPS)
+    for _ in range(12):
+        st["balance"] += 1
+        ssv._persist(cid, st)
+        rows[0] = api_row_now(ssv, LEG, LEG_OPS)
+        tick(w, chain)
+    hist = [(r["block"], json.loads(r["tuple"])[4]) for r in w.db.conn.execute(
+        "SELECT * FROM m2_clusters WHERE cluster_id = ? ORDER BY block", ("0x" + cid.hex(),))]
+    cp = w.checkpoint()["block"]
+    assert len(hist) <= 8, hist
+    assert hist[0][0] <= cp - 6 and all(b > cp - 6 for b, _ in hist[1:]), (cp, hist)
+    assert hist[-1][1] == st["balance"]
+
+
+def test_m2_unknown_tuple_on_a_blocked_operator_without_an_open_incident_is_health(tmp_path):
+    """Class 1: the hard rule of an operator whose legacy cluster has no validating tuple is UNKNOWN; with no incident
+    open it is still reported (health), never silent; it is not opened without a validated blocked tuple."""
+    chain, w, ssv, rows = setup(tmp_path, eth=2_900, private=True, m2={"early_headroom": 1})
+    legacy(ssv, rows, owner="0x" + "b2" * 20, ops=(5, 6, 7, 8), count=1)
+    for op in (5, 6, 7, 8):
+        set_operator(chain, op, eth=0, ssv=1, private=True)
+    chain.mine()
+    advance(w)
+    assert hard_keys(w) == []
+    rows[:] = [r for r in rows if r["ownerAddress"] != LEG]  # partial: the other cluster is still listed
+    cid, st = ssv._get(LEG, LEG_OPS)
+    st["balance"] += 1
+    ssv._persist(cid, st)
+    set_operator(chain, 1, eth=2_981, ssv=20, private=True)
+    tick(w, chain)
+    assert hard_keys(w) == []
+    assert outbox(w, "kind='health' AND check_id='m2' AND key LIKE 'health:m2-hard-unknown%' AND text LIKE '%hard:1%'")
+    rows.insert(0, api_row_now(ssv, LEG, LEG_OPS))
+    tick(w, chain)
+    assert hard_keys(w) == ["hard:1"]

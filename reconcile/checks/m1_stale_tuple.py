@@ -11,28 +11,40 @@ Detection (spec M1, plan §8 CP2d):
              IncorrectClusterState is a poisoning; the earliest log of the same transaction whose tuple equals the
              stored cluster word (hashed locally against one storage read, every candidate, then confirmed with
              isLiquidated) is the repair tuple. An earlier transaction of the block cannot be validated at block
-             granularity (a later one changed storage): one whose events all carry the same tuple wrote and
-             emitted that tuple, so it is a repair of an unrepaired poisoning (order kept, so a re-poisoning later
-             in the same block pages); one with differing tuples is superseded (not what readers keep), reported as
-             health when it could have been a repair.
+             granularity (a later one changed storage, no trace RPC): one whose events all carry the same tuple
+             wrote and emitted that tuple (`clean`: a repair of an unrepaired poisoning, recorded at its position);
+             one with differing tuples is `unverified` (a poisoning or a repair). Every earlier transaction is kept
+             in log order in the poisoning's evidence (`intra_block`). Every block's receipts are validated after
+             the first run (a downtime backlog included); `receipt_window_blocks` only bounds the archive calls of
+             a first start on history (older groups: state sweep).
   state      every run validates, at the run's block, the last stored log of every cluster M1 tracks (open
              incident, unrepaired poisoning, unresolved revert, reorg key); every `interval_s` (and in reorg, force
              and params runs) the shared inventory flags clusters whose last log does not validate or for which no
-             candidate validates (`unknown`), and those are validated the same way.
+             candidate validates (`unknown`), and those are validated the same way. An SSV API answer with no
+             cluster is health (`m1-inventory-empty`), never a clean full-state sweep.
   inbox      `IncorrectClusterState` reverts of `inbox_functions` sent by `our_senders` -> the cluster's incident.
-Severity: warn; page while the cluster is re-poisoned (a poisoning after a recorded repair) or poisoned and
-liquidatable (`isLiquidatable`/`isLiquidatableSSV` of the canonical tuple at the run's block). A repair (the last
-log validates again) resolves the incident; a revert alone resolves at the first later run whose validation of
-the last log succeeds. An RPC error or an unexpected revert raises (never "clean"). Off-chain input never proves
-recovery: a key with no stored log that the inventory does not list (an empty or partial SSV API answer) is
-clean only when storage holds no such cluster; otherwise its incident is kept (health), and a reorg run raises.
+Severity: warn; page while the cluster is re-poisoned (a poisoning after a recorded repair), poisoned and
+liquidatable (`isLiquidatable`/`isLiquidatableSSV` of the canonical tuple at the run's block), or possibly
+re-poisoned within one block: coordinator ruling on QA attempt 2 F2 (spec M1 re-poison read louder when
+ambiguous), a final poisoning pages as an `unverified intra-block re-poison (no trace)` when some reading of the
+block's unverified transactions gives poison -> repair -> poison (an unverified transaction after an unrepaired
+poisoning or a warn/page incident, or after an earlier unverified one; or one followed by another transaction
+before the last). The page holds for the unrepaired episode; a later block-end validation (repair) resolves it.
+False-positive cost: a benign helper transaction with differing tuples (two deposits) followed in the same block
+by a poisoning of an already flagged cluster pages instead of warning. A repair (the last log validates again)
+resolves the incident; a revert alone resolves at the first later run whose validation of the last log succeeds;
+a poisoning repaired before the run that processed it is still reported once (warn, or page when re-poisoned) and
+resolved at the next run. An RPC error or an unexpected revert raises (never "clean"). Off-chain input never proves
+recovery: a key with no stored log that the inventory does not list (an empty or partial SSV API answer) is clean
+only when storage holds no such cluster; otherwise its incident is kept (health), and a reorg run raises.
 
 Reorg rule (checks/README.md §6.2) for `m1_detections`: rows from blocks above the ancestor are deleted (the
-event cursor is rewound, so the reorg run re-detects them from the new chain's logs), and so are state-sweep rows
-ingested above it (judged against storage of a deleted block), except inbox-derived reverts, which follow their
-inbox row (`canonical = 0` drops them, in any run); `cleared_block` above the ancestor is reset. The reorg run
-then evaluates every open incident key, every persisted key and every `ctx.reorg_keys` entry at the new
-checkpoint; a key it cannot evaluate (no stored log, the cluster in storage, no inventory tuple) raises.
+event cursor is rewound, so the reorg run re-detects them from the new chain's logs; a poisoning an earlier alert
+already named is not re-sent), and so are state-sweep rows ingested above it (judged against storage of a deleted
+block), except inbox-derived reverts, which follow their inbox row (`canonical = 0` drops them, in any run);
+`cleared_block` above the ancestor is reset. The reorg run then evaluates every open incident key, every persisted
+key, every `ctx.reorg_keys` entry and every key resolved above the ancestor (its resolution may be orphaned) at the
+new checkpoint; a key it cannot evaluate (no stored log, the cluster in storage, no inventory tuple) raises.
 """
 
 from __future__ import annotations
@@ -73,6 +85,7 @@ CREATE INDEX IF NOT EXISTS m1_detections_cluster ON m1_detections (cluster_id, k
 # revert (an inbox IncorrectClusterState revert of one of our senders). source: receipt | state | inbox.
 
 SWEEP_REASONS = frozenset({"interval", "reorg", "force", "params"})
+UNVERIFIED = "unverified intra-block re-poison (no trace)"
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
@@ -96,7 +109,7 @@ class M1StaleTuple(Check):
     id = "m1"
     defaults = {
         "interval_s": 600,
-        "receipt_window_blocks": 1000,  # older groups (a backlog, a first start on full history): state sweep only
+        "receipt_window_blocks": 1000,  # groups older than this before the first run (a start on history): state sweep
         "our_senders": [],  # spec §5 (oracle updater, liquidator); required, see config.example.json
         "inbox_functions": ["updateClusterBalance", "liquidate", "liquidateSSV"],
     }
@@ -120,6 +133,7 @@ class M1StaleTuple(Check):
                 raise SystemExit(f"checks.m1.{k}: a positive integer is required")
         self.views = views.lower()
         self.proxy = settings["proxy"].lower()
+        self.use_api = bool((settings.get("inventory") or {}).get("api_url", "default"))  # as eb_reconcile reads it
         self.senders = frozenset(a.lower() for a in senders)
         self.functions = frozenset(config["inbox_functions"])
         self.explorer = settings.get("alerts", {}).get("explorer", "https://etherscan.io")
@@ -143,10 +157,20 @@ class M1StaleTuple(Check):
                 flagged = {cid for cid, i in inv.clusters.items()
                            if i.version and (not i.valid or (i.tuple_source == "api" and "logs" in i.sources))}
                 keys |= flagged | (skipped - set(inv.clusters))
-                self.last_sweep = {"block": block, "clusters": len(inv.clusters), "flagged": len(flagged)}
+                api_n = sum("api" in i.sources for i in inv.clusters.values())
+                degraded = self.use_api and api_n == 0
+                if degraded:  # an empty off-chain answer is UNKNOWN, never a clean full-state sweep
+                    ctx.health("m1-inventory-empty", f"M1: the SSV API returned no cluster at block {block}; the "
+                               f"state sweep covers only the {len(inv.clusters)} cluster(s) with stored logs, clusters "
+                               f"known only to the API are unchecked (unknown) and nothing is resolved for lack of API "
+                               f"rows.", dedup="m1-inventory-empty", realert=True)
+                self.last_sweep = {"block": block, "clusters": len(inv.clusters), "flagged": len(flagged),
+                                   "api_clusters": api_n, "degraded": degraded}
             else:  # no inventory: validate the clusters of the groups the receipt window skipped one by one
                 keys |= skipped
         keys |= self._persisted_keys(db) | self._open_keys(db) | ctx.reorg_keys | dropped
+        if reorg:  # README §6.2 (5): a resolution on a deleted block may be orphaned, so resolved keys are re-checked
+            keys |= self._resolved_since(db, ctx.reorg_ancestor)
         out = []
         for key in sorted(keys):
             f = self._evaluate(ctx, key, block, inv, reorg, key in dropped)
@@ -179,7 +203,13 @@ class M1StaleTuple(Check):
         by_block: dict[int, list[Event]] = {}
         for ev in events:
             by_block.setdefault(ev.block, []).append(ev)
-        horizon = block - self.config["receipt_window_blocks"]
+        # The window bounds the archive calls of a first start on history only; after the first run every block's
+        # receipts are validated (a downtime backlog included: a poisoning repaired inside it is still an event).
+        first = ctx.state("first_run_block")
+        if first is None:
+            first = block
+            ctx.set_state("first_run_block", block)
+        horizon = first - self.config["receipt_window_blocks"]
         for b in sorted(by_block):
             evs = sorted(by_block[b], key=lambda e: e.log_index)
             txs: dict[bytes, dict[str, list[Event]]] = {}  # cluster -> transaction -> its events, both in log order
@@ -188,48 +218,64 @@ class M1StaleTuple(Check):
             for cid, groups in sorted(txs.items(), key=lambda kv: kv[1][next(reversed(kv[1]))][-1].log_index):
                 key = "0x" + cid.hex()
                 ordered = list(groups.values())
-                for group in ordered[:-1]:
-                    self._superseded(ctx, key, group, b, horizon, block, keys)
-                group = ordered[-1]
-                final = group[-1]
                 active = self._active_poison(ctx.db, key)
-                if len(group) < 2 and active is None:
-                    continue  # one event: the function validated its input against storage and emitted its result
+                if len(ordered[-1]) < 2 and active is None and all(len(g) < 2 for g in ordered):
+                    continue  # one event each: every function validated its input and emitted its result
                 if b < horizon:
                     skipped.add(key)
                     continue
-                if self._validate(ctx, final.owner, final.operator_ids, final.cluster, b):
-                    if active is not None:
-                        self._insert(ctx.db, key, "repair", final, block, source="receipt",
-                                     detail={"events": len(group)})
-                        keys.add(key)
-                    continue
-                repair = self._repair_event(ctx, group[:-1], final, b)
-                self._insert(ctx.db, key, "poison", final, block, source="receipt", repair=repair,
-                             detail={"events": len(group), "shape": [e.kind for e in group][-6:],
-                                     "candidates": len({e.cluster for e in group[:-1]})})
-                keys.add(key)
+                self._block_of_cluster(ctx, key, ordered, active, b, block, keys)
         return keys, skipped
 
-    def _superseded(self, ctx: Ctx, key: str, group: list[Event], b: int, horizon: int, block: int,
-                    keys: set[str]) -> None:
-        """A transaction followed by another one on the same cluster in block `b`: storage at `b` is the later one's,
-        so its tuple cannot be validated by a call. It only matters as a repair of an unrepaired poisoning (the
-        re-poison memory, including a re-poisoning later in the same block)."""
-        if b < horizon or self._active_poison(ctx.db, key) is None:
-            return
+    def _block_of_cluster(self, ctx: Ctx, key: str, ordered: list[list[Event]], active, b: int, block: int,
+                          keys: set[str]) -> None:
+        """The transactions on one cluster in block `b`, in log order. Storage at `b` is the last one's, so only that
+        one is validated by a call. An earlier transaction whose events all carry one tuple wrote and emitted it
+        (`clean`, a repair of an unrepaired poisoning, recorded at its position). One with differing tuples cannot
+        be validated without a trace (`unverified`: a poisoning or a repair). Coordinator ruling on QA attempt 2 F2
+        (spec M1 re-poison, louder when ambiguous): a final poisoning pages as an unverified re-poison when some
+        reading of the unverified transactions gives poison -> repair -> poison, i.e. an unverified transaction is
+        a possible repair after a possible poisoning (an unrepaired poisoning or a warn/page incident before the
+        block, or an earlier unverified one) or a possible poisoning followed by any transaction before the last."""
+        db = ctx.db
+        prior = self._open_incident(db, key)
+        maybe_poisoned = active is not None or (prior is not None and prior["severity"] in ("warn", "page"))
+        maybe_by_unverified = False  # a possible poisoning that is one of this block's unverified transactions
+        unverified_re_poison = False
+        earlier = []
+        for group in ordered[:-1]:
+            last = group[-1]
+            tuples = list(dict.fromkeys(e.cluster for e in group))
+            cls = "clean" if len(tuples) == 1 else "unverified"
+            if maybe_by_unverified or (cls == "unverified" and maybe_poisoned):
+                unverified_re_poison = True
+            if cls == "clean" and active is not None:
+                self._insert(db, key, "repair", last, block, source="receipt",
+                             detail={"events": len(group), "intra_block": True})
+                active = None
+                keys.add(key)
+            if cls == "unverified":
+                maybe_poisoned = maybe_by_unverified = True
+            earlier.append({"tx": last.tx_hash, "class": cls, "log_indexes": [e.log_index for e in group],
+                            "tuples": [_tup(t) for t in tuples]})
+        group = ordered[-1]
         final = group[-1]
-        if all(e.cluster == final.cluster for e in group):
-            # every event carries one tuple: the transaction validated its input, wrote that tuple and emitted it
-            self._insert(ctx.db, key, "repair", final, block, source="receipt",
-                         detail={"events": len(group), "intra_block": True})
-            keys.add(key)
+        if len(group) < 2 and active is None:
+            return  # one event: the function validated its input against storage and emitted its result
+        if self._validate(ctx, final.owner, final.operator_ids, final.cluster, b):
+            if active is not None:
+                self._insert(db, key, "repair", final, block, source="receipt", detail={"events": len(group)})
+                keys.add(key)
             return
-        ctx.health("m1-intra-block", f"M1: cluster {key}: transaction {final.tx_hash} (block {b}) carries {len(group)} "
-                   f"events with differing tuples and is followed by another transaction on the cluster in the same "
-                   f"block; whether it repaired the open poisoning cannot be read at block granularity (re-poison "
-                   f"memory may be missing). {self.explorer}/tx/{final.tx_hash}",
-                   dedup=f"m1-intra-block:{final.tx_hash}")
+        repair = self._repair_event(ctx, group[:-1], final, b)
+        detail = {"events": len(group), "shape": [e.kind for e in group][-6:],
+                  "candidates": len({e.cluster for e in group[:-1]})}
+        if earlier:
+            detail["intra_block"] = earlier
+        if unverified_re_poison:
+            detail["unverified_re_poison"] = True
+        self._insert(db, key, "poison", final, block, source="receipt", repair=repair, detail=detail)
+        keys.add(key)
 
     def _validate(self, ctx: Ctx, owner: str, operator_ids, cl: Cluster, block: int) -> bool:
         """True when storage holds this tuple at `block`; False on IncorrectClusterState; anything else raises."""
@@ -331,6 +377,10 @@ class M1StaleTuple(Check):
         return {r[0] for r in db.conn.execute("SELECT key FROM incidents WHERE check_id = ? AND state = 'open'",
                                               (self.id,))}
 
+    def _resolved_since(self, db, ancestor: int) -> set[str]:
+        return {r[0] for r in db.conn.execute("SELECT DISTINCT key FROM incidents WHERE check_id = ? AND state = "
+                                              "'resolved' AND resolved_block > ?", (self.id, ancestor))}
+
     def _open_incident(self, db, key: str):
         return db.conn.execute("SELECT * FROM incidents WHERE check_id = ? AND key = ? AND state = 'open'",
                                (self.id, key)).fetchone()
@@ -346,6 +396,15 @@ class M1StaleTuple(Check):
             "SELECT 1 FROM m1_detections WHERE cluster_id = ? AND kind = 'repair' AND (block < ? OR (block = ? AND "
             "log_index < ?))", (poison["cluster_id"], poison["block"], poison["block"], poison["log_index"])
         ).fetchone() is not None
+
+    def _episode_unverified(self, db, poison) -> bool:
+        """Whether a poisoning of the current unrepaired episode (since the last repair) paged as an unverified
+        re-poison: the page stays until a repair, as a verified re-poison's does."""
+        rows = db.conn.execute(
+            "SELECT p.detail FROM m1_detections p WHERE p.cluster_id = ? AND p.kind = 'poison' AND NOT EXISTS (SELECT 1 "
+            "FROM m1_detections r WHERE r.cluster_id = p.cluster_id AND r.kind = 'repair' AND (r.block > p.block OR "
+            "(r.block = p.block AND r.log_index > p.log_index)))", (poison["cluster_id"],)).fetchall()
+        return any(json.loads(r[0]).get("unverified_re_poison") for r in rows)
 
     def _active_reverts(self, db, key: str) -> list:
         return db.conn.execute("SELECT * FROM m1_detections WHERE cluster_id = ? AND kind = 'revert' AND "
@@ -448,7 +507,8 @@ class M1StaleTuple(Check):
             return Finding(check=self.id, key=key, severity=open_row["severity"], title=open_row["title"],
                            body=open_row["body"], subject=subject, evidence=json.loads(open_row["evidence"]),
                            notify=bool(open_row["notify"]), revision=open_row["revision"])
-        if not stale and unknown is None and not reverts:
+        transient = self._transient(db, key, block) if latest is not None and not stale else None
+        if not stale and unknown is None and not reverts and transient is None:
             if open_row is None:
                 return None
             if latest is not None:
@@ -464,7 +524,7 @@ class M1StaleTuple(Check):
             return Finding(check=self.id, key=key, severity="info", resolve=True,
                            title=f"Cluster tuple validates again (M1): {_short(key)}", body=body, subject=subject,
                            evidence={"block": block, "latest_tx": latest.tx_hash if latest else None})
-        return self._finding(ctx, key, block, subject, latest, poison, reverts, unknown, bool(stale))
+        return self._finding(ctx, key, block, subject, latest, poison, reverts, unknown, bool(stale), transient)
 
     def _evaluate_tx_key(self, db, key: str, block: int, open_row) -> Finding | None:
         """A revert whose calldata names no cluster: a one-shot warn, resolved at the next run."""
@@ -489,7 +549,26 @@ class M1StaleTuple(Check):
                        subject={"tx_hash": r["tx_hash"]}, evidence={"block": r["block"], **d},
                        revision=f"revert:{r['tx_hash']}")
 
-    def _finding(self, ctx: Ctx, key, block, subject, latest, poison, reverts, unknown, stale) -> Finding:
+    def _transient(self, db, key: str, block: int):
+        """Poisonings detected in this run whose cluster validates again by the run's block (repaired in a later
+        transaction or block of the same batch): still reported once (events between runs), resolved at the next
+        run. One whose transaction an earlier alert of this cluster named (re-detected after a reorg) is not.
+        Returns (rows, re_poisoned) or None."""
+        rows = [r for r in db.conn.execute(
+            "SELECT * FROM m1_detections WHERE cluster_id = ? AND kind = 'poison' AND ingested_block = ? "
+            "ORDER BY block, log_index, id", (key, block)) if not self._reported(db, key, r["tx_hash"])]
+        if not rows:
+            return None
+        return rows, any(self._repaired_before(db, r) or json.loads(r["detail"]).get("unverified_re_poison")
+                         for r in rows)
+
+    def _reported(self, db, key: str, tx_hash: str) -> bool:
+        return db.conn.execute(
+            "SELECT 1 FROM outbox o JOIN incidents i ON i.id = o.incident_id WHERE i.check_id = ? AND i.key = ? AND "
+            "instr(o.text, ?) > 0 LIMIT 1", (self.id, key, tx_hash)).fetchone() is not None
+
+    def _finding(self, ctx: Ctx, key, block, subject, latest, poison, reverts, unknown, stale,
+                 transient=None) -> Finding:
         db = ctx.db
         lines, evidence, title = [f"Cluster {key}"], {"block": block}, None
         if subject.get("owner"):
@@ -497,18 +576,29 @@ class M1StaleTuple(Check):
         severity, revision = "warn", None
         newest = None
         if stale:
+            detail = json.loads(poison["detail"])
             repaired_before = self._repaired_before(db, poison)
+            unverified = not repaired_before and self._episode_unverified(db, poison)
             canonical = _cl(poison["repair_tuple"])
             liquidatable = self._liquidatable(ctx, latest.owner, latest.operator_ids, canonical, block)
-            if repaired_before or liquidatable:
+            if repaired_before or unverified or liquidatable:
                 severity = "page"
             title = ("Cluster re-poisoned after a repair (M1 #91419)" if repaired_before else
+                     f"Cluster possibly re-poisoned within one block (M1 #91419, {UNVERIFIED})" if unverified else
                      "Poisoned cluster is liquidatable (M1 #91419)" if liquidatable else
                      "Stale cluster tuple (M1 #91419)") + f": {_short(key)}"
-            lines += [
+            lines.append(
                 f"Last log does not validate at block {block}: {poison['tx_hash']} (block {poison['block']}, log "
-                f"{poison['log_index']}, {json.loads(poison['detail']).get('kind')}), stale tuple "
-                f"{json.loads(poison['stale_tuple'])}.",
+                f"{poison['log_index']}, {detail.get('kind')}), stale tuple {json.loads(poison['stale_tuple'])}.")
+            if detail.get("intra_block"):
+                lines.append(f"Earlier transactions on the cluster in block {poison['block']} (log order; storage at "
+                             f"the block is the last one's, so an `unverified` one may have repaired or poisoned it):")
+                lines += [f"  {t['tx']} logs {t['log_indexes']}: {t['class']}, tuples {t['tuples']}"
+                          for t in detail["intra_block"]]
+            if unverified:
+                lines.append(f"Paged as an {UNVERIFIED}: a reading of the unverified transaction(s) gives poison -> "
+                             f"repair -> poison; a later block whose last log validates resolves it.")
+            lines += [
                 (f"Repair tuple {json.loads(poison['repair_tuple'])}" + (
                     f" (log {poison['repair_log_index']} of the same transaction)"
                     if poison["repair_log_index"] is not None else f" (from {poison['source']}/SSV API)"))
@@ -522,8 +612,28 @@ class M1StaleTuple(Check):
                             poison_log_index=poison["log_index"], stale_tuple=json.loads(poison["stale_tuple"]),
                             repair_tuple=json.loads(poison["repair_tuple"]) if canonical else None,
                             repair_log_index=poison["repair_log_index"], source=poison["source"],
-                            liquidatable=liquidatable, re_poisoned=repaired_before)
+                            liquidatable=liquidatable, re_poisoned=repaired_before or unverified,
+                            re_poison_unverified=unverified, intra_block=detail.get("intra_block", []))
+            if unverified:
+                evidence["note"] = UNVERIFIED
             newest = (poison["block"], poison["log_index"], f"poison:{poison['tx_hash']}:{poison['log_index']}")
+        elif transient is not None:
+            rows, re_poisoned = transient
+            if re_poisoned:
+                severity = "page"
+            title = ("Cluster re-poisoned and repaired before this run (M1 #91419)" if re_poisoned else
+                     "Cluster poisoned and repaired before this run (M1 #91419)") + f": {_short(key)}"
+            lines += [f"Poisoned by {r['tx_hash']} (block {r['block']}, log {r['log_index']}): last log tuple "
+                      f"{json.loads(r['stale_tuple'])} did not validate at its block." for r in rows]
+            lines += [f"At block {block} the last-log tuple from tx {latest.tx_hash} (block {latest.block}) "
+                      f"validates again; the poisoning was repaired before this run evaluated it. Resolved at the "
+                      f"next run.", f"{self.explorer}/tx/{rows[-1]['tx_hash']}"]
+            last = rows[-1]
+            evidence.update(poison_tx=last["tx_hash"], poison_block=last["block"], poison_log_index=last["log_index"],
+                            stale_tuple=json.loads(last["stale_tuple"]),
+                            repair_tuple=json.loads(last["repair_tuple"]) if last["repair_tuple"] else None,
+                            re_poisoned=re_poisoned, transient=True, poisonings=[r["tx_hash"] for r in rows])
+            newest = (last["block"], last["log_index"], f"poison:{last['tx_hash']}:{last['log_index']}")
         elif unknown:
             title = f"Cluster tuple unknown (M1): {_short(key)}"
             lines.append(f"Status unknown at block {block}: {unknown}.")
@@ -549,5 +659,6 @@ class M1StaleTuple(Check):
         out = [f"M1: {n} cluster(s) with an unrepaired stale tuple or an unresolved revert"]
         if self.last_sweep:
             out.append(f"M1: last full-state sweep at block {self.last_sweep['block']}: "
-                       f"{self.last_sweep['clusters']} clusters, {self.last_sweep['flagged']} flagged")
+                       f"{self.last_sweep['clusters']} clusters, {self.last_sweep['flagged']} flagged"
+                       + (" — DEGRADED: the SSV API returned no cluster" if self.last_sweep["degraded"] else ""))
         return out

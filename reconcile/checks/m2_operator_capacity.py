@@ -20,21 +20,24 @@ Each run reports every open key: a condition that no longer holds is resolved. A
 read raises (RPC error).
 
 Off-chain input never proves recovery. The legacy cluster list comes from the inventory (SSV API rows + stored
-logs, tuples validated against storage) and from `m2_clusters`: every legacy cluster M2 has seen validated (and
-the cluster of a reverted call, from its calldata), re-validated against storage at the run's block whenever the
-inventory does not give it a validated tuple (an empty or partial API answer). A `hard:<op>` not found again is
+logs, tuples validated against storage) and from `m2_clusters`: every tuple M2 has seen validated for a legacy
+cluster (a history, plus the tuple of a reverted call from its calldata), matched against storage at the run's
+block whenever the inventory does not give a validated tuple (an empty or partial API answer). A `hard:<op>` not found again is
 resolved only on proof: the active legacy validators in no known cluster (`getOperatorByIdSSV` count minus the
 known active clusters') cannot make one cluster blocked (eth + missing <= limit; an unknown cluster with known
-clusters already above the on-chain count is not proven). Otherwise the open incident is kept (health), and in
-the reorg run an unproven `ctx.reorg_keys` entry raises (marker kept, retried). A named `revert:<op>` settles on
+clusters already above the on-chain count is not proven). Otherwise the hard rule is unknown (health, also with no incident
+open; none is opened without a validated blocked tuple): an open incident is kept, and in the reorg run an unproven
+`ctx.reorg_keys` entry or key resolved above the ancestor raises (marker kept, retried). A named `revert:<op>` settles on
 the same proof, with no cluster on the operator lacking a validated tuple (liquidated clusters have no on-chain
 count to check against), and not while the SSV API returned no cluster at all.
 
 Reorg rule (checks/README.md §6.2): the conditions are recomputed from the chain and the new chain's stored logs at
 every run, so the reorg run is an ordinary complete run; `m2_reverts` rows follow their inbox entry
 (`canonical = 0` drops them, in any run), and a settlement (`cleared_block`) above the ancestor is undone, so a
-surviving revert is evaluated again. `m2_clusters` rows are never trusted without a storage match at the run's
-block, so they need no rewind.
+surviving revert is evaluated again; keys resolved above the ancestor are evaluated again like open ones. `m2_clusters`
+rows are never trusted without a storage match at the run's block, so they need no rewind; because they are a
+history, the tuple validated before a fork matches canonical storage again after the reorg (rows below the newest
+one at least `reorg_search_depth` blocks old are pruned).
 """
 
 from __future__ import annotations
@@ -66,8 +69,8 @@ CREATE TABLE IF NOT EXISTS m2_reverts (
   PRIMARY KEY (tx_hash, block_hash)
 );
 CREATE TABLE IF NOT EXISTS m2_clusters (
-  cluster_id TEXT PRIMARY KEY, owner TEXT NOT NULL, operator_ids TEXT NOT NULL, tuple TEXT NOT NULL,
-  block INTEGER NOT NULL, source TEXT NOT NULL
+  cluster_id TEXT NOT NULL, owner TEXT NOT NULL, operator_ids TEXT NOT NULL, tuple TEXT NOT NULL,
+  block INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY (cluster_id, tuple)
 )
 """
 
@@ -102,6 +105,7 @@ class M2OperatorCapacity(Check):
         self.start_block = settings["start_block"]
         self.proxy = settings["proxy"].lower()
         self.use_api = bool((settings.get("inventory") or {}).get("api_url", "default"))  # as eb_reconcile reads it
+        self.depth = int(settings.get("reorg_search_depth", 256))  # tuple history kept below the newest validation
         self.explorer = settings.get("alerts", {}).get("explorer", "https://etherscan.io")
         self.schedule = (Every(config["interval_s"]), OnInbox())
         self.last: dict = {}
@@ -111,8 +115,13 @@ class M2OperatorCapacity(Check):
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
         db = ctx.db
         reorg = ctx.reorg_ancestor is not None
+        resolved_since: set[str] = set()
         if reorg:  # README §6.2: a settlement on a deleted block is undone, the surviving revert is evaluated again
             db.conn.execute("UPDATE m2_reverts SET cleared_block = NULL WHERE cleared_block > ?", (ctx.reorg_ancestor,))
+            # (5): a resolution on a deleted block may be orphaned; its key is re-evaluated like an open one
+            resolved_since = {r[0] for r in db.conn.execute(
+                "SELECT DISTINCT key FROM incidents WHERE check_id = ? AND state = 'resolved' AND resolved_block > ?",
+                (self.id, ctx.reorg_ancestor))}
         db.conn.execute(
             "DELETE FROM m2_reverts WHERE EXISTS (SELECT 1 FROM inbox i WHERE i.tx_hash = m2_reverts.tx_hash AND "
             "i.block_hash = m2_reverts.block_hash AND i.canonical = 0)")
@@ -125,7 +134,7 @@ class M2OperatorCapacity(Check):
         reverts = db.conn.execute("SELECT * FROM m2_reverts WHERE cleared_block IS NULL ORDER BY block, rowid").fetchall()
         open_keys = {r[0] for r in db.conn.execute("SELECT key FROM incidents WHERE check_id = ? AND state = 'open'",
                                                    (self.id,))}
-        keys = open_keys | set(ctx.reorg_keys) | {r["key"] for r in reverts}
+        keys = open_keys | set(ctx.reorg_keys) | resolved_since | {r["key"] for r in reverts}
         ops = {op for c in known + unknown for op in c.operator_ids}
         ops |= {r["operator_id"] for r in reverts if r["operator_id"]}
         ops |= {int(k.split(":")[1]) for k in keys if not k.startswith("revert:tx:")}
@@ -160,7 +169,7 @@ class M2OperatorCapacity(Check):
                                     "clusters exceed the on-chain legacy count")
         for r in reverts:
             findings.setdefault(r["key"], None)
-        kept = {}
+        kept, unproven_resolved = {}, {}
         for key in sorted(keys | set(findings)):
             if key.startswith("revert:"):
                 findings[key] = self._revert(ctx, key, block, eth, valid, unknown, limit, unproven, degraded)
@@ -174,20 +183,26 @@ class M2OperatorCapacity(Check):
                                             revision=row["revision"]) if row else None
                     if row:
                         kept[key] = unproven[int(op)]
+                    elif key in resolved_since:
+                        unproven_resolved[key] = unproven[int(op)]
                     continue
                 findings[key] = Finding(check=self.id, key=key, severity="info", resolve=True,
                                         title=f"Operator capacity condition cleared (M2): {key}",
                                         body=f"{key}: the condition no longer holds at block {block} "
                                              f"(limit {limit}).")
-        stuck = sorted(k for k in kept if k in ctx.reorg_keys)
+        why = {**unproven_resolved, **kept}
+        stuck = sorted({k for k in kept if k in ctx.reorg_keys} | set(unproven_resolved))
         if stuck:  # README §6.2 (4): not re-found, not disproven on the new chain: roll back, keep the marker, retry
             raise RuntimeError(f"M2 cannot re-evaluate {stuck} after the reorg at block {block}: "
-                               f"{kept[stuck[0]]} (the legacy cluster list is incomplete)")
+                               f"{why[stuck[0]]} (the legacy cluster list is incomplete)")
 
-        if kept:
-            ctx.health("m2-hard-unknown", f"M2: at block {block} the hard rule of {sorted(kept)} is unknown: "
-                       f"{'; '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}. The open incident(s) are kept.",
-                       dedup="m2-hard-unknown:" + keccak(json.dumps(sorted(kept)).encode()).hex()[:16], realert=True)
+        unknown_hard = {f"hard:{op}": why for op, why in unproven.items()}
+        if unknown_hard:  # an unproven operator is UNKNOWN whether or not an incident is open: never silent
+            ctx.health("m2-hard-unknown", f"M2: at block {block} the hard rule of {sorted(unknown_hard)} is unknown: "
+                       f"{'; '.join(f'{k}: {v}' for k, v in sorted(unknown_hard.items()))}. Open incident(s) are "
+                       f"kept ({sorted(kept) or 'none'}); none is opened without a validated blocked tuple.",
+                       dedup="m2-hard-unknown:" + keccak(json.dumps(sorted(unknown_hard)).encode()).hex()[:16],
+                       realert=True)
         if degraded:
             ctx.health("m2-inventory-empty", f"M2: the SSV API returned no cluster at block {block}; legacy clusters "
                        f"come from stored logs and the {len(known)} cluster(s) M2 last validated, re-checked against "
@@ -218,38 +233,47 @@ class M2OperatorCapacity(Check):
         for c in known:
             self._persist(db, c.cluster_id, c.owner, c.operator_ids, c.cluster, block, "inventory")
         done = {c.cluster_id for c in inv.clusters.values() if c.valid or not c.legacy}  # storage read by the inventory
-        rows = [r for r in db.conn.execute("SELECT * FROM m2_clusters ORDER BY cluster_id") if r["cluster_id"] not in done]
+        history: dict[str, list] = {}  # cluster -> its validated tuples, newest first
+        for r in db.conn.execute("SELECT * FROM m2_clusters ORDER BY cluster_id, block DESC, rowid DESC"):
+            if r["cluster_id"] not in done:
+                history.setdefault(r["cluster_id"], []).append(r)
         unknown = {c.cluster_id: c for c in listed_invalid}
-        if rows:
+        if history:
+            cids = sorted(history)
             slots = []
-            for r in rows:
-                cid = bytes.fromhex(r["cluster_id"][2:])
-                slots += [eth_cluster_slot(cid), ssv_cluster_slot(cid)]
+            for cid in cids:
+                cb = bytes.fromhex(cid[2:])
+                slots += [eth_cluster_slot(cb), ssv_cluster_slot(cb)]
             words = ctx.rpc.storage(self.proxy, slots, block)
-            for i, r in enumerate(rows):
+            for i, cid in enumerate(cids):
                 eth_word, ssv_word = words[2 * i], words[2 * i + 1]
                 if eth_word or not ssv_word:
-                    unknown.pop(r["cluster_id"], None)  # storage holds no legacy cluster (migrated, or never on this chain)
+                    unknown.pop(cid, None)  # storage holds no legacy cluster (migrated, or never on this chain)
                     continue
-                cl = Cluster(*json.loads(r["tuple"]))
-                ops = tuple(json.loads(r["operator_ids"]))
-                if int.from_bytes(cl.hash_data(), "big") == ssv_word:
-                    unknown.pop(r["cluster_id"], None)
-                    known.append(ClusterInfo(r["cluster_id"], r["owner"], ops, "SSV", cl, "persisted",
-                                             frozenset({"m2"}), None))
-                elif r["cluster_id"] not in unknown:
-                    unknown[r["cluster_id"]] = ClusterInfo(r["cluster_id"], r["owner"], ops, "SSV", None, None,
-                                                           frozenset({"m2"}), None)
+                rows = history[cid]
+                ops = tuple(json.loads(rows[0]["operator_ids"]))
+                match = next((Cluster(*json.loads(r["tuple"])) for r in rows
+                              if int.from_bytes(Cluster(*json.loads(r["tuple"])).hash_data(), "big") == ssv_word), None)
+                if match is not None:  # e.g. the tuple validated before a reorg orphaned a newer one
+                    unknown.pop(cid, None)
+                    known.append(ClusterInfo(cid, rows[0]["owner"], ops, "SSV", match, "persisted", frozenset({"m2"}),
+                                             None))
+                elif cid not in unknown:
+                    unknown[cid] = ClusterInfo(cid, rows[0]["owner"], ops, "SSV", None, None, frozenset({"m2"}), None)
         return known, list(unknown.values()), [c.cluster_id for c in listed_invalid]
 
-    def _persist(self, db, cid: str, owner: str, operator_ids, cl: Cluster, block: int, source: str,
-                 replace: bool = True) -> None:
+    def _persist(self, db, cid: str, owner: str, operator_ids, cl: Cluster, block: int, source: str) -> None:
+        """Keep every tuple seen validated (a history, not the latest only: a reorg can orphan the newest one, and the
+        one before it then matches storage again). Rows older than the newest one at least `reorg_search_depth`
+        blocks below this one are pruned (a deeper reorg stops the worker)."""
         tup = json.dumps([cl.validator_count, cl.network_fee_index, cl.index, cl.active, cl.balance])
         db.conn.execute(
             "INSERT INTO m2_clusters (cluster_id, owner, operator_ids, tuple, block, source) VALUES (?,?,?,?,?,?) "
-            "ON CONFLICT(cluster_id) DO " + ("UPDATE SET tuple = excluded.tuple, block = excluded.block, source = "
-                                             "excluded.source WHERE tuple != excluded.tuple" if replace else "NOTHING"),
+            "ON CONFLICT(cluster_id, tuple) DO NOTHING",
             (cid, owner.lower(), json.dumps(list(operator_ids)), tup, block, source))
+        db.conn.execute(
+            "DELETE FROM m2_clusters WHERE cluster_id = ? AND block < (SELECT MAX(block) FROM m2_clusters WHERE "
+            "cluster_id = ? AND block <= ?)", (cid, cid, block - self.depth))
 
     # ---------------------------------------------------------------- rules
 
@@ -330,8 +354,7 @@ class M2OperatorCapacity(Check):
                 raise RpcError(f"inbox {e.tx_hash}: eth_getTransactionByHash returned nothing")
             dec, cl = decode_cluster_calldata(tx), decode_cluster_tuple(tx)
             if dec and cl:  # the reverted call's cluster: settlement re-checks it even if the inventory omits it
-                self._persist(ctx.db, "0x" + cluster_id(dec[1], dec[2]).hex(), dec[1], dec[2], cl, e.block, "inbox",
-                              replace=False)
+                self._persist(ctx.db, "0x" + cluster_id(dec[1], dec[2]).hex(), dec[1], dec[2], cl, e.block, "inbox")
             key = f"revert:{op}" if op else f"revert:tx:{e.tx_hash}"
             ctx.db.conn.execute(
                 "INSERT OR IGNORE INTO m2_reverts (tx_hash, block_hash, block, key, operator_id, function, sender, "

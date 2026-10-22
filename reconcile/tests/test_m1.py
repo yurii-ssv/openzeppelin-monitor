@@ -683,9 +683,10 @@ def test_m1_same_block_bulk_repair_then_re_poison_pages(tmp_path):
     assert kinds(w)[-1] == ("page", "escalate") and evidence(w)["re_poisoned"] is True
 
 
-def test_m1_same_block_unreadable_transaction_before_a_poisoning_is_health_not_a_repair(tmp_path):
-    """Twin: a superseded transaction with differing tuples cannot be validated mid-block; it is no repair (warn
-    stays) and the gap is reported as health."""
+def test_m1_same_block_unreadable_transaction_before_a_poisoning_pages_as_unverified_re_poison(tmp_path):
+    """Repair 1 reported this as health (warn kept); QA attempt 2 F2 and the coordinator ruling: a transaction with
+    differing tuples between a recorded poisoning and a new one cannot be validated at block granularity, so it is
+    read as a possible repair and the poisoning pages (unverified), never health only."""
     chain, w, ssv = make_m1(tmp_path)
     deposit(ssv, value=10**18)
     advance(w)
@@ -694,8 +695,11 @@ def test_m1_same_block_unreadable_transaction_before_a_poisoning_is_health_not_a
     first, _, _ = poison(ssv, mine=False)
     poison(ssv)
     advance(w)
-    assert kinds(w)[-1] == ("warn", "update") and evidence(w)["re_poisoned"] is False
-    assert outbox(w, f"kind='health' AND key LIKE 'health:m1-intra-block:%' AND text LIKE '%{first}%'")
+    assert kinds(w)[-1] == ("page", "escalate")
+    ev = evidence(w)
+    assert ev["re_poisoned"] is True and ev["re_poison_unverified"] is True
+    assert [t["tx"] for t in ev["intra_block"]] == [first]
+    assert not outbox(w, "kind='health' AND key LIKE 'health:m1-intra-block:%'")
 
 
 def api_only_key(tmp_path, api_valid=False, after_fork=False):
@@ -851,3 +855,294 @@ def test_m1_repair_tuple_tie_is_the_earliest_log_for_every_event_kind(tmp_path, 
     advance(w)
     assert kinds(w) == [("warn", "open")]
     assert evidence(w)["repair_tuple"] == _tup(canonical) and evidence(w)["repair_log_index"] == 0
+
+
+# ---------------------------------------------------------------- QA attempt 2 regressions (repair 2)
+
+
+def api_row_now(ssv, owner, ops, delta=0):
+    """The API row of the cluster's tuple as MiniSSV holds it now (`delta` makes its hash wrong)."""
+    cl = current_tuple(ssv, owner, ops)
+    return api_row(owner, ops, cl.validator_count, cl.network_fee_index, cl.index, cl.active, cl.balance + delta)
+
+
+def two_deposit_helper(ssv, owner=OWNER, ops=OPS, mine=False):
+    """A successful helper contract calling deposit twice in one transaction: two tuples, the second canonical."""
+    cid, st = ssv._get(owner, ops)
+    tx = ssv.c.new_tx(owner)
+    for value in (3, 5):
+        ssv._touch(st)
+        st["balance"] += value
+        ssv._persist(cid, st)
+        _emit_cluster(ssv.c, tx, "ClusterDeposited", owner, ops, ssv._cluster(st), value)
+    if mine:
+        ssv.c.mine()
+    return tx
+
+
+@pytest.mark.parametrize("restart_now", [False, True])
+def test_m1_reorg_orphaning_the_resolution_of_an_api_only_key_with_a_partial_api_raises(tmp_path, restart_now):
+    """QA attempt 2 F1 (M1): a resolved key whose resolution came from an orphaned block is re-evaluated in the reorg
+    run; an API answer listing only an unrelated cluster is partial, no proof: the run raises, the marker stays (also
+    across a restart between the rewind and the run); a complete answer then reopens the unknown key."""
+    chain, w, ssv, rows, _, cl = api_only_key(tmp_path)
+    tick(w, chain)
+    key2 = key_of(OWNER2, OPS2)
+    assert [i["key"] for i in incidents(w, "open")] == [key2]
+    cid, st = ssv._get(OWNER, OPS)
+    st["count"] = 1
+    ssv._persist(cid, st)
+    chain.mine()
+    unrelated = api_row_now(ssv, OWNER, OPS)
+    fork = chain.number
+    cid2, st2 = ssv._get(OWNER2, OPS2)
+    st2["balance"] += 9
+    ssv._persist(cid2, st2)
+    rows[0] = api_row_now(ssv, OWNER2, OPS2)
+    tick(w, chain)
+    assert incidents(w, "open") == [] and incidents(w, "resolved")[0]["resolved_block"] >= fork
+    chain.reorg(fork)
+    st2["balance"] -= 9
+    chain.mine(2)
+    rows[:] = [unrelated]
+    if restart_now:
+        w.check_reorg()
+        w.scan()
+        w = restart(tmp_path, chain, w, inventory={"api_url": "https://api.invalid", "api_refresh_s": 0})
+        w.inventory.http_get = lambda url: {"clusters": list(rows), "pagination": {"pages": 1}}
+    advance(w)
+    assert w.db.meta("reorg:m1") is not None
+    assert outbox(w, "kind='health' AND key LIKE 'health:check-error:%' AND check_id='m1' AND text LIKE "
+                     "'%cannot re-evaluate%'")
+    # the complete answer lists the canonical (wrong-hash) tuple: positive evidence, the unknown key reopens
+    rows.append(api_row(OWNER2, OPS2, 2, cl.network_fee_index, cl.index, True, cl.balance + 1))
+    w.inventory._api_at = None
+    chain.mine()
+    advance(w)
+    assert w.db.meta("reorg:m1") is None and [i["key"] for i in incidents(w, "open")] == [key2]
+
+
+def test_m1_reorg_of_a_resolved_key_with_logs_reopens_without_the_inventory(tmp_path):
+    """Twin: a resolved key with a stored log needs no API; the reorg run re-evaluates it from the chain alone."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    saved = dict(ssv._get(OWNER, OPS)[1])
+    fork = chain.number
+    deposit(ssv, value=0)
+    advance(w)
+    assert incidents(w, "open") == []
+    chain.reorg(fork)
+    ssv._get(OWNER, OPS)[1].update(saved)
+    chain.mine(2)
+    advance(w)
+    assert w.db.meta("reorg:m1") is None and [i["key"] for i in incidents(w, "open")] == [KEY]
+
+
+@pytest.mark.parametrize("initial_poison", [False, True])
+def test_m1_three_transactions_poison_repair_poison_in_one_block_pages(tmp_path, initial_poison):
+    """QA attempt 2 F3: poison, single-tuple repair, poison in one block (logs delivered reversed); each transaction
+    is kept at its position and the re-poison pages, with or without a poisoning open before the block."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    if initial_poison:
+        poison(ssv)
+        advance(w)
+    first, _, _ = poison(ssv, mine=False)
+    rep, _ = deposit(ssv, mine=False)
+    last, _, repair = poison(ssv)
+    chain.logs.reverse()
+    advance(w)
+    ev = evidence(w)
+    assert ev["repair_tuple"] == _tup(repair) and ev["poison_tx"] == last
+    assert ev["re_poisoned"] is True and incidents(w, "open")[0]["severity"] == "page"
+    assert [(t["tx"], t["class"]) for t in ev["intra_block"]] == [(first, "unverified"), (rep, "clean")]
+    assert ev["re_poison_unverified"] is (not initial_poison)
+
+
+@pytest.mark.parametrize("third", ["poison", "repair"])
+def test_m1_unverified_two_tuple_transaction_after_a_poisoning_then_poison_pages(tmp_path, third):
+    """QA attempt 2 F2, coordinator ruling: after a recorded poisoning, a block whose earlier transactions carry
+    differing tuples (cannot be validated at block granularity, no trace) followed by a poisoning pages under the
+    existing incident, marked 'unverified intra-block re-poison (no trace)'; a block-end state that validates
+    resolves it plainly (twin)."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    helper = two_deposit_helper(ssv)
+    second, _, _ = poison(ssv, mine=False)
+    if third == "poison":
+        poison(ssv)
+    else:
+        deposit(ssv)
+    advance(w)
+    if third == "repair":
+        assert incidents(w, "open") == [] and kinds(w) == [("warn", "open"), ("info", "resolved")]
+        return
+    ev = evidence(w)
+    assert kinds(w) == [("warn", "open"), ("page", "escalate")] and len(incidents(w)) == 1
+    assert ev["re_poisoned"] is True and ev["re_poison_unverified"] is True
+    assert ev["note"] == "unverified intra-block re-poison (no trace)"
+    assert [t["tx"] for t in ev["intra_block"]] == [helper, second]
+    assert all(len(t["tuples"]) == 2 for t in ev["intra_block"])
+    assert "unverified intra-block re-poison (no trace)" in out(w)[-1]["text"]
+    assert not outbox(w, "kind='health' AND key LIKE 'health:m1-intra-block%'"), "never downgraded to health"
+
+
+def test_m1_unverified_transaction_before_a_first_poisoning_stays_warn(tmp_path):
+    """Benign twin: no poisoning or incident before the block, one unverifiable transaction, then the poisoning: no
+    poison-repair-poison reading exists, so warn."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    two_deposit_helper(ssv)
+    poison(ssv)
+    advance(w)
+    assert kinds(w) == [("warn", "open")] and evidence(w)["re_poisoned"] is False
+
+
+def test_m1_unverified_re_poison_page_survives_restart_and_resolves_on_a_validating_block(tmp_path):
+    """The unverified page is persisted with the poisoning (not re-derived from the block): a restart and later runs
+    keep it at page; a later block-end validation resolves it plainly."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    poison(ssv, mine=False)
+    poison(ssv)
+    advance(w)
+    assert incidents(w, "open")[0]["severity"] == "page"
+    w = restart(tmp_path, chain, w)
+    tick(w, chain)
+    tick(w, chain)
+    assert incidents(w, "open")[0]["severity"] == "page" and kinds(w)[-1] == ("page", "escalate")
+    deposit(ssv)
+    advance(w)
+    assert incidents(w, "open") == [] and kinds(w)[-1] == ("info", "resolved")
+
+
+def test_m1_reorg_removing_the_unverified_re_poison_block_returns_to_warn(tmp_path):
+    """README §6.2: the page came from a deleted block; the surviving poisoning is reported again at warn."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    saved = dict(ssv._get(OWNER, OPS)[1])
+    fork = chain.number
+    poison(ssv, mine=False)
+    poison(ssv)
+    advance(w)
+    assert incidents(w, "open")[0]["severity"] == "page"
+    chain.reorg(fork)
+    ssv._get(OWNER, OPS)[1].update(saved)
+    chain.mine(2)
+    advance(w)
+    assert w.db.meta("reorg:m1") is None
+    assert incidents(w, "open")[0]["severity"] == "warn" and evidence(w)["re_poisoned"] is False
+
+
+def test_m1_poison_repaired_before_the_run_still_alerts(tmp_path):
+    """Events between runs: a poisoning repaired in a later block of the same run is reported (warn), then resolved
+    at the next run; a re-poison repaired within one run pages."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    tx, _, _ = poison(ssv)
+    deposit(ssv)
+    advance(w)
+    assert kinds(w) == [("warn", "open")] and evidence(w)["poison_tx"] == tx and evidence(w)["transient"] is True
+    tick(w, chain)
+    assert kinds(w) == [("warn", "open"), ("info", "resolved")]
+    tick(w, chain)
+    assert len(kinds(w)) == 2, "reported once"
+    poison(ssv)
+    deposit(ssv)
+    advance(w)
+    assert kinds(w)[-1] == ("page", "open") and evidence(w)["re_poisoned"] is True
+
+
+def test_m1_poison_repaired_before_the_run_is_not_re_alerted_after_a_reorg_re_detects_it(tmp_path):
+    """A reorg re-includes the same two transactions (same hashes): the re-detected transient poisoning was already
+    reported, so the reorg run sends nothing new."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    saved = dict(ssv._get(OWNER, OPS)[1])
+    fork = chain.number
+    tx, _, _ = poison(ssv)
+    rep, _ = deposit(ssv)
+    advance(w)
+    tick(w, chain)
+    assert kinds(w) == [("warn", "open"), ("info", "resolved")]
+    chain.reorg(fork)
+    ssv._get(OWNER, OPS)[1].update(saved)
+    new_tx, hashes = chain.new_tx, iter([tx, rep])
+    chain.new_tx = lambda sender: next(hashes)
+    poison(ssv)
+    deposit(ssv)
+    chain.new_tx = new_tx
+    chain.mine()
+    advance(w)
+    assert w.db.meta("reorg:m1") is None and kinds(w) == [("warn", "open"), ("info", "resolved")]
+    assert [d["kind"] for d in detections(w)] == ["poison", "repair"]
+
+
+@pytest.mark.parametrize("api", ["empty", "listed"])
+def test_m1_initial_empty_inventory_is_health_never_a_clean_sweep(tmp_path, api):
+    """QA attempt 2 F4: an empty first API inventory is UNKNOWN (health), never a clean full-state sweep; a listed
+    cluster (twin) gives no such health."""
+    chain = ClusterChain()
+    from fakechain import MiniSSV
+
+    ssv = MiniSSV(chain)
+    cid, st = ssv._get(OWNER2, OPS2)
+    st["count"] = 9
+    ssv._persist(cid, st)
+    chain.mine()
+    rows = [] if api == "empty" else [api_row_now(ssv, OWNER2, OPS2)]
+    chain, w, ssv = api_m1(tmp_path, rows, chain=chain, ssv=ssv)
+    advance(w)
+    health = outbox(w, "kind='health' AND check_id='m1' AND key LIKE 'health:m1-inventory-empty%'")
+    assert bool(health) is (api == "empty")
+    assert w.checks["m1"].last_sweep["degraded"] is (api == "empty")
+    assert ("DEGRADED" in " ".join(w.checks["m1"].digest(w._ctx(w.checks["m1"], w.checkpoint()["block"], set()))))\
+        is (api == "empty")
+
+
+def test_m1_downtime_backlog_beyond_the_receipt_window_still_validates_every_receipt(tmp_path):
+    """The receipt window bounds a first start on history only: after a downtime longer than the window, a poisoning
+    repaired inside the backlog is still reported (events between runs)."""
+    chain, w, ssv = make_m1(tmp_path, m1={"receipt_window_blocks": 5})
+    deposit(ssv, value=10**18)
+    advance(w)
+    chain.mine(10)
+    tx, _, _ = poison(ssv)
+    old = chain.sealed
+    deposit(ssv)
+    chain.mine(30)
+    advance(w)
+    assert views_calls(chain, old), "validated at its own block"
+    assert kinds(w) == [("warn", "open")] and evidence(w)["poison_tx"] == tx
+
+
+def test_m1_unverified_page_stays_for_a_further_poisoning_without_a_repair(tmp_path):
+    """The unverified page belongs to the unrepaired episode, like a verified re-poison: a further poisoning in a later
+    block does not downgrade it to warn."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    poison(ssv, mine=False)
+    poison(ssv)
+    advance(w)
+    poison(ssv)
+    advance(w)
+    assert incidents(w, "open")[0]["severity"] == "page" and evidence(w)["re_poison_unverified"] is True
