@@ -14,7 +14,9 @@ services:
     image: openzeppelin/openzeppelin-monitor:latest
     build:
       context: .
-      dockerfile: ${DOCKERFILE:-Dockerfile.development}
+      # Dockerfile.production: release build with a jq that runs (CP3: the development image's pinned base has glibc
+      # 2.42 while its unpinned jq needs 2.43+, so every script trigger, the failed-tx inbox bridge included, fails)
+      dockerfile: ${DOCKERFILE:-Dockerfile.production}
     environment:
       METRICS_PORT: ${METRICS_PORT:-8081}
       METRICS_ENABLED: ${METRICS_ENABLED:-false}
