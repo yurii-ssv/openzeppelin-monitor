@@ -1537,6 +1537,22 @@ def test_m12_r3_shorter_chain_moving_the_window_back_still_counts_the_edge_trans
     assert len(w.bs.calls) == calls
 
 
+def test_m12_r3_restart_between_the_shorter_chain_reorg_and_its_run_still_counts_the_edge_transaction(tmp_path):
+    """RED. (d) a crash after the reorg's detection: the new process's reorg run counts E from the kept margin."""
+    c, w, edge = _edge_of_the_window(tmp_path)
+    w.check_reorg()
+    assert w.db.meta("reorg:m12") is not None
+    clock, start, activation = w.clock, w.cfg.start_block, w.cfg.activation_block
+    w.db.conn.close()
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c, clock=clock, start_block=start, activation_block=activation)
+    clock.advance(301)
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert w.db.meta("reorg:m12") is None and m["window_txs"] == 1 and m["window_fees_wei"] == eth(1)
+    week = time_window(c, c.sealed, WEEK_S)
+    assert set(week) == {h for h, x in c.wtxs.items() if x["block"] == edge}
+
+
 def test_m12_r3_window_below_the_stored_set_is_backfilled_never_undercounted(tmp_path):
     """Without the margin (prune_margin_blocks 0), the shorter chain's window starts below history_from: the
     reorg run backfills; with Blockscout down it raises and keeps the marker, then counts E."""
