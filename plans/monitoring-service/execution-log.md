@@ -596,3 +596,7 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - The laptop slept mid-run: the five live workers had stopped on `API Error: Your computer went to sleep`. Marco prompted a check; I sent a Resume message to each dispatch. CP2a and CP2d terminals sit on a "Teach auto mode" dialog (my keystroke injection was refused by the classifier); Marco to press "Not now".
 - CP2d repair 2 question (M1 transient false unknown while the API is ahead of the checkpoint): coordinator ruling A, record as a NOTE, no code change (revisit at CP3; the round policy counts false alerts as blocking).
 - CP2c repair 2 done, head `945fd4d`. Diff within allowed writes (m8, m13 checks, tests, fixtures, worker record); `test_m12`+`test_m13`: 381 passed (whole reconcile/tests selection), ruff clean. QA 3 on Opus, capped, dispatched `task_d3cb50328678`/`ctx_5995635f687c`, worktree `ms-qa-cp2c-4`, effective claude/opus/high. Released `ctx_3324b5e85486`.
+
+## Event 0057 — CP2b repair 2 delivered, QA 3 (capped)
+
+- CP2b repair 2 done, head `6191a36`. Diff within allowed writes (m9/m11 checks, tests, fixtures, config keys, worker record); test_m9+m10+m11 163 passed, ruff clean. QA 3 on Opus, capped, dispatched `task_c06575dde1da`/`ctx_e51adc5a9a75` (worktree `ms-qa-cp2b-3`, effective claude/opus/high). Released `ctx_a4d4ed1bcc36`.
