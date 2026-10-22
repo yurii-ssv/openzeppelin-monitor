@@ -762,3 +762,7 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - CP2b repair 4 question answered (D14 switches): add `checks.m11.revert_rate_enabled`, `checks.m11.zero_round_proof_enabled`, `checks.m9.dissent_enabled`, default on; off = not evaluated, one health line, open incident resolved once 'rule disabled by config'.
 - CP2e QA 2 (Opus, `ctx_b95e2f8c7ac2`, commit `8e07b0a`) on `6fafac6`: FAIL. Attempt-1 F1-F3 confirmed fixed except one narrow residual: a self-consistent empty API answer (`clusters: []`, `pagination.total: 0`) passes the completeness guard when `daoValidatorCount` is 0, so M7 records a clean baseline without inert legacy balances (a false clean per D15). Not reachable on mainnet today (`daoValidatorCount` 346), reachable at the end state of the legacy surface. 2 NOTEs.
 - Failed rounds for CP2e: 2. Lane fast-forwarded to `8e07b0a`; repair 2 dispatched `task_c706fd249b26`/`ctx_3a5d60dc1b12` (opus/high effective): ONE narrow fix, an empty listing is always UNKNOWN. Next QA capped. Released `ctx_b95e2f8c7ac2`.
+
+## Event 0070 — CP2e repair 2 delivered, QA 3 (capped, D15)
+
+- CP2e repair 2 done, head `31b7a77`. Diff outside workers/cp2e within the lane paths (m6, m7 checks, tests, fixtures, plan status line); test_m6+m7: 215 passed. QA 3 on Opus, capped, D15 and the no-mutation scope note in the packet, dispatched `task_5acf6026d077`/`ctx_8184634bdb45` (`ms-qa-cp2e-3`, opus/high effective). Released `ctx_3a5d60dc1b12`.
