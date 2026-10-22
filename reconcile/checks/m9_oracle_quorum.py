@@ -5,7 +5,7 @@ and reports, through the episode book (`m9_episodes`):
 
 | Trigger (spec) | Key | Severity | Rule here |
 |---|---|---|---|
-| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no commit closing the round (its own, or a later `blockNum`'s, which makes it un-committable) with a chain timestamp within `round_timeout_s` of its first vote, once the horizon (m9_oracle_common `BlockTimes`: the checkpoint's timestamp, or the clock when blocks stop) is past that deadline; consecutive failed rounds are one incident re-sent per failed round (`revision`); healed by a late commit or a superseding commit |
+| proposed, no `RootCommitted` within 30 min | `failed-round` | page | no `RootCommitted` of the round's own `blockNum` with a chain timestamp within `round_timeout_s` of its first vote, once the horizon (m9_oracle_common `BlockTimes`: the checkpoint's timestamp, or the clock when blocks stop) is past that deadline (the literal spec rule: a later `blockNum`'s commit does not make the round committed); consecutive failed rounds are one incident re-sent per failed round (`revision`), healed by a late commit or a superseding commit; a round already superseded inside its 30 min (a slot proposed a `blockNum` the quorum did not use) is its own incident, sent at its deadline with its resolution |
 | no `RootCommitted` for > 9 h | `cadence` | page | horizon − timestamp of the last commit block (or of `start_block`) > `max_commit_gap_s`: the clock keeps it growing while blocks or events stop; healed by the next commit. A gap that opened and closed while the worker was not evaluating is reported once from the commits' timestamps |
 | two roots for one `blockNum` | `split` | warn | as soon as a round has two distinct roots and no reference root yet (not committed and inside its 30 min, or settled with tied roots): immediate, unattributed; healed when the round settles with a reference root (the dissent moves to `dissent:<slot>`) or a later round commits |
 | two roots for one `blockNum`, attributed | `dissent:<slot>` | warn | per settled round (committed, superseded or timed out), a slot that voted any root other than the reference root (committed root; for an uncommitted round the unique plurality root), also when the same slot voted the reference root too (e.g. across an owner change); re-sent per new dissenting round (`revision`); healed only by positive proof: the slot votes the reference root and nothing else in a settled round |
@@ -80,7 +80,10 @@ class M9OracleQuorum(Check):
         self.times = BlockTimes(TIMES)
         self.spb = config["seconds_per_block"]
         # votes precede their round's commit by ~65 blocks and follow its reference block: a round whose
-        # blockNum is below start_block may have votes before the stored history, so vote-based rules skip it
+        # blockNum is below start_block may have votes before the stored history, so the rules that attribute votes
+        # (split, dissent, weak commit, absence) skip it. The failed-round rule does not: a stored vote proves no
+        # commit of that blockNum (or a later one) came before it, and an earlier unstored vote only moves the
+        # deadline earlier, so the stored first vote can delay a failure but never invent one
         self.complete_from = settings["start_block"]
 
     def prepare(self, ctx: Ctx) -> None:
@@ -94,13 +97,14 @@ class M9OracleQuorum(Check):
             pass
         hist = load_history(ctx.db, block)
         self.times.begin(ctx, self.spb)
-        rounds = [r for ref, r in sorted(hist.rounds.items()) if r.votes and ref >= self.complete_from]
+        rounds = [r for ref, r in sorted(hist.rounds.items()) if r.votes]
         self.times.get([r.first_vote.block for r in rounds] + [c.block for c in hist.commits]
                        + [ctx.settings["start_block"], block])  # one batch for the headers not cached yet
         self.now = self.times.horizon()
         self.block = block
-        states = [self.round_state(hist, r) for r in rounds]
-        episodes = (self.failed_rounds(states) + self.cadence(ctx, hist, block) + self.splits(hist, states)
+        every = [self.round_state(hist, r) for r in rounds]
+        states = [st for st in every if st.ref >= self.complete_from]
+        episodes = (self.failed_rounds(every) + self.cadence(ctx, hist, block) + self.splits(hist, states)
                     + self.dissent(states) + self.weak_commits(hist) + self.absent(hist))
         unknown: set[str] = set()
         if not inbox_enabled(ctx):  # require_inbox false: an explicit opt-out, still said once
@@ -136,26 +140,52 @@ class M9OracleQuorum(Check):
             reference = leaders[0] if len(leaders) == 1 else None
         else:
             reference = None
-        # a commit that closes the round (its own, or a later blockNum's: the oracle delivered a newer root) in time
-        in_time = close is not None and self.times(close.block) <= deadline
+        # spec M9: no RootCommitted *for this blockNum* within 30 min; a later blockNum's commit closes the round
+        # (it can no longer commit) but does not make it committed
+        in_time = rnd.commit is not None and self.times(rnd.commit.block) <= deadline
         failed = not in_time and self.now > deadline
+        early = failed and close is not None and self.times(close.block) <= deadline  # superseded inside its 30 min
         return SimpleNamespace(rnd=rnd, ref=rnd.ref, first_at=first_at, deadline=deadline, close=close,
-                               settled=settled, reference=reference, failed=failed,
+                               settled=settled, reference=reference, failed=failed, early=early,
                                last_vote_block=rnd.votes[-1].block)
+
+    def block_after(self, ts: float, lo: int, hi: int) -> int:
+        """The first block in (lo, hi] whose chain timestamp is past `ts` (where a deadline that passed was
+        established); `hi` when none is (the horizon is the clock). Bisection over cached header timestamps."""
+        if self.times(hi) <= ts:
+            return hi
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if self.times(mid) > ts:
+                hi = mid
+            else:
+                lo = mid
+        return hi
 
     def failed_rounds(self, states) -> list[Episode]:
         """Failed rounds grouped into runs that end at the same commit (a late commit of the run's round or a
-        superseding one): one incident per run, re-sent for every further failed round (`revision`)."""
+        superseding one): one incident per run, re-sent for every further failed round (`revision`). A round that
+        was superseded inside its own 30 min fails only at its deadline, after that commit: it is an incident of
+        its own (it cannot join a run already closed by the commit), established at the first block past its
+        deadline."""
         runs: dict[tuple | None, list] = {}
         for st in states:
             if st.failed:
-                runs.setdefault(st.close.pos if st.close is not None else None, []).append(st)
+                key = ("early", st.ref) if st.early else (st.close.pos if st.close is not None else None)
+                runs.setdefault(key, []).append(st)
         out = []
         timeout_min = self.config["round_timeout_s"] // 60
         for members in runs.values():
             first, last = members[0], members[-1]
             close = last.close
-            if close is None:
+            early = ""
+            if last.early:
+                slots = ", ".join(f"slot {v.slot} {short(v.oracle)}" for v in last.rnd.votes)
+                early = (f" blockNum {close.ref_block} was committed at block {close.block} inside this round's 30 min: "
+                         f"{slots} proposed a reference block the quorum did not use.")
+                resolution = (f"Round {last.ref} can no longer commit: blockNum {close.ref_block} was committed at block "
+                              f"{close.block} (tx {close.tx_hash}) before its deadline.")
+            elif close is None:
                 resolution = ""
             elif close is last.rnd.commit:
                 resolution = f"Round {last.ref} committed late at block {close.block} (tx {close.tx_hash})."
@@ -169,15 +199,17 @@ class M9OracleQuorum(Check):
             refs = [m.ref for m in members]
             out.append(Episode(
                 key="failed-round", episode=f"failed-round:{first.ref}", active=close is None,
-                # an absence: established at this checkpoint while it holds, healed by the closing commit
-                evidence_block=close.block if close is not None else self.block, severity="page",
+                # an absence: established at this checkpoint while it holds, healed by the closing commit; a round
+                # superseded in time: established at its deadline (after the commit that closed it)
+                evidence_block=(self.block_after(last.deadline, close.block, self.block) if last.early
+                                else close.block if close is not None else self.block), severity="page",
                 title=(f"Oracle round {rnd.ref} not committed within {timeout_min} min"
                        + (f" ({len(refs)} failed rounds in a row)" if len(refs) > 1 else "")),
                 body=(f"WeightedRootProposed for blockNum {rnd.ref} (first vote at block {rnd.first_vote.block}, "
                       f"{utc(last.first_at)}) and no RootCommitted by {utc(last.deadline)} (chain time). Votes: "
                       f"{votes}. {roots} distinct root(s)."
                       + (f" Failed rounds since the last commit: {', '.join(map(str, refs))}." if len(refs) > 1 else "")
-                      + " The oracle has no retry: the next target waits for the next round. Check every slot's "
+                      + early + " The oracle has no retry: the next target waits for the next round. Check every slot's "
                       "build (#93157)."),
                 subject={"ref_block": rnd.ref}, revision=str(rnd.ref),
                 evidence={"failed_rounds": refs, "votes": [vote_json(v) for v in rnd.votes],

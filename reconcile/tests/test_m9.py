@@ -870,10 +870,12 @@ def test_reorg_orphaning_the_clearance_of_a_resolved_dissent_reopens_it(tmp_path
     assert [k for k, s, kind in pages_warns(w)] == ["dissent:3", "dissent:3"]  # a new incident on the new chain
 
 
-def test_a_round_superseded_within_its_30_minutes_is_not_failed_and_one_superseded_later_is(tmp_path):
-    """Found by the adversarial sweep: a newer blockNum committed within the 30 min delivered a root (the older round
-    can no longer commit, nothing failed); a round still uncommitted at its deadline is a failed round, listed in the
-    page of its run even when the run's other rounds were already resolved by the same commit."""
+def test_a_round_superseded_within_its_30_minutes_still_fails_at_its_deadline(tmp_path):
+    """QA2-F1 (repair 2; replaces repair 1's superseded-in-time reading, which silenced the trigger): spec M9 line 1
+    is literal, "WeightedRootProposed for a blockNum with no RootCommitted within 30 min -> page"; a newer blockNum's
+    commit makes the round un-committable but is not its RootCommitted. The round pages at its deadline (with its
+    resolution: it can no longer commit), as its own incident even when the commit that closed it also resolved an
+    open run of failed rounds."""
     oc, w = oracle_worker(tmp_path)
     tick(w)
     a = oc.c.number - 1
@@ -881,8 +883,14 @@ def test_a_round_superseded_within_its_30_minutes_is_not_failed_and_one_supersed
     oc.vote(a, 2)  # round a: no quorum
     tick(w, oc, 5)
     oc.round()  # a newer round commits 1 min later
-    tick(w, oc, 200)
+    tick(w, oc, 100)  # 21 min after a's first vote: not failed yet
     assert pages_warns(w) == []
+    tick(w, oc, 100)  # past a's 30 min: page, resolved in the same run (a can no longer commit)
+    assert pages_warns(w) == [("failed-round", "page", "open")]
+    assert [(r["ikey"], r["kind"]) for r in sent(w, "m9")] == [("failed-round", "open"), ("failed-round", "resolved")]
+    first = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"]
+    assert f"Oracle round {a} not committed" in first[0] and "inside this round's 30 min" in first[0]
+    assert "can no longer commit" in first[1] and open_keys(w, "m9") == {}
     b = oc.c.number - 1
     oc.vote(b, 1)
     oc.vote(b, 2)
@@ -890,11 +898,81 @@ def test_a_round_superseded_within_its_30_minutes_is_not_failed_and_one_supersed
     c = oc.c.number - 1
     oc.vote(c, 3)
     oc.vote(c, 4)  # c: no quorum yet
-    oc.round(ref=oc.c.number - 1)  # d commits: closes b (late) and c (inside its 30 min)
-    tick(w, oc, 200)
-    texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"]
-    assert len(texts) == 2 and str(b) in texts[0] and "can no longer commit" in texts[1]
-    assert all(f"blockNum {c}" not in t for t in texts) and open_keys(w, "m9") == {}
+    d = oc.round(ref=oc.c.number - 1)  # d commits: closes b (late) and c (inside its 30 min)
+    tick(w, oc, 1)
+    texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"][2:]
+    assert len(texts) == 2 and f"round {b}" in texts[0] and "can no longer commit" in texts[1]
+    tick(w, oc, 200)  # past c's deadline: c pages as its own incident, already resolved by d
+    texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"][4:]
+    assert len(texts) == 2 and f"Oracle round {c} not committed" in texts[0] and f"blockNum {d}" in texts[0]
+    assert "can no longer commit" in texts[1] and open_keys(w, "m9") == {}
+    tick(w, oc, 5)
+    assert len([r for r in sent(w, "m9") if r["ikey"] == "failed-round"]) == 6  # no duplicate
+
+
+def test_qa2_f1_lone_vote_for_an_earlier_blocknum_that_never_commits_pages(tmp_path):
+    """QA2-F1 reproducer (qa/cp2b-attempt-2.md Appendix A): slot 3 proposes blockNum X-1, slots 1, 2, 4 propose X
+    and commit it 3 blocks later. X-1 never gets a RootCommitted: 30 min after its proposal it is a failed round
+    (page). X-1 is below start_block here: the failed-round rule still applies (a stored vote proves no commit of
+    X-1 before it)."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    x = oc.c.number - 1
+    oc.vote(x - 1, 3)  # slot 3: wrong (earlier) blockNum
+    oc.round(ref=x, voters=(1, 2, 4))
+    assert oc.committed(x)
+    tick(w, oc, 1)
+    assert pages_warns(w) == []
+    tick(w, oc, 160)  # > 30 min after the X-1 proposal
+    assert pages_warns(w) == [("failed-round", "page", "open")]
+    assert [(r["ikey"], r["kind"]) for r in sent(w, "m9")] == [("failed-round", "open"), ("failed-round", "resolved")]
+    opened = sent(w, "m9", "kind='open'")[0]["text"]
+    assert f"Oracle round {x - 1} not committed" in opened and "slot 3" in opened
+    n = len(sent(w, "m9"))
+    w = restart(tmp_path, w, oc)
+    tick(w, oc, 5)
+    assert len(sent(w, "m9")) == n  # reported once, also across a restart
+
+
+def test_qa2_f1_lone_vote_for_a_later_blocknum_pages_control(tmp_path):
+    """QA2-F1 control: the same anomaly with the wrong blockNum above X (not superseded) pages and stays open."""
+    oc, w = oracle_worker(tmp_path)
+    tick(w)
+    x = oc.c.number - 2
+    oc.vote(x + 1, 3)
+    oc.round(ref=x, voters=(1, 2, 4))
+    tick(w, oc, 161)
+    assert open_keys(w, "m9").get("failed-round") == "page", open_keys(w, "m9")
+
+
+def test_qa2_f1_superseded_round_whose_deadline_passes_after_the_first_sweep_is_reported(tmp_path):
+    """The check starts between the superseding commit and the stray round's deadline (the commit is at or below the
+    baseline): the failure is established at the deadline, after the baseline, so it is still reported."""
+    oc = OracleChain()
+    oc.c.mine(100)
+    x = oc.c.number - 1
+    oc.vote(x - 1, 3)
+    oc.round(ref=x, voters=(1, 2, 4))
+    oc.c.mine(20)
+    oc, w = oracle_worker(tmp_path, oc=oc, start_block=1000, activation_block=1000)
+    tick(w)  # first run (baseline) after the commit, before X-1's deadline
+    assert pages_warns(w) == []
+    tick(w, oc, 160)
+    assert [(r["ikey"], r["kind"]) for r in sent(w, "m9")] == [("failed-round", "open"), ("failed-round", "resolved")]
+
+
+def test_qa2_f1_superseded_round_failed_before_the_first_sweep_is_history(tmp_path):
+    """Benign twin: the stray round's deadline passed before the check's first run: history, not paged."""
+    oc = OracleChain()
+    oc.c.mine(100)
+    x = oc.c.number - 1
+    oc.vote(x - 1, 3)
+    oc.round(ref=x, voters=(1, 2, 4))
+    oc.c.mine(200)
+    oc, w = oracle_worker(tmp_path, oc=oc, start_block=1000, activation_block=1000)
+    tick(w)
+    tick(w, oc, 5)
+    assert pages_warns(w) == []
 
 
 def test_a_failed_round_added_and_healed_between_two_sweeps_is_still_sent(tmp_path):
