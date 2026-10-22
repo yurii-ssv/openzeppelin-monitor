@@ -329,7 +329,7 @@ Rules: M6 for active legacy clusters: `isLiquidatableSSV` for > 7 days → warn;
 
 ### CP3 — Integration, compose, fork e2e, soak start
 
-**Status:** NOT STARTED. **Implementer:** Claude Opus high (single writer). **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1A and CP2a–e VERIFIED.
+**Status:** IMPLEMENTED — AWAITING QA on `mtabasco/ms-cp3` (frozen base `0c388ec`, code head `e71b1cb`, record commit on top); [worker record](workers/cp3/plan.md). V3.1–V3.9 PASS (V0.8 known mockall red, serial green), V3.10 runbook written (QA review), suite 2202 passed, ruff clean; findings F-1 (Monitor dev image jq, compose now builds `Dockerfile.production`; `Dockerfile.development` owner Marco), F-2/F-3 fixed, F-4 M11 retry gate (coordinator ruling A; QA re-checks M11); notes N-1–N-6. Local stack running in record mode (project `ms-cp3`). **Implementer:** Claude Opus high (single writer). **QA:** Claude Opus high (D13). **Inputs:** CP1A and CP2a–e VERIFIED.
 Deliverables: merged `plan/ms/cp3-integration`; `docker-compose.watch.yaml` (service `watch`, image `ssv-watch`, persistent volume, `read_only`, inbox mount, healthcheck); `deploy/README.md` runbook; `fork_e2e.py` scenarios `m5`, `m3`, `m9`, `m12`; local stack run; soak handoff to Marco (OG3) with the exact commands and the evidence to collect.
 **Stop:** V3 rows; timebox 2 days; soak runs 48 h after that.
 

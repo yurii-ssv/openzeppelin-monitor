@@ -38,7 +38,7 @@ export COMPOSE_FILE=docker-compose.yaml:docker-compose.reconcile.yaml
 ### Start, stop, restart
 
 ```bash
-docker compose build                     # Monitor (Rust, ~4 min first time) and worker images
+docker compose build                     # Monitor (Rust release, Dockerfile.production, a few min) and worker images
 docker compose up -d                     # inbox-init creates the empty inbox, then the worker starts
 docker compose ps                        # eb-reconcile shows (healthy) once a step succeeded in the last 10 min
 docker compose logs -f eb-reconcile      # or monitor
@@ -46,6 +46,10 @@ docker compose stop                      # stop, keep everything
 docker compose up -d                     # start again: the worker resumes from its durable checkpoint
 docker compose down                      # remove containers; the named volumes (state) are KEPT
 ```
+
+The Monitor image is built from `Dockerfile.production`. Do not build it from `Dockerfile.development`
+(`DOCKERFILE=…`): its pinned base has an older glibc than the `jq` it installs, `jq` cannot load, and every script
+trigger fails, the failed-tx inbox bridge included (CP3 finding F-1). Check: `docker compose exec monitor jq --version`.
 
 State lives in the named volumes `<project>_watch-data` (worker: SQLite + WAL, status file, recorded alerts) and
 `<project>_monitor-data` (Monitor: last processed block, `inbox/failed-tx.jsonl`). `docker compose down -v` deletes
@@ -134,7 +138,8 @@ endpoints is re-read at the next step. Logs name endpoints by host or by the var
 
 - **One replica**, never two: a StatefulSet (or a Deployment with `strategy: Recreate`), so two workers never open
   the same database.
-- **Storage**: one ReadWriteOnce PVC on block storage (1–5 GiB; the database is ~200 MB after the backfill).
+- **Storage**: one ReadWriteOnce PVC on block storage (1–5 GiB; the database is ~75 MB after the backfill of
+  October 2026 and grows with the logs).
   Not NFS/EFS or another network filesystem: SQLite in WAL mode needs POSIX locks and shared memory on a local
   filesystem.
 - **One pod, two containers** (Monitor and worker) sharing the PVC: the Monitor mounts it at `/app/data`, the
