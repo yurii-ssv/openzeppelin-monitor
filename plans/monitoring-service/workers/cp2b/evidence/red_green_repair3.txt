@@ -1,6 +1,6 @@
-RED on the frozen head (repair 3): code of 8bd225e (= 6191a36 code, QA attempt 3 frozen head; git archive) + the repair-3 lane test files
+RED on the frozen head (repair 3): code of 8bd225e (= 6191a36 code, the QA attempt-3 frozen head; git archive) + the final repair-3 lane test files and fixtures
 command: (cd frozen && reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py reconcile/tests/test_m10.py reconcile/tests/test_m11.py reconcile/tests/test_m9_m10_m11_sweep.py -rfp)
-result: 37 failed, 195 passed in 5.06s
+result: 85 failed, 197 passed in 9.90s
 
 ## per new test (repair 3)
 GREEN test_r3_reorg_removing_the_rotation_that_healed_a_duplicate_reopens_it (state-table row: untested before, behaviour already correct)
@@ -16,6 +16,9 @@ RED   test_r3_revert_rate_open_while_it_slides_out_of_history_is_kept
 RED   test_r3_reorg_removing_the_clean_round_that_healed_a_revert_rate_reopens_it
 RED   test_r3_outage_from_the_first_stored_round_counts_every_round
 RED   test_r3_a_sender_lookup_failing_in_the_backward_walk_fails_the_run_closed
+RED   test_r3_a_revert_counts_only_in_the_round_of_its_blocknum_when_windows_overlap
+RED   test_r3_a_late_revert_for_the_older_root_counts_in_the_older_round_only
+RED   test_r3_reorg_orphaning_the_reverts_of_an_open_revert_rate_resolves_with_the_reorg_text
 RED   test_qa3_f2_stray_single_vote_round_is_not_positive_proof_that_a_dissenting_slot_agrees
 RED   test_qa3_f2_timed_out_round_with_only_the_dissenter_voting_does_not_heal_its_page
 RED   test_qa3_f2_self_referential_committed_root_does_not_heal
@@ -28,8 +31,19 @@ GREEN test_r3_reorg_removing_the_vote_that_healed_an_absent_slot_reopens_it (sta
 GREEN test_r3_reorg_removing_the_vote_that_healed_a_commit_root_revert_reopens_it (state-table row: untested before, behaviour already correct)
 GREEN test_r3_reorg_removing_the_commit_that_settled_a_split_reopens_it (state-table row: untested before, behaviour already correct)
 RED   test_r3_lone_voter_round_settled_by_the_clock_does_not_heal
+RED   test_r3_one_slot_voting_twice_does_not_make_another_slot_a_dissenter
+RED   test_r3_a_lower_blocknum_failing_after_a_higher_one_is_sent_before_the_heal
+RED   test_r3_reorg_growing_an_already_resolved_failed_round_run_sends_the_new_member
+RED   test_r3_commit_seconds_before_the_deadline_in_an_unconfirmed_block_is_not_a_failed_round
+RED   test_r3_seed_295_late_confirmed_votes_do_not_retract_an_attribution
+RED   test_r3_chain_halt_with_confirmations_waits_for_the_tail_control
+RED   test_r3_reorg_removing_the_commit_that_settled_a_dissent_resolves_with_the_reorg_text
 
-## sweep cases RED on the frozen code (updated independent model + new invariants)
+## existing tests changed by repair 3 (new semantics, see plan.md Repair 3)
+RED   test_rpc_budget_no_eth_call_per_sweep_with_350_clusters
+GREEN test_qa2_f1_reorg_removing_the_superseding_commit_reopens_the_failed_round
+
+## sweep cases RED on the frozen code (56; updated independent model + new invariants + 60 M11 seeds)
 test_sweep_m11[0]
 test_sweep_m11[10]
 test_sweep_m11[11]
@@ -39,24 +53,69 @@ test_sweep_m11[16]
 test_sweep_m11[17]
 test_sweep_m11[18]
 test_sweep_m11[1]
+test_sweep_m11[20]
+test_sweep_m11[22]
+test_sweep_m11[23]
+test_sweep_m11[24]
+test_sweep_m11[25]
+test_sweep_m11[26]
+test_sweep_m11[27]
+test_sweep_m11[28]
+test_sweep_m11[29]
+test_sweep_m11[31]
+test_sweep_m11[34]
+test_sweep_m11[35]
+test_sweep_m11[36]
+test_sweep_m11[37]
+test_sweep_m11[38]
+test_sweep_m11[40]
+test_sweep_m11[41]
+test_sweep_m11[42]
+test_sweep_m11[43]
+test_sweep_m11[44]
+test_sweep_m11[45]
+test_sweep_m11[46]
+test_sweep_m11[48]
+test_sweep_m11[49]
 test_sweep_m11[4]
+test_sweep_m11[51]
+test_sweep_m11[52]
+test_sweep_m11[53]
+test_sweep_m11[55]
+test_sweep_m11[57]
+test_sweep_m11[59]
 test_sweep_m11[9]
 test_sweep_m9_m10[0-0]
 test_sweep_m9_m10[0-3]
+test_sweep_m9_m10[1-3]
+test_sweep_m9_m10[10-3]
 test_sweep_m9_m10[11-0]
 test_sweep_m9_m10[11-3]
 test_sweep_m9_m10[2-0]
 test_sweep_m9_m10[2-3]
 test_sweep_m9_m10[3-0]
 test_sweep_m9_m10[3-3]
+test_sweep_m9_m10[4-3]
+test_sweep_m9_m10[5-3]
+test_sweep_m9_m10[6-3]
+test_sweep_m9_m10[8-3]
+test_sweep_m9_m10[9-3]
 
 ## all failing on the frozen code
+FAILED reconcile/tests/test_m9.py::test_rpc_budget_no_eth_call_per_sweep_with_350_clusters
 FAILED reconcile/tests/test_m9.py::test_qa3_f2_stray_single_vote_round_is_not_positive_proof_that_a_dissenting_slot_agrees
 FAILED reconcile/tests/test_m9.py::test_qa3_f2_timed_out_round_with_only_the_dissenter_voting_does_not_heal_its_page
 FAILED reconcile/tests/test_m9.py::test_qa3_f2_self_referential_committed_root_does_not_heal
 FAILED reconcile/tests/test_m9.py::test_qa3_f2_lone_voter_round_does_not_extend_the_dissent_run
 FAILED reconcile/tests/test_m9.py::test_qa3_f2_one_slot_voting_one_root_twice_is_no_reference
 FAILED reconcile/tests/test_m9.py::test_r3_lone_voter_round_settled_by_the_clock_does_not_heal
+FAILED reconcile/tests/test_m9.py::test_r3_one_slot_voting_twice_does_not_make_another_slot_a_dissenter
+FAILED reconcile/tests/test_m9.py::test_r3_a_lower_blocknum_failing_after_a_higher_one_is_sent_before_the_heal
+FAILED reconcile/tests/test_m9.py::test_r3_reorg_growing_an_already_resolved_failed_round_run_sends_the_new_member
+FAILED reconcile/tests/test_m9.py::test_r3_commit_seconds_before_the_deadline_in_an_unconfirmed_block_is_not_a_failed_round
+FAILED reconcile/tests/test_m9.py::test_r3_seed_295_late_confirmed_votes_do_not_retract_an_attribution
+FAILED reconcile/tests/test_m9.py::test_r3_chain_halt_with_confirmations_waits_for_the_tail_control
+FAILED reconcile/tests/test_m9.py::test_r3_reorg_removing_the_commit_that_settled_a_dissent_resolves_with_the_reorg_text
 FAILED reconcile/tests/test_m11.py::test_qa3_f1_two_zero_rounds_sliding_out_of_history_are_not_reported_again
 FAILED reconcile/tests/test_m11.py::test_qa3_f1_long_zero_outage_recovery_sends_no_further_pages
 FAILED reconcile/tests/test_m11.py::test_qa3_f1_ongoing_outage_longer_than_history_keeps_one_incident_and_counts_every_round
@@ -69,12 +128,22 @@ FAILED reconcile/tests/test_m11.py::test_r3_revert_rate_open_while_it_slides_out
 FAILED reconcile/tests/test_m11.py::test_r3_reorg_removing_the_clean_round_that_healed_a_revert_rate_reopens_it
 FAILED reconcile/tests/test_m11.py::test_r3_outage_from_the_first_stored_round_counts_every_round
 FAILED reconcile/tests/test_m11.py::test_r3_a_sender_lookup_failing_in_the_backward_walk_fails_the_run_closed
+FAILED reconcile/tests/test_m11.py::test_r3_a_revert_counts_only_in_the_round_of_its_blocknum_when_windows_overlap
+FAILED reconcile/tests/test_m11.py::test_r3_a_late_revert_for_the_older_root_counts_in_the_older_round_only
+FAILED reconcile/tests/test_m11.py::test_r3_reorg_orphaning_the_reverts_of_an_open_revert_rate_resolves_with_the_reorg_text
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[0-0] - Ass...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[0-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[1-3] - Ass...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[2-0] - Ass...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[2-3] - Ass...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[3-0] - Ass...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[3-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[4-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[5-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[6-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[8-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[9-3] - Ass...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[10-3] - As...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[11-0] - As...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m9_m10[11-3] - As...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[0] - Assertio...
@@ -88,3 +157,33 @@ FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[14] - Asserti...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[16] - Asserti...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[17] - Asserti...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[18] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[20] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[22] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[23] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[24] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[25] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[26] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[27] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[28] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[29] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[31] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[34] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[35] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[36] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[37] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[38] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[40] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[41] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[42] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[43] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[44] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[45] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[46] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[48] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[49] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[51] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[52] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[53] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[55] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[57] - Asserti...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[59] - Asserti...
