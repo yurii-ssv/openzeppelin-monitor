@@ -154,3 +154,113 @@ Notes: state table + own trigger ledger in workers/cp2a/plan.md; at the pin depo
   not writable here).
 Next owner: fresh Codex QA (repair 1).
 ```
+
+---
+
+## Repair 1 of QA attempt 2 (repair round 2: QA cp2a-2 H1, M1 ruling; the H1 shape generalised)
+
+- Task / dispatch: `task_2e1407c441dc` / `ctx_5c44cca7a3e5`; coordinator `term_89e2fa6f-482b-4551-995f-1f0e41c726a2`;
+  worker `term_63c8bd46-2c3e-4e33-aee5-2c9a1cc668b1`; fresh implementer `claude-opus-5-5`, effort high.
+- Frozen start head `92d8ff9ade5692b15ee1a3e9c183716dd948623e` (QA evidence commit on `1154333…`, clean); same worktree
+  and branch. Evidence: `repair2/red-on-frozen.txt`, `repair2/falsifiers.jsonl`, `repair2/mutate.py`.
+- Commits: `71cbdd1` (H1 awaiting entries, M1), `6efd0ad` (holds M3/M4/M14, sweep), `fd2531a` (freeze, last-sent
+  time, expiry order, racing keepers), `561a4e0` (hold only without proof, `liq_runs`), `da2f928`/`bcb46fa` (evidence). Not touched: CP1B frozen files, `qa/**`, `execution-log.md`, README.
+
+### Fixes
+
+| Finding | Change | Regression (RED on frozen → GREEN) |
+|---|---|---|
+| QA2 H1 (BLOCKING) M14 hit lost when a reorg lowers the checkpoint below a surviving failed-liquidation block | Reorg run: every delivered liquidation entry above the ancestor still `canonical = NULL` (not re-confirmed: its block is above the lowered checkpoint) goes to `m14_pending` "awaiting confirmation" (cluster from calldata; no block time, never ages out); it holds its cluster's key (cluster unknown: every open key) at its severity; it is re-derived by the first run after the inbox confirms its block (`canonical = 1`), or dropped when orphaned (`canonical = 0` = proof). `near_set` makes M14 run at every checkpoint block while one waits. The last sent time is remembered while its hit awaits re-derivation (no duplicate info update). | `test_qa2_h1_shorter_chain_keeps_the_key_and_re_derives_the_surviving_hit[1-1-warn, 3-3-warn, 3-1-info, 3-2-info]` (QA reproducer, no clock advance), `…_that_replaces_the_failed_block_resolves_once_confirmed`, `…_restart_while_an_entry_awaits_confirmation…`, `…_second_reorg_below_an_awaiting_entry…`, `…_lagging_node_below_the_deposit_keeps_the_hit…` |
+| QA2 M1 + coordinator ruling | A "time" = one distinct front-running deposit (`deposit_tx`) per cluster; warn at `repeat_count` distinct deposits whose hits are within the trailing `window_s` of chain time; evidence `count` (times), `liquidations`, `deposits: {deposit_tx: [failed txs]}`; body lists per deposit the liquidations it blocked; the info re-send (revision) is per new deposit. | `test_qa2_m1_one_deposit_reverting_three_liquidations_is_one_time`, `…_blocking_its_block_and_the_next_is_one_time_and_not_re_sent`, `…_three_distinct_deposits_warn` |
+| H1 shape in M3 (found here) | A lagging node or a shorter chain put the reorg run below `m3_zone.last_block`: frozen head resolved a live page at the lower block and re-opened it at info (page dropped for N2 ≈ 1 day), or lowered it silently and re-sent warn + page. Now the row is held (`hold_block`, onset and zero block kept): no resolution, no lowering, no escalation until a run at or above `hold_block`. | `test_qa2_class2_lowered_checkpoint_keeps_the_page_and_never_re_escalates[4]`, `…_then_the_new_chain_lifts_the_cluster_resolves_once`, `test_qa2_class10_restart_while_the_checkpoint_is_lowered_keeps_the_hold` |
+| H1 shape in M4 (found here) | Same: the deficit page resolved at the lower block and was re-paged as a new incident. Now state `hold` (latest scan above the run block) keeps the page until a scan at or above it; `near_set` while held. | `test_qa2_class2_lagging_node_below_the_deficit_keeps_the_page_and_never_re_pages`, `…_shorter_chain_without_the_trigger_resolves_once_past_the_old_scan`, `test_qa2_class10_restart_while_the_deficit_is_held…` |
+| H1 shape in M14 zero page (found here) | `m14_open.hold_block`: a zero page seen above the lowered checkpoint is not lowered there and not re-sent. | `test_qa2_class2_lowered_checkpoint_keeps_a_zero_page_and_never_re_escalates[2]`, `test_qa2_class10_restart_while_a_zero_page_is_held_keeps_it` |
+| Escalation on an earlier block (sweep M14 seed 10) | While held, the severity is frozen (an earlier block than the one already evaluated: e.g. computed zero before a top-up the worker had seen). | `test_qa2_class4_lowered_checkpoint_does_not_escalate_on_an_earlier_block` |
+| Hold only without proof (keeps QA-1's shorter-replacement controls) | `liq_runs` (shared helper in `m3_views`): the blocks each check saw (its checkpoints + the framework's recorded blocks, copied at each run because the framework deletes its own above the ancestor). In the reorg run, if one of them in (ancestor, evidence block] is now another block on the node, the evidence provably left the chain: no hold, the old rules apply at once. Only when every probed block is missing (a lagging node, or a new chain shorter than them) is the incident held. | controls `test_qa2_class2_shorter_chain_with_a_replaced_block_resolves_in_the_reorg_run` (M3, M4); QA attempt-1 Appendix A `test_shorter_replacement_chain[6]` |
+| Pending expiry ordering (sweep) | M14 expires pending entries after the retries, so an entry re-derived in a run with its block's time expires in that run. | sweep M14 seed 10 |
+
+### Contract for CP3 (README §6.2; not edited by this lane)
+
+- §6.2 item 5 misses **inbox entries above a lowered checkpoint**: after a reorg onto a shorter chain (or a node behind
+  the checkpoint, which `check_reorg` treats the same: a missing block is not canonical) an already delivered entry
+  whose block is above the new checkpoint is `canonical = NULL`, cannot be re-derived (its logs are not rescanned) and is
+  never delivered again (cursor passed). A check must keep such an entry as UNKNOWN (keep the keys it may support) and
+  re-derive it once `canonical = 1`, or drop it at `canonical = 0`. M14 does this (`await_confirmation`).
+- **Lowered checkpoint, every check**: a reorg run whose block is below the block of a check's latest evidence for an
+  open key must not resolve, lower or escalate that key on the earlier block unless it has positive proof that the
+  evidence left the chain (a block it saw above the ancestor, at or below the evidence, is now another block). Without
+  proof, hold until a run at or above the evidence block. The framework cannot tell "replaced" from "missing" after
+  `check_reorg` (it deletes `blocks` above the ancestor), hence `liq_runs`.
+- `Inbox.pending` stops at the first unconfirmed line: entries confirmed behind an entry above the checkpoint wait
+  until that one is confirmed (a delay of a few blocks, not a loss; the sweep oracle models it).
+
+### State table, repair 2 (adds to the repair-1 table; **W** = wrong at `92d8ff9`, fixed; **U** = untested, test added)
+
+| State / input | (a) empty | (b) error | (c) reorg depth 1 / N, shorter chain, lagging node, resolved keys | (d) restart | (e) same block | (f) window anchor | (g) partial |
+|---|---|---|---|---|---|---|---|
+| inbox rows above a lowered checkpoint (M14) | — | tx unreadable → cluster unknown, holds every open key | **W** awaiting, re-derived/dropped on confirmation: `qa2_h1_*` (6 cases + lagging below the deposit) | **W** `qa2_h1_restart…` | racing keepers: sweep | never ages out while awaiting (no block time) | — |
+| `m14_pending` awaiting rows | — | — | second reorg below: **W** `qa2_h1_second_reorg…` | durable | — | expiry after retries (sweep) | — |
+| `m14_hits` per deposit (M1) | — | — | re-derived hits keep their deposit | — | **W** one deposit × 3 keepers, deposit in B and B+1: `qa2_m1_*` | count = distinct deposits within window_s of the checkpoint header | — |
+| `m14_open` (+ `last_deposit`, `hold_block`) | — | zero test unavailable keeps page (repair 1) | **W** zero page held, frozen: `qa2_class2_…zero_page…[2]`, `qa2_class4_…` | **W** `qa2_class10_…zero_page…` | — | — | last sent time kept while awaiting: **W** `[3-2-info]` |
+| `m3_zone.hold_block` | — | view fault while held → UNKNOWN keeps row | **W** below/above onset × lag/shorter: `qa2_class2_…[4]`, twin | **W** `qa2_class10_…` | — | age = run block − kept onset | API empty while held: as repair 1 (lookup) |
+| M4 state `hold` | — | incomplete scan while held → page kept | **W** `qa2_class2_lagging…`, twin | **W** `qa2_class10_…` | — | — | — |
+| `liq_runs` (proof blocks) | no rows → no proof → hold (safe) | header unavailable → treated as missing (no proof) | proof → resolve at once: controls ×2, App. A ×6 | durable | — | — | only 8 lowest probed; ≤ 1,024 kept per check |
+| reorg of an already-resolved key | — | — | M14 `test_class2_window_resolution…` (re-opens), M3 `test_sweep_m3_resolution_on_a_deleted_block…`, M4 `test_class2_resolution_on_a_deleted_block…` (repair 1) | — | — | — | — |
+
+### Adversarial sweep (`test_liquidation_sweep.py`, 150 seeds × 30 steps)
+
+M3 seeds 0–39 (confirmations 0) and 40–59 (confirmations 3), M14 seeds 0–59 (0) and 60–89 (4); new actions: reorgs from
+near the head onto shorter chains, steps against a lagging node (2 … 1,000 blocks behind), racing keepers (0–2 extra
+liquidations per deposit, separate RNG). Invariants after every step: 1 no resolve without positive proof; 2 no open
+incident without evidence (or a named UNKNOWN / hold); 3 no dropped alert for surviving evidence (exact set and severity
+when every input is known); 4 window anchored at the run's checkpoint (M3 age, M14 count of distinct deposits and
+chain time); 5 no event lost (a seen liquidation above the checkpoint holds, and is counted once confirmed again);
+6 a lowered checkpoint changes nothing already evaluated (no resolution, lowering or escalation) unless a replaced
+block exists. Final: lived = fresh worker (holds allowed only for UNKNOWN entries). RED on frozen: M3 20/60, M14 41/90.
+
+### Verification (lane head, 2026-10-22, `reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider …`)
+
+| Row | Result |
+|---|---|
+| V2x.1 M3 / M4 / M14 | 59 / 33 / 73 passed |
+| sweep | 150 passed |
+| V2x.2 (`-k thresholds_from_chain`) | 5 / 2 / 3 |
+| V2x.3 (`-k restart`) | 4 / 2 / 5 |
+| V2x.4 (`-k rpc_budget`) | 1 / 1 / 1 |
+| V2a.7 (`-k v2a7`) | 9 |
+| V2x.6 full suite; `ruff check reconcile` | 555 passed; All checks passed |
+| RED on frozen (`repair2/red-on-frozen.txt`) | 25 of 26 new cases red (1 control passes; M3's control reds only on the new column) |
+| QA2 Appendix A probes (`/tmp/cp2a-qa2/qa2/test_qa2.py`) | 22 passed (H1, M1 now green) |
+| QA1 Appendix A (`/tmp/cp2a-qa2/appA/test_independent.py`) | 35 passed |
+| Falsifiers `repair2/mutate.py` (repair-1 rows re-targeted + 15 R2 + 5 sweep) | 60/60 red, restored, porcelain `''`, exit 0 |
+| QA2 own falsifiers `mutate_qa2.py` | 3/3 red, restored, porcelain `''` |
+
+NOT RUN: LIVE (no on-chain read path changed except one header batch per reorg run; M4 equation unchanged), anvil e2e
+(CP3), the repair-1 LIVE probes. No merge of `plan/monitoring-service` (not needed).
+
+### Recorded interpretations and notes (for the coordinator)
+
+- M14 interpretation (ruling, amend spec at closure): "three or more times" = three distinct front-running deposits on
+  the same cluster within 24 h of chain time; a deposit's time is its failed liquidations' block time.
+- Framework (CP1B, not this lane): a page lowered silently to info and later resolved sends no resolution
+  (`alerts._apply_one` uses the current severity). M3 can still lower a page in normal flow (partial top-up below N2
+  after a zero page); the holds above remove the reorg path to it.
+- In a lowered window a key that was not open can be opened from the earlier (canonical) block's state; it is bounded
+  by the window and resolved on proof later (not suppressed: the state is canonical).
+- N3 (stall on an entry never served) unchanged; awaiting entries do not stall (they wait for confirmation only).
+- `liq_runs` reads the framework's `blocks` table (read-only), as M14 already reads `inbox` and `checkpoint`.
+
+### Completion handoff — repair round 2 (≤ 250 words, also the worker_done summary)
+
+```text
+Task / dispatch: task_2e1407c441dc / ctx_5c44cca7a3e5 (CP2a repair after QA attempt 2). Start head 92d8ff9 (clean).
+Outcome: QA2 H1 fixed; M1 implemented per coordinator ruling; the H1 shape found and fixed in M3, M4 and the M14 zero
+  page; acceptance pending a fresh Codex QA (capped round).
+Changed: checks/{m3_views,m3_liquidation_zone,m4_conservation_deficit,m14_deposit_frontrun}.py, tests/{fixtures_
+  liquidation,test_m3,test_m4,test_m14,test_liquidation_sweep}.py, workers/cp2a/** (this section, repair2/).
+Verification: 555 passed, ruff clean; V2x.1 59/33/73; V2x.2 5/2/3; V2x.3 4/2/5; V2x.4 1/1/1; V2a.7 9; sweep 150
+  (RED on frozen 61/150); 25/26 new cases red on frozen; falsifiers 60/60 + QA2 3/3; QA2 probes 22 passed; QA1 App. A 35.
+NOT RUN: LIVE, anvil e2e (CP3).
+Contract for CP3: README §6.2 item 5 inbox entries above a lowered checkpoint; hold-without-proof rule (this record).
+Next owner: fresh Codex QA.
+```

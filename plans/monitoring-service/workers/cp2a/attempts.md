@@ -224,3 +224,11 @@ path (H3) is implemented and tested on the fixture as required; on mainnet a leg
 another tuple change (e.g. `removeValidator`, `migrateClusterToETH`), which spec M14 does not name. (2) The attempt-1
 fixture settled the tuple on `deposit`; the pin does not (fixed). (3) Not modelled: an operator/network fee change
 inside block B between the deposit and the failed liquidation.
+
+## Repair 2 — QA attempt 2 findings (H1, M1 ruling) and the H1 shape in every check
+
+Task `task_2e1407c441dc` / dispatch `ctx_5c44cca7a3e5`, start head `92d8ff9` (clean), 2026-10-21/22. Record, fixes,
+state table, sweep, V rows, falsifiers, NOT RUN and notes: [plan.md § Repair 1 of QA attempt 2](plan.md). Evidence:
+`repair2/red-on-frozen.txt` (25/26 new cases red on frozen; sweep 61/150), `repair2/falsifiers.jsonl` (60/60 red,
+restored). A laptop sleep interrupted the session once (coordinator "Resume" message); work resumed from the committed
+state, nothing lost.
