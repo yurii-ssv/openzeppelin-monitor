@@ -335,7 +335,7 @@ Deliverables: merged `plan/ms/cp3-integration`; `docker-compose.watch.yaml` (ser
 
 ### CP4 — Final QA and acceptance
 
-**Status:** NOT STARTED. **Owner:** Codex QA, coordinator, Marco. **Inputs:** CP3 VERIFIED, OG3 evidence.
+**Status:** PART A PASS WITH NOTES; V4.2 pending soak — candidate head `047e9ad1dbc1b267aaab43508b56e0713e937775` by independent CP4 QA attempt 1 part A ([report](qa/cp4-attempt-1.md), Claude Opus 5.5 high, D13/D15): no BLOCKING finding. V4.1: suite 2242 passed, ruff clean, check-templates/check-abi/check-m15-coverage exit 0, composed compose config validates, Rust filter 17/1 known mockall (serial 18/18); cross-module review clean (incident keys, config keys, required settings, health kinds, D14 switches, D17 go-live). V4.3: no secret; V0.3 literal 2 dummy rows (N2). V4.4: 12 spec amendments match their rulings; §8 matches the final QA reports. NOTEs: N1 M5 layout suspension announced once, never re-alerted, status healthy; N2 V0.3 dummy rows; N3 digest held while a check fails its silent run; N4 seven CP4-owned §8 notes not in §9 + runbook reorg caveat missing; N5 stale `docker-compose.watch.yaml` in §7/§8; N6 CP2c-QA4-N5 wording. V3.7 tail (DT-12) PARTIAL again (fork RPC 500/429). V4.2 PENDING (soak running, part B). **Owner:** QA (part B after T48), coordinator, Marco. **Inputs:** CP3 VERIFIED, OG3 evidence.
 Final composed QA, soak review, secret scan, deferral table, completion statement. Delivery is the integration branch ready for Marco to push and open a PR; neither happens in this plan.
 
 ### Recorded notes
