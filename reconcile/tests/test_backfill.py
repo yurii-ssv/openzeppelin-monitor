@@ -182,6 +182,25 @@ def test_restart_between_go_live_and_the_first_live_run_still_runs_it(tmp_path):
     assert any("live" in r[1] for r in check2.runs) and len(sent(w2)) == 1
 
 
+def test_database_that_was_already_alerting_is_not_put_back_into_backfill(tmp_path):
+    """A database with a checkpoint but no phase (written before CP3) was alerting: it stays live. A new database
+    starts in backfill only when the backfill is enabled."""
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=20, level_at={2})
+    w, _ = make(tmp_path, chain, start=start)
+    w.step()
+    with w.db.tx():
+        w.db.set_meta("phase", None)
+        w.db.conn.execute("DELETE FROM meta WHERE key='phase'")
+    w.db.conn.close()
+    w2, _ = make(tmp_path, chain, start=start)
+    assert w2.phase()["phase"] == "live" and w2.phase()["first_live"] == []
+    _, w3 = make_worker(tmp_path / "off", [Watch()], chain=chain, start_block=start, activation_block=start,
+                        backfill={"enabled": False})
+    assert not w3.backfilling
+
+
 def test_history_only_condition_resolved_before_live_is_never_sent(tmp_path):
     chain = FakeChain()
     start = chain.number

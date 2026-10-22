@@ -15,7 +15,7 @@ index), so a rotation earlier in the same block already moves the expectation.
 | ... and the proof API shows clusters whose on-chain EB differs from the leaf | `liveness` | page | the zero round's leaves (`{proof_api}/proof/{clusterId}` at the same `referenceBlock`) vs `getEffectiveBalance` (Views) for every active ETH cluster with validators of the inventory. A cluster without a usable leaf (no answer, `cluster not found`, another `referenceBlock`, an unvalidated tuple) is UNKNOWN: a partial answer never reads as "all match"; the unknown clusters are retried every run until compared. API unreachable: stays warn, says so, health message, retried |
 | two consecutive committed rounds with 0 updates | `liveness` | page | trailing zero rounds >= `zero_rounds_page`; a run reaching back past the evaluated rounds is followed back to its first zero round (the episode id and the round count stay those of the whole outage while it slides out of `history_rounds`) |
 | revert rate on our updates > 10 % in a round | `revert-rate` | warn | every updater transaction of the round counts, at any time (the spec line has no window; the 60 min belong to the liveness line: QA4-F1): gated inbox `updateClusterBalance` rows from the updater (any key the slot held in that block), each counted in one round only, the round of its call's `blockNum` (decoded from the transaction, cached in `m11_reverted`), else (input not decoded, or a blockNum no stored commit has) the round whose [commit, next commit) holds it by (block, transaction index) / (those + the updater's successful updates of that `blockNum`, at any time). A round is evaluated once its window closed and re-derived every run while evaluated (later transactions change its rate; a revert of an older round's blockNum brings that round back into the evaluation); a `StaleUpdate` revert is benign only when another sender had already set the same EB for that root before it (earlier block, or earlier transaction index in the same block); `IncorrectClusterState` reverts are listed for M1 (`evidence.m1_handoff`; M1 raises its own incidents from the inbox); healed by a later round in which the updater sent transactions at a rate at or under the threshold (a round without any updater transaction proves nothing), or by later successful updates of the same round bringing it to or under the threshold while every revert that established it is still there; the open round staying evaluated while it is older than `history_rounds` |
-| weekly full-state leaf comparison, mismatch older than one round | `state-mismatch` | warn | every `full_state_interval_s` the comparison over all such clusters at the latest closed root; each mismatching or unknown cluster is compared again at every later closed root (and unknown ones every run). A cluster mismatching at two consecutive evaluated roots is older than one round: warn. Resolved only by positive proof (every reported cluster compared again and matching); an unknown or unevaluated reported cluster keeps the incident (API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED, health message, retried every run) |
+| weekly full-state leaf comparison, mismatch older than one round | `state-mismatch` | warn | every `full_state_interval_s` the comparison over all such clusters at the latest closed root; each mismatching or unknown cluster is compared again at every later closed root (and unknown ones every run). A cluster mismatching at two consecutive evaluated roots is older than one round: warn. Resolved only by positive proof (every reported cluster compared again and matching); an unknown or unevaluated reported cluster keeps the incident (API unreachable, no leaf at the chain's root, or an empty inventory: DEFERRED, health message, retried every `full_state_retry_s`; each retry asks one cluster first and stops when the API answers for another `referenceBlock`, i.e. it is behind the chain) |
 
 Bounded cost: one run asks the proof API at most once per cluster; after `proof_api_abort_after` consecutive transport
 failures or `proof_api_run_budget_s` of waiting it asks nothing more in that run, and the clusters not asked are
@@ -133,6 +133,9 @@ class M11UpdaterLiveness(Check):
         "proof_api_abort_after": 3,  # consecutive transport failures that make the API "unreachable" for the run
         "proof_api_run_budget_s": 600,  # wall time one run may spend waiting for the proof API (rest: UNKNOWN)
         "full_state_interval_s": 604_800,
+        # CP3 (coordinator ruling): an undone weekly comparison (DEFERRED: API unreachable or behind the chain) is
+        # retried at most once per this many seconds, not every run (each retry asked every cluster)
+        "full_state_retry_s": 1_800,
         "seconds_per_block": 12,
         "require_inbox": True,  # the revert-rate rule needs the failed-transaction inbox (inbox.path)
         "revert_rate_enabled": True,  # owner D14: false = the revert-rate rule is not evaluated (open one resolved)
@@ -566,10 +569,14 @@ class M11UpdaterLiveness(Check):
                     scope -= {c for c in reported if status(cur, c) is not None and status(cur, c) != "unknown"}
                 elif evals:  # a later root closed: compare again what mismatched or was unknown at the last one
                     scope |= {m["cluster"] for m in evals[-1]["mismatches"]} | {u["cluster"] for u in evals[-1]["unknown"]}
-            if scope is None or scope:
+            tried = ctx.state("state_full_tried") if scope is None else None
+            waiting = tried is not None and ctx.clock() - tried["at"] < self.config["full_state_retry_s"]
+            if not waiting and (scope is None or scope):
                 result = self.compare_leaves(ctx, latest.ref_block, block, only=scope)
                 if result.get("error"):
                     what = "weekly full-state leaf comparison" if scope is None else "leaf re-comparison"
+                    if scope is None:  # retried once per full_state_retry_s, not every run (CP3)
+                        ctx.set_state("state_full_tried", {"at": ctx.clock(), "ref": latest.ref_block})
                     ctx.health("proof-api-weekly", f"M11 {what} at blockNum {latest.ref_block} DEFERRED: "
                                f"{result['error']}; retried every run.", dedup="proof-api-weekly")
                 else:
@@ -578,6 +585,7 @@ class M11UpdaterLiveness(Check):
                     if scope is None:
                         ctx.set_state("state_full", {"ref": latest.ref_block, "commit_block": latest.block,
                                                      "block": block, "at": ctx.clock()})
+                        ctx.set_state("state_full_tried", None)
                     if cur is not None:
                         ev = merge_eval(cur, ev)
                         evals[-1] = ev
@@ -637,6 +645,28 @@ class M11UpdaterLiveness(Check):
         else:
             leaves[ci.cluster_id] = (ci, int(body["effectiveBalance"]))
 
+    def _ask(self, ci):
+        """One proof API request for a cluster not asked in this run (answer cached in `answers`), within the run's
+        bound: after `proof_api_abort_after` consecutive failures or `proof_api_run_budget_s`, `api_stop` is set."""
+        if ci.cluster_id in self.answers:
+            return self.answers[ci.cluster_id]
+        base = self.config["proof_api"].rstrip("/")
+        t0 = self.monotonic()
+        try:
+            self.answers[ci.cluster_id] = self.http_get(f"{base}/proof/{ci.cluster_id}",
+                                                        self.config["proof_api_timeout_s"])
+            self.api_failures = 0
+        except ProofApiError as exc:
+            self.answers[ci.cluster_id] = exc
+            self.api_failures += 1
+            if self.api_failures >= self.config["proof_api_abort_after"]:
+                self.api_stop = f"API unreachable: {self.api_failures} consecutive failures, last {exc}"[:120]
+        finally:
+            self.api_spent += self.monotonic() - t0
+        if self.api_stop is None and self.api_spent >= self.config["proof_api_run_budget_s"]:
+            self.api_stop = f"run budget of {self.config['proof_api_run_budget_s']} s for the proof API spent"
+        return self.answers[ci.cluster_id]
+
     def compare_leaves(self, ctx: Ctx, ref: int, block: int, only: set[str] | None = None) -> dict:
         """Leaf EB (proof API, at blockNum `ref`) vs getEffectiveBalance at `block` for every active ETH cluster with
         validators (or the clusters of `only`). {"checked", "mismatches", "unknown", "gone", "error"}: a cluster
@@ -653,28 +683,23 @@ class M11UpdaterLiveness(Check):
         if not clusters and only is None:  # an empty inventory is a missing input, never "every cluster matches"
             return {"checked": 0, "mismatches": [], "unknown": unknown, "gone": [],
                     "error": "no active ETH cluster in the inventory"}
-        base = self.config["proof_api"].rstrip("/")
         leaves = {}
         answers = self.answers
+        if only is None and clusters and self.api_stop is None:
+            # Probe first (CP3): an API that answers for another root (behind the chain) has no leaf at `ref` for any
+            # cluster; asking all of them would only cost time. DEFERRED, never a match.
+            probe = self._ask(clusters[0])
+            if (isinstance(probe, dict) and "effectiveBalance" in probe
+                    and int(probe.get("referenceBlock", -1)) != ref):
+                return {"checked": 0, "mismatches": [], "unknown": unknown, "gone": [],
+                        "error": f"the proof API answers for referenceBlock {probe.get('referenceBlock')}, not "
+                                 f"blockNum {ref} (probe of one cluster); not compared"}
         for ci in clusters:
             if ci.cluster_id not in answers:
                 if self.api_stop is not None:  # bounded run: UNKNOWN, retried next run (never dropped)
                     unknown.append({"cluster": ci.cluster_id, "reason": f"not asked ({self.api_stop})"[:120]})
                     continue
-                t0 = self.monotonic()
-                try:
-                    answers[ci.cluster_id] = self.http_get(f"{base}/proof/{ci.cluster_id}",
-                                                           self.config["proof_api_timeout_s"])
-                    self.api_failures = 0
-                except ProofApiError as exc:
-                    answers[ci.cluster_id] = exc
-                    self.api_failures += 1
-                    if self.api_failures >= self.config["proof_api_abort_after"]:
-                        self.api_stop = f"API unreachable: {self.api_failures} consecutive failures, last {exc}"[:120]
-                finally:
-                    self.api_spent += self.monotonic() - t0
-                if self.api_stop is None and self.api_spent >= self.config["proof_api_run_budget_s"]:
-                    self.api_stop = f"run budget of {self.config['proof_api_run_budget_s']} s for the proof API spent"
+                self._ask(ci)
             self._use(ci, answers[ci.cluster_id], ref, leaves, unknown)
         if not leaves and clusters:
             return {"checked": 0, "mismatches": [], "unknown": unknown, "gone": gone,

@@ -268,6 +268,31 @@ def test_leaves_at_another_reference_block_are_not_compared(tmp_path):
     assert not u.w.db.meta("check:m11:state_evals")  # no leaf at the right root: DEFERRED, not stored as "all match"
 
 
+def test_cp3_lagging_api_is_probed_once_per_retry_interval_and_compared_once_it_caught_up(tmp_path):
+    """CP3 ruling (local mainnet run: the proof API served the previous root hours after the commit, and every M11 run
+    re-asked all 419 clusters): an undone weekly comparison is retried once per `full_state_retry_s`, each retry asks
+    one cluster first and stops when the API answers for another root. DEFERRED, never "all match"."""
+    u = world(tmp_path, n=5)
+    u.round(updates=(0,))
+    u.api.ref = 1  # the API still answers for an older root (behind the chain)
+    calls = u.api.calls
+    u.close()
+    assert u.api.calls == calls + 1 and not u.w.db.meta("check:m11:state_evals")  # one probe, DEFERRED
+    assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api-weekly%'").fetchone()
+    for _ in range(5):  # M11 runs every 300 s; inside the 1800 s retry interval nothing is asked
+        tick(u.w, u.oc, 1, seconds=300)
+    assert u.api.calls == calls + 1
+    tick(u.w, u.oc, 1, seconds=300)  # the retry interval passed: one more probe, still behind
+    assert u.api.calls == calls + 2 and not u.w.db.meta("check:m11:state_evals")
+    u.api.ref = u.w.db.meta("check:m11:state_full_tried")["ref"]  # the API caught up with the chain's root
+    tick(u.w, u.oc, 1, seconds=1800)
+    assert u.api.calls == calls + 2 + 5  # the full comparison ran once: every cluster
+    assert u.w.db.meta("check:m11:state_evals")[-1]["checked"] == 5 and not u.w.db.meta("check:m11:state_full_tried")
+    tick(u.w, u.oc, 1, seconds=1800)
+    assert u.api.calls == calls + 7  # weekly: not again before full_state_interval_s
+    assert pw(u.w) == []
+
+
 # ---------------------------------------------------------------- V2x.2 thresholds_from_chain
 
 

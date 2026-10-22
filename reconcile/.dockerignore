@@ -1,8 +1,11 @@
+# Build context of the worker image: code only (no venv, tests, local config or state)
 .venv
-data
 tests
-**/__pycache__
+scripts
+data
+__pycache__
 .pytest_cache
 .ruff_cache
 config.json
 *.sqlite*
+*.status.json
