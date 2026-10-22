@@ -402,3 +402,14 @@ def test_qa2_class2_shorter_chain_without_the_trigger_resolves_once_past_the_old
     advance(w)
     w.housekeeping()
     assert not outbox(w, "kind='realert'") and len(sent(w, "m4")) == 2
+
+
+def test_qa2_class10_restart_while_the_deficit_is_held_keeps_it_and_resolves_past_the_old_scan(tmp_path):
+    chain, w, cl, scan = deficit_then_lower(tmp_path, replace=True)
+    w = restart(tmp_path, w, checks=M4, confirmations=12)
+    advance(w)  # a new process: the hold is durable state, the first run is the interval run
+    assert open_incidents(w, "m4") and sent(w, "m4") == [("open", "page")]
+    for _ in range(40):
+        chain.mine()
+        advance(w)
+    assert sent(w, "m4") == [("open", "page"), ("resolved", "info")]

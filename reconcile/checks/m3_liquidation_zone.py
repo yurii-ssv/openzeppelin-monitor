@@ -62,8 +62,9 @@ Lowered checkpoint (QA cp2a-2 H1 shape): a reorg onto a shorter chain, or a node
 the block at which a tracked cluster was last evaluated (`m3_zone.last_block`). An evaluation there is about an
 earlier block, not about that evidence: the row is kept with its onset and zero block (`hold_block` = the
 evidence block) and its incident is neither resolved nor lowered until a run at or above `hold_block`
-evaluates it (then the normal rules apply, with the kept onset). While held, the cluster is in the near set (a
-run at every checkpoint block).
+evaluates it (then the normal rules apply, with the kept onset): the run is about an earlier block than the one
+already evaluated, so it neither lowers nor escalates the incident. While held, the cluster is in the near set
+(a run at every checkpoint block).
 """
 
 from __future__ import annotations
@@ -103,7 +104,6 @@ CREATE TABLE IF NOT EXISTS m3_tuples (
 HISTORY = 8  # validated tuples kept per cluster (candidates after a reorg removes the latest change)
 
 WEI = 10**18
-RANK = {"info": 0, "warn": 1, "page": 2}
 
 
 def eth(wei: int) -> str:
@@ -364,7 +364,7 @@ class M3LiquidationZone(Check):
             sev, title = "warn", f"M3 cluster still liquidatable after {age} blocks (≥ N = {n}): {short(cid)}"
         else:
             sev, title = "info", f"M3 cluster liquidatable (onset at block {row['onset_block']}): {short(cid)}"
-        if hold is not None and RANK[row["severity"]] > RANK[sev]:  # a lowered checkpoint never lowers it
+        if hold is not None and sev != row["severity"]:  # an earlier block than the one evaluated: no change on it
             sev, title = row["severity"], (f"M3 cluster liquidatable ({row['severity']} kept until block {hold} is "
                                            f"re-evaluated): {short(cid)}")
         before = row["not_liquidatable_before"]

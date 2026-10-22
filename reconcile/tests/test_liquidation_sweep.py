@@ -23,9 +23,9 @@ below evidence whose blocks survive, and both add a step against a node lagging 
 framework treats it as a reorg onto a shorter chain). 5. no event lost between sweeps: a liquidation the worker
 already saw (its block was once at or below a checkpoint) and that is above the current checkpoint may hold its
 cluster (UNKNOWN until confirmed) but never lets it resolve, and once its block is confirmed again its hit is
-counted (invariant 3), so a surviving hit is never dropped. 6. a lowered checkpoint never resolves or lowers: while
-the run's block is below the highest block evaluated so far, every incident open at that block stays open at no
-lower severity (M3: unless its cluster was UNKNOWN there).
+counted (invariant 3), so a surviving hit is never dropped. 6. a lowered checkpoint changes nothing it already
+evaluated: while the run's block is below the highest block at which an incident was evaluated open, it stays open
+at that severity (no resolution, no lowering, no escalation on an earlier block; M3: unless UNKNOWN there).
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ class M3Sweep(Base):
                         assert opened[key]["severity"] == "page", f"{where}: {key} at zero not paged"
         for key in held:  # 6. a lowered checkpoint never resolves or lowers an incident open at a higher run block
             b, sev = self.seen[key]
-            assert key in opened and RANK[opened[key]["severity"]] >= RANK[sev], \
+            assert key in opened and opened[key]["severity"] == sev, \
                 f"{where}: {key} open at {sev} at block {b}, now {opened.get(key, {}).get('severity')}"
         for key, inc in opened.items():  # 4. the age window is anchored at the run's checkpoint
             if inc["last_seen_block"] == rb and key not in faulted and self.truth(self.owner(key), rb)["zone"]:
@@ -285,6 +285,7 @@ def test_m3_sweep(tmp_path, seed):
 class M14Sweep(Base):
     def __init__(self, tmp_path, seed, confirmations=0):
         self.rng = random.Random(f"m14-sweep:{seed}")
+        self.keepers = random.Random(f"m14-keepers:{seed}")  # competing liquidations racing one deposit (QA2 M1)
         self.tmp = tmp_path
         self.conf = confirmations
         self.path = tmp_path / "failed-tx.jsonl"
@@ -356,16 +357,23 @@ class M14Sweep(Base):
             liq0 = st["active"] and st["count"] > 0 and b0 < self.threshold(version, chain.burn_at(cid, B - 1))
             total = sum(d[3] for d in self.deposits if d[2] == cid and d[0] == B and d[1] < pos)
             unknown = not ((liq0 and total < burn) or (not liq0 and total >= burn))
+        # other keepers' liquidations right after it, with the same tuple: the same deposits precede them
+        racers = [failed_liquidation(chain, cl, self.path, owner, ops, fn=fn, tuple_=old)[0]
+                  for _ in range(self.keepers.choice([0, 0, 1, 2]))]
         if mode == "same_topup":
             self.deposit(owner, ops, 10**18, mine=False)
         elif mode == "after":
             self.deposit(owner, ops, 1, mine=False)
         if r.random() < 0.2:
             self.unreadable[tx] = chain.txs.pop(tx)
+        for t in racers:
+            if self.keepers.random() < 0.2:
+                self.unreadable[t] = chain.txs.pop(t)
         chain.mine()
-        self.labels.append({"block": B, "cid": "0x" + cid.hex(), "q": q and not unknown, "tx": tx,
-                            "unknown": unknown, "dep": dust[-1][:2] if dust else None,
-                            "seq": len(self.labels) + len(self.orphans)})
+        for t in [tx] + racers:  # one time per deposit, however many liquidations it made revert
+            self.labels.append({"block": B, "cid": "0x" + cid.hex(), "q": q and not unknown, "tx": t,
+                                "unknown": unknown, "dep": dust[-1][:2] if dust else None,
+                                "seq": len(self.labels) + len(self.orphans)})
 
     def act(self):
         r, chain, cl = self.rng, self.chain, self.cl
@@ -402,7 +410,7 @@ class M14Sweep(Base):
             self.w = restart(self.tmp, self.w, checks=("m14",), inbox={"path": str(self.path)},
                              confirmations=self.conf)
         elif kind == "lag":
-            self.lag = r.choice([2, 5, self.conf + 4])
+            self.lag = r.choice([2, 5, self.conf + 4, 300, 1_000])  # also across a whole burn to zero
         else:
             chain.mine()
         self.snapshot()
@@ -455,7 +463,7 @@ class M14Sweep(Base):
         for key, (b, sev) in self.seen.items():  # 6. a lowered checkpoint never resolves or lowers
             if rb < b:
                 held.add(key)
-                assert key in opened and RANK[opened[key]["severity"]] >= RANK[sev], \
+                assert key in opened and opened[key]["severity"] == sev, \
                     f"{where}: {key} open at {sev} at block {b}, now {opened.get(key, {}).get('severity')}"
         for row in new_outbox(w, "m14", since):
             if row["kind"] == "resolved":  # 1

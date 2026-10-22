@@ -82,8 +82,8 @@ every open key) at its severity, and is re-derived by the first run after the in
 (`canonical = 1`; the check runs at every new checkpoint block while such an entry waits, `near_set`), or
 dropped once its block is found orphaned (`canonical = 0`), which is then positive proof. Likewise an open
 cluster last evaluated above the reorg run's block (`m14_open.block`: e.g. its computed zero was seen there, or
-a node lagging behind the checkpoint lowered it) is held (`m14_open.hold_block`): neither resolved nor lowered
-until a run at or above that block evaluates it.
+a node lagging behind the checkpoint lowered it) is held (`m14_open.hold_block`): neither resolved, lowered nor
+escalated (an earlier block than the one already evaluated) until a run at or above that block evaluates it.
 """
 
 from __future__ import annotations
@@ -328,9 +328,6 @@ class M14DepositFrontrun(Check):
             # evaluated above this run's block (a lowered checkpoint): held, never resolved or lowered below it
             ctx.db.conn.execute("UPDATE m14_open SET hold_block = MAX(COALESCE(hold_block, 0), block) WHERE block > ?",
                                 (block,))
-        for p in ctx.db.conn.execute("SELECT * FROM m14_pending WHERE block_time <= ?", (now - window,)).fetchall():
-            ctx.db.conn.execute("DELETE FROM m14_pending WHERE inbox_id=?", (p["inbox_id"],))
-            notes.append(f"{p['tx_hash']} (block {p['block']}): left the {window} s window unevaluated ({p['reason']})")
         rows = []
         if A is not None:  # entries delivered before the reorg whose block is still canonical: re-derive
             rows += ctx.db.conn.execute("SELECT * FROM inbox WHERE canonical = 1 AND resolved = 1 AND block > ? "
@@ -357,6 +354,10 @@ class M14DepositFrontrun(Check):
                                f"({next(u.reason for u in unknown if u is not None and u.cluster is None)}); it could "
                                f"support any reorg key, so the run is retried (README §6.2)")
 
+        # after the retries, so an entry re-derived in this run with its block's time expires in this run too
+        for p in ctx.db.conn.execute("SELECT * FROM m14_pending WHERE block_time <= ?", (now - window,)).fetchall():
+            ctx.db.conn.execute("DELETE FROM m14_pending WHERE inbox_id=?", (p["inbox_id"],))
+            notes.append(f"{p['tx_hash']} (block {p['block']}): left the {window} s window unevaluated ({p['reason']})")
         self.fill_times(ctx)
         pending = [dict(r) for r in ctx.db.conn.execute("SELECT * FROM m14_pending ORDER BY inbox_id")]
         held = {r[0] for r in ctx.db.conn.execute("SELECT cluster_id FROM m14_open WHERE hold_block > ?", (block,))}
@@ -430,15 +431,21 @@ class M14DepositFrontrun(Check):
             sev = "warn"
         else:
             sev = "info"
-        if (maybe or hold) and prev and RANK[prev] > RANK[sev]:
-            sev = prev  # a pending entry or the held evidence may restore the count or the zero: no lower severity
+        if maybe and prev and RANK[prev] > RANK[sev]:
+            sev = prev  # a pending entry may restore the count or the zero: no lower severity without proof
+        if hold is not None and prev:
+            sev = prev  # an earlier block than the one already evaluated: neither lower nor escalate on it
         # a new time (deposit) re-sends an info; before the last_deposit column, the last hit stood for it
         new_time = (last["deposit_tx"] != row["last_deposit"] if row and row["last_deposit"] is not None else
                     last["tx_hash"] != (row["last_hit"] if row else None))
+        seen_hit, seen_deposit = last["tx_hash"], last["deposit_tx"]
+        if (maybe or hold is not None) and row and row["last_hit"] and row["last_hit"] not in {h["tx_hash"] for h in hits}:
+            # the last hit sent is pending re-derivation (not gone): not a new time, and remembered until it is back
+            new_time, seen_hit, seen_deposit = False, row["last_hit"], row["last_deposit"]
         ctx.db.conn.execute("INSERT OR REPLACE INTO m14_open (cluster_id, severity, block, owner, operator_ids, "
                             "last_hit, last_deposit, hold_block) VALUES (?,?,?,?,?,?,?,?)",
                             (cid, sev, block if hold is None else row["block"], owner, json.dumps(ops),
-                             last["tx_hash"], last["deposit_tx"], hold))
+                             seen_hit, seen_deposit, hold))
         lines = []
         for dep, hs in list(times.items())[-10:]:
             d = hs[0]

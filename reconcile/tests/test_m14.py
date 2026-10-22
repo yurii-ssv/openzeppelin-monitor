@@ -879,7 +879,7 @@ def attacks_then_shorter_chain(chain, w, cl, path, attacks, orphan=False):
     return X, txs
 
 
-@pytest.mark.parametrize("repeat,attacks,severity", [(1, 1, "warn"), (3, 3, "warn"), (3, 1, "info")])
+@pytest.mark.parametrize("repeat,attacks,severity", [(1, 1, "warn"), (3, 3, "warn"), (3, 1, "info"), (3, 2, "info")])
 def test_qa2_h1_shorter_chain_keeps_the_key_and_re_derives_the_surviving_hit(tmp_path, repeat, attacks, severity):
     """QA2 H1: the entries above the lowered checkpoint are neither re-derivable (their block is not confirmed yet) nor
     absent: the key is kept at its severity (UNKNOWN, health) and the hits are re-derived once the checkpoint confirms
@@ -944,6 +944,33 @@ def test_qa2_h1_second_reorg_below_an_awaiting_entry_keeps_it(tmp_path):
     chain.mine(30)
     advance(w)
     assert [h["tx_hash"] for h in hits(w)] == txs and sent(w, "m14") == [("open", "warn")]
+
+
+def test_qa2_h1_lagging_node_below_the_deposit_keeps_the_hit_until_its_logs_are_rescanned(tmp_path):
+    """A node lagging below even the deposit's block: the deposit log is deleted with everything above the new
+    checkpoint, so deriving the entry before its block is confirmed again would find no deposit and drop the hit."""
+    from fixtures_liquidation import lagging_node
+
+    chain, w, cl, path = make(tmp_path, cfg={"m14": {"repeat_count": 1}}, confirmations=12)
+    chain.mine(12)
+    advance(w)
+    old = cl.tuple()
+    cl.deposit(value=1)
+    D = chain.sealed
+    tx, _ = failed_liquidation(chain, cl, path, tuple_=old)
+    chain.mine(20)
+    advance(w)
+    assert sent(w, "m14") == [("open", "warn")]
+    lagging_node(chain, w, chain.sealed - D + 3)
+    assert w.checkpoint()["block"] < D and not hits(w)
+    chain.mine()
+    w.clock.advance(600)
+    lagging_node(chain, w, chain.sealed - D + 2)  # still lagging: a run below the deposit that is not a reorg run
+    assert w.checkpoint()["block"] < D and "reorg" not in w.db.meta("run:m14")["reasons"]
+    assert open_incidents(w, "m14")[cid_hex()]["severity"] == "warn"
+    chain.mine(20)
+    advance(w)
+    assert [h["tx_hash"] for h in hits(w)] == [tx] and sent(w, "m14") == [("open", "warn")]
 
 
 def test_qa2_m1_one_deposit_reverting_three_liquidations_is_one_time(tmp_path):
@@ -1030,3 +1057,62 @@ def test_qa2_class2_lowered_checkpoint_keeps_a_zero_page_and_never_re_escalates(
     assert w.checkpoint()["block"] > H + 80
     assert sent(w, "m14", "o.kind != 'realert'") == [("open", "info"), ("escalate", "page")]
     assert open_incidents(w, "m14")[cid_hex(OWNER, OPS2)]["severity"] == "page"
+
+
+def test_qa2_class10_restart_while_a_zero_page_is_held_keeps_it(tmp_path):
+    from fixtures_liquidation import lagging_node
+
+    chain, w, cl, path = make(tmp_path, confirmations=12)
+    cl.create(OWNER, OPS2, balance=50 * BURN)
+    chain.mine(12)
+    advance(w)
+    frontrun(chain, cl, path, owner=OWNER, ops=OPS2)
+    H = chain.sealed
+    for _ in range(80):
+        chain.mine()
+        w.clock.advance(600)
+        advance(w)
+    w.clock.advance(600)
+    lagging_node(chain, w, chain.sealed - (H + 30))
+    w = restart(tmp_path, w, checks=M14, inbox={"path": str(path)}, confirmations=12)
+    lagging_node(chain, w, chain.sealed - (H + 31))
+    assert open_incidents(w, "m14")[cid_hex(OWNER, OPS2)]["severity"] == "page"
+    for _ in range(70):
+        chain.mine()
+        w.clock.advance(600)
+        advance(w)
+    assert sent(w, "m14", "o.kind != 'realert'") == [("open", "info"), ("escalate", "page")]
+
+
+def test_qa2_class4_lowered_checkpoint_does_not_escalate_on_an_earlier_block(tmp_path):
+    """Found by the sweep (seed 10): an earlier block than the one already evaluated shows the cluster at computed zero
+    (before a top-up the worker already saw). Paging on it would alert on superseded state: the incident is frozen until
+    the checkpoint is back at its evidence."""
+    from fixtures_liquidation import lagging_node
+
+    chain, w, cl, path = make(tmp_path, confirmations=12)
+    cl.create(OWNER, OPS2, balance=100 * BURN)
+    chain.mine(12)
+    advance(w)
+    frontrun(chain, cl, path, owner=OWNER, ops=OPS2)
+    chain.mine(12)
+    advance(w)
+    assert sent(w, "m14") == [("open", "info")]
+    for _ in range(130):  # burns to zero; scanned (recorded) but not evaluated: no interval, no inbox entry
+        chain.mine()
+        advance(w)
+    Z = w.checkpoint()["block"]
+    cl.deposit(OWNER, OPS2, value=500 * BURN)  # a top-up: no longer at zero
+    frontrun(chain, cl, path, owner=OWNER, ops=OPS2)
+    chain.mine(12)
+    w.clock.advance(600)
+    advance(w)
+    assert sent(w, "m14") == [("open", "info"), ("update", "info")]
+    w.clock.advance(600)
+    lagging_node(chain, w, chain.sealed - Z - 5)  # the checkpoint falls back into the zero period
+    assert w.checkpoint()["block"] <= Z
+    assert sent(w, "m14") == [("open", "info"), ("update", "info")]
+    for _ in range(30):
+        chain.mine()
+        advance(w)
+    assert sent(w, "m14") == [("open", "info"), ("update", "info")] and len(hits(w)) == 2
