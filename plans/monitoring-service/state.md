@@ -9,7 +9,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
 - Mode: attended; resumed by Marco (event-0055)
 - Overall acceptance: pending
-- Current checkpoint: CP3
+- Current checkpoint: CP4 (preparation docs, then final QA; soak running)
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
 
 | Task | State | Active dispatch / receipt | Frozen head | Owner | Evidence / next action |
@@ -22,7 +22,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2e Legacy SSV (M6, M7) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `45cc774`), integrated | settled+released | `45cc774` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; N4 residual recorded |
-| CP3 Integration, compose, fork e2e | IMPLEMENTED (repair 1) — QA 2 RUNNING on Opus (head `c3e1234`) | QA task `task_76fb1e0cd4af`/`ctx_c0f064ab122e` | `c3e1234` | Claude Opus 5.5 high (QA) | wait worker_done |
+| CP3 Integration, compose, fork e2e | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `c3e1234`), integrated (`246b0e3`) | settled+released | `c3e1234` | Claude Opus 5.5 high (QA) | soak running (T0 2026-10-22T22:51Z, T48 2026-10-24T22:51Z) |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
