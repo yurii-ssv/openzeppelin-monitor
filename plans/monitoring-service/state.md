@@ -9,7 +9,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
 - Mode: attended; resumed by Marco (event-0055)
 - Overall acceptance: pending
-- Current checkpoint: CP4 (preparation docs, then final QA; soak running)
+- Current checkpoint: CP4 final QA part A running (candidate `047e9ad`); part B (V4.2) after the soak T48 2026-10-24T22:51Z
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
 
 | Task | State | Active dispatch / receipt | Frozen head | Owner | Evidence / next action |
