@@ -17,6 +17,7 @@ from harness import Capture, make_worker, outbox
 from checks.base import Check, Every, Finding, OnEvents
 from eb_storage import u256
 from metrics import render
+from rpc import RpcError
 
 LEVEL_SLOT = 0xD17  # a storage word: 1 = the level condition holds at that block
 
@@ -385,6 +386,338 @@ def test_seeded_backfill_sweep(tmp_path, seed):
     assert not any(f"event at {b}" in t for t in texts for b in range(start, caught_up + 1))
     assert w.db.conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0] == len(chain.logs)
     assert isinstance(w.notifier, Capture)
+
+
+# ---------------------------------------------------------------- QA CP3 attempt 1 F1: per-check silent phase
+
+
+class Flaky(Check):
+    """A check whose silent run fails while `fail` is set (an input that stays broken for a while)."""
+
+    id = "flaky"
+
+    def __init__(self):
+        super().__init__({}, {})
+        self.schedule = (Every(60),)
+        self.fail = True
+
+    def run(self, ctx, block):
+        if self.fail:
+            raise RuntimeError("cannot evaluate (e.g. an input that stays broken for a while)")
+        return []
+
+
+def with_flaky(tmp_path, chain, start, checks):
+    _, w = make_worker(tmp_path, checks, chain=chain, clock=FakeClock(), start_block=start, activation_block=start,
+                       max_log_range=4, backfill={"enabled": True, "live_within_blocks": 0, "blocks_per_step": 10})
+    return w
+
+
+def test_live_event_while_another_check_blocks_go_live_is_paged(tmp_path):
+    """D17: alerting starts at the first live block after catch-up. A page-worthy event mined AFTER the checkpoint
+    caught up, while one other check keeps failing its silent run, is sent (red on 91ca3a7: opened silently, never
+    sent)."""
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=30)
+    watch, flaky = Watch(), Flaky()
+    w = with_flaky(tmp_path, chain, start, [watch, flaky])
+    for _ in range(10):
+        w.step()
+    assert w.backfilling and "watch" in w.phase()["evaluated"] and "flaky" not in w.phase()["evaluated"]
+    caught = w.checkpoint()["block"]
+    assert w.phase()["history_block"] == caught
+    fee_event(chain)  # live blocks after the catch-up: a page-worthy event
+    ev_block = chain.number
+    chain.mine()
+    for _ in range(3):
+        chain.mine()
+        w.clock.advance(60)
+        w.step()
+    assert w.checkpoint()["block"] > ev_block > caught
+    assert w.backfilling and any(f"event at {ev_block}" in r["text"] for r in sent(w))  # sent while flaky fails
+    assert any("check-error" in r["text"] and "flaky" in r["text"] for r in outbox(w, "kind='health'"))
+    flaky.fail = False  # the broken input recovers
+    for _ in range(5):
+        chain.mine()
+        w.clock.advance(3600)
+        w.step()
+    assert not w.backfilling
+    assert sum(f"event at {ev_block}" in r["text"] for r in sent(w)) == 1, sent(w)
+
+
+def test_m13_top_up_after_catch_up_while_another_check_blocks_go_live(tmp_path):
+    """The same with the real M13 check: a retired-key top-up mined after the checkpoint caught up."""
+    from fixtures_wallets import FUNDER, RETIRED_SLOT4, WalletChain, eth, wallet_worker
+
+    chain = WalletChain()
+    chain.set_balance(FUNDER, eth(100))
+    chain.set_balance(RETIRED_SLOT4, eth(0.01))
+    chain.mine()
+    start = chain.number
+    for _ in range(20):
+        chain.mine()
+    chain, w = wallet_worker(tmp_path, ["m13"], chain=chain, start_block=start, activation_block=start,
+                             backfill={"enabled": True, "live_within_blocks": 0, "blocks_per_step": 10})
+    flaky = Flaky()
+    w.checks["flaky"] = flaky
+    for _ in range(6):
+        w.clock.advance(60)
+        w.step()
+    assert w.backfilling and "m13" in w.phase()["evaluated"], w.phase()
+    chain.send(FUNDER, RETIRED_SLOT4, gas_used=21_000, value=eth(0.5))
+    for _ in range(3):
+        chain.mine()
+        w.clock.advance(60)
+        w.step()
+    flaky.fail = False
+    for _ in range(5):
+        chain.mine()
+        w.clock.advance(600)
+        w.step()
+    assert not w.backfilling
+    assert outbox(w, "severity='page'"), w.db.conn.execute("SELECT key, notify, state FROM incidents").fetchall()
+
+
+def test_m13_top_up_and_drain_after_catch_up_while_another_check_blocks_go_live(tmp_path):
+    """A retired key topped up and drained in the next block, both after the checkpoint caught up while another
+    check keeps failing its silent run: paged as in live mode (red on 91ca3a7: no message)."""
+    from fixtures_wallets import FUNDER, RETIRED_SLOT4, WalletChain, eth, wallet_worker
+
+    def run(blocked):
+        chain = WalletChain()
+        chain.set_balance(FUNDER, eth(100))
+        chain.set_balance(RETIRED_SLOT4, eth(0.01))
+        chain.mine()
+        start = chain.number
+        for _ in range(20):
+            chain.mine()
+        p = tmp_path / ("b" if blocked else "l")
+        p.mkdir()
+        chain, w = wallet_worker(p, ["m13"], chain=chain, start_block=start, activation_block=start,
+                                 backfill={"enabled": True, "live_within_blocks": 0, "blocks_per_step": 10})
+        flaky = Flaky()
+        flaky.fail = blocked
+        w.checks["flaky"] = flaky
+        for _ in range(6):
+            w.clock.advance(60)
+            w.step()
+        assert w.backfilling == blocked
+        chain.send(FUNDER, RETIRED_SLOT4, gas_used=21_000, value=eth(0.5))
+        chain.mine()
+        chain.send(RETIRED_SLOT4, "0xaee058cca5eed5470b4b48c159045b7c25ddb80f", gas_used=21_000, value=eth(0.505))
+        for _ in range(3):
+            chain.mine()
+            w.clock.advance(60)
+            w.step()
+        flaky.fail = False
+        for _ in range(5):
+            chain.mine()
+            w.clock.advance(600)
+            w.step()
+        assert not w.backfilling
+        return [(r["severity"], r["kind"]) for r in outbox(w, "kind NOT IN ('health','digest')")]
+
+    control = run(False)
+    assert ("page", "open") in control  # live mode pages
+    assert run(True) == control, "top-up after the catch-up not paged as in live mode"
+
+
+def test_restart_mid_scan_and_mid_silent_evaluation_stays_silent_then_live_once(tmp_path):
+    """Restart (new Worker on the same database) mid-scan and again between two checks' silent runs; history has
+    events and a level that turned on and stays on: nothing before the first block after the catch-up, the level
+    once at the first live run, a live event once, no history event ever."""
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=45, events_at={4, 20, 33}, level_at={10})
+
+    def new(fail_flaky):
+        flaky = Flaky()
+        flaky.fail = fail_flaky
+        return with_flaky(tmp_path, chain, start, [Watch(), flaky])
+
+    w = new(True)
+    w.step()
+    w.step()
+    assert w.backfilling and w.checkpoint()["block"] < chain.sealed
+    w = new(True)  # restart mid-scan
+    for _ in range(6):
+        w.clock.advance(60)
+        w.step()
+    assert w.backfilling and "watch" in w.phase()["evaluated"] and "flaky" not in w.phase()["evaluated"]
+    assert sent(w) == []
+    w = new(False)  # restart between the silent runs; flaky now works
+    w.clock.advance(60)
+    w.step()
+    assert not w.backfilling and sent(w) == []  # no block after the caught-up checkpoint yet
+    chain.mine()
+    w.clock.advance(3600)
+    w.step()
+    msgs = [r["text"].split("\n")[0] for r in sent(w)]
+    assert len(msgs) == 1 and "] level —" in msgs[0], msgs
+    fee_event(chain)
+    chain.mine()
+    w.clock.advance(60)
+    w.step()
+    for _ in range(3):
+        chain.mine()
+        w.clock.advance(3600)
+        w.step()
+    msgs = [r["text"].split("\n")[0] for r in sent(w)]
+    assert len(msgs) == 2 and "event at" in msgs[1], msgs
+    assert chain.storage(LEVEL_SLOT, chain.number) == 1
+
+
+def test_one_transient_rpc_error_in_a_silent_run_silences_the_next_live_event(tmp_path):
+    """A single RpcError in one check's silent run (public-RPC 429s were seen in the CP3 local run): the event mined
+    in the next block, after the catch-up, is sent (red on 91ca3a7: evaluated silently, never sent)."""
+
+    class OnceRpcFail(Flaky):
+        id = "oncerpc"
+
+        def run(self, ctx, block):
+            if self.fail:
+                self.fail = False
+                raise RpcError("transport error: all 3 RPC endpoints failed (HTTP 429)", transport=True)
+            return []
+
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=30)
+    w = with_flaky(tmp_path, chain, start, [Watch(), OnceRpcFail()])
+    while w.checkpoint()["block"] < chain.sealed or "watch" not in w.phase().get("evaluated", ()):
+        w.step()
+    assert w.backfilling and w.rpc_failures == 1
+    fee_event(chain)  # mined after the checkpoint caught up
+    ev = chain.number
+    chain.mine()
+    w.clock.advance(30)
+    w.step()  # oncerpc now succeeds: its silent run is pinned to the caught-up checkpoint, below the event
+    assert not w.backfilling and w.phase()["history_block"] < ev <= w.phase()["caught_up_block"]
+    for _ in range(3):
+        chain.mine()
+        w.clock.advance(3600)
+        w.step()
+    assert sum(f"event at {ev}" in r["text"] for r in sent(w)) == 1, sent(w)
+
+
+def test_lag_alert_starts_at_the_caught_up_checkpoint_while_a_check_still_fails(tmp_path):
+    """The lag health alert is off only while history is still being stored, not while a caught-up backfill waits
+    for a check that keeps failing its silent run."""
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=30)
+    _, w = make_worker(tmp_path, [Watch(), Flaky()], chain=chain, clock=FakeClock(), start_block=start,
+                       activation_block=start, max_log_range=4, lag_alert_blocks=5,
+                       backfill={"enabled": True, "live_within_blocks": 0, "blocks_per_step": 10})
+    for _ in range(4):
+        w.step()
+    assert w.backfilling and w.phase()["history_block"] is not None
+    assert not any("lag" in r["text"] for r in outbox(w, "kind='health'"))
+    real = w.scan
+    w.scan = lambda: 0  # the scan stalls (the checkpoint does not advance) while the chain moves on
+    chain.mine(10)
+    w.step()
+    w.scan = real
+    assert any(": lag —" in r["text"] for r in outbox(w, "kind='health'")), outbox(w, "kind='health'")
+
+
+class Failing(Check):
+    """Fails one run per attempt while `state["left"]` > 0: an exception, or a transport RpcError (`state["rpc"]`).
+    The state outlives a restart (a new instance on the same dict)."""
+
+    id = "failing"
+
+    def __init__(self, state):
+        super().__init__({}, {})
+        self.schedule = (Every(60),)
+        self.state = state
+        self.runs: list[int] = []
+
+    def run(self, ctx, block):
+        if self.state["left"] > 0:
+            self.state["left"] -= 1
+            if self.state["rpc"]:
+                raise RpcError("transport error: all 3 RPC endpoints failed (HTTP 429)", transport=True)
+            raise RuntimeError("cannot evaluate")
+        self.runs.append(block)
+        return []
+
+
+def opened(w) -> list[str]:
+    """Incident keys of the `open` messages sent so far, in order."""
+    return [r[0] for r in w.db.conn.execute(
+        "SELECT i.key FROM outbox o JOIN incidents i ON i.id = o.incident_id WHERE o.kind = 'open' "
+        "ORDER BY o.created_at, o.rowid")]
+
+
+@pytest.mark.parametrize("seed", range(24))
+def test_seeded_backfill_sweep_with_a_check_failing_its_silent_run(tmp_path, seed):
+    """The sweep above with a second check whose silent run fails (an exception or a transport RpcError) for some
+    steps after the catch-up, while live blocks with events are mined and the worker restarts. Invariants: nothing
+    but health is sent until a block after the caught-up checkpoint; the healthy check alerts from its first run
+    after its own silent evaluation, whatever the failing check does (after every step, every event after the
+    caught-up checkpoint is sent, exactly once); a history event is never sent; the failing check raises
+    check-error health, evaluates history pinned to the caught-up checkpoint, then runs live; the level is
+    reported iff it still holds."""
+    rnd = random.Random(1000 + seed)
+    chain = FakeChain()
+    start = chain.number
+    n = rnd.randint(20, 70)
+    history(chain, n=n, events_at=set(rnd.sample(range(n), rnd.randint(0, 5))),
+            level_at=set(rnd.sample(range(n), rnd.randint(0, 3))))
+    bf = {"enabled": True, "live_within_blocks": rnd.choice([0, 2, 12]), "blocks_per_step": rnd.choice([3, 10, 1000])}
+    clock = FakeClock()
+    fails = {"left": rnd.randint(1, 6), "rpc": rnd.random() < 0.5}
+    failing_first = rnd.random() < 0.5
+
+    def new():
+        watch, failing = Watch(), Failing(fails)
+        _, w = make_worker(tmp_path, [failing, watch] if failing_first else [watch, failing], chain=chain,
+                           clock=clock, start_block=start, activation_block=start, max_log_range=4, backfill=bf)
+        return w, failing
+
+    def live_events_scanned(w, history_block):
+        cp = w.checkpoint()["block"]
+        return sorted(f"ev:{b}" for b in {int(lg["blockNumber"], 16) for lg in chain.logs} if history_block < b <= cp)
+
+    w, failing = new()
+    restarts = set(rnd.sample(range(25), 3))
+    history_block = None  # the caught-up checkpoint: where the healthy check evaluated history
+    i = 0
+    while w.backfilling:
+        if i in restarts:
+            w.db.conn.close()
+            w, failing = new()
+        if history_block is not None and rnd.random() < 0.7:  # live blocks while the failing check holds the phase
+            if rnd.random() < 0.6:
+                fee_event(chain)
+            chain.mine(rnd.randint(1, 2))
+        clock.advance(60)
+        w.step()
+        i += 1
+        assert i < 200
+        if history_block is None and w.phase().get("evaluated"):
+            history_block = w.checkpoint()["block"]
+        if history_block is None:
+            assert sent(w) == []
+        else:  # the healthy check is live after its silent run, the failing one does not hold it back
+            assert sorted(k for k in opened(w) if k.startswith("ev:")) == live_events_scanned(w, history_block)
+    if not fails["rpc"]:
+        assert any("check-error" in r["text"] for r in outbox(w, "kind='health'"))
+    for _ in range(2):  # every check's first live run, then a full interval run
+        chain.mine()
+        clock.advance(3600)
+        w.step()
+    events = [k for k in opened(w) if k.startswith("ev:")]
+    assert len(events) == len(set(events)) and sorted(events) == live_events_scanned(w, history_block)
+    assert w.phase()["history_block"] == history_block
+    assert failing.runs[0] == history_block < failing.runs[1]  # history pinned to the caught-up checkpoint, then live
+    cp = w.checkpoint()["block"]
+    level = chain.storage(LEVEL_SLOT, cp) == 1
+    inc = w.db.conn.execute("SELECT notify, alerts FROM incidents WHERE key='level' AND state='open'").fetchone()
+    assert (inc is not None and inc["notify"] == 1 and inc["alerts"] >= 1) if level else inc is None
+    assert w.db.conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0] == len(chain.logs)
 
 
 # ---------------------------------------------------------------- operator commands

@@ -38,6 +38,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass, replace
+from itertools import takewhile
 from pathlib import Path
 
 import checks as registry
@@ -105,10 +106,12 @@ DEFAULTS = {
     "reorg_search_depth": 256,
 }
 
-# Silent backfill (D17): history from start_block is stored and evaluated without alerting; alerting starts at
-# the first step after the checkpoint caught up (within `live_within_blocks` of the scan target) and every check
-# committed one silent run there. `blocks_per_step` bounds the scan per step while backfilling (progress in
-# `status`, the status file and /metrics stay fresh).
+# Silent backfill (D17): history from start_block is stored and evaluated without alerting. The first checkpoint
+# within `live_within_blocks` of the scan target is the caught-up checkpoint (`history_block`): every check
+# evaluates history silently once, pinned there; blocks after it are live. A check alerts from its first run after
+# its own silent evaluation, whatever the other checks do (one that keeps failing its silent run raises check-error
+# health and does not hold the others back). `blocks_per_step` bounds the scan per step while backfilling (progress
+# in `status`, the status file and /metrics stay fresh).
 BACKFILL_DEFAULTS = {"enabled": True, "live_within_blocks": 12, "blocks_per_step": 50_000}
 
 TOP_LEVEL_KEYS = set(DEFAULTS) | {
@@ -141,6 +144,7 @@ class Worker:
         self.cfg, self.rpc, self.db, self.clock = cfg, rpc, db, clock
         self.notifier = notifier
         self.rpc_failures = 0
+        self.rpc_outage_since = None  # clock of the first failed step of the current outage
         self.bootstrapped = False
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
@@ -239,14 +243,27 @@ class Worker:
             return 0
         return self.cfg.poll_interval_s
 
+    def _history_block(self, block: int) -> int:
+        """The caught-up checkpoint (D17): history ends there. Set once, at the first caught-up step."""
+        ph = self.phase()
+        if ph.get("history_block") is None:
+            with self.db.tx():  # a backfill phase written before CP3 repair 1: its evaluated checks still run live
+                ph = {**ph, "history_block": block, "first_live": ph.get("first_live", ph.get("evaluated", []))}
+                self.db.set_meta("phase", ph)
+            log.info("caught up at block %d: history ends there; each check alerts after its silent run", block)
+        return ph["history_block"]
+
     def _go_live(self, block: int) -> None:
-        """Every check has evaluated history silently at a caught-up checkpoint: alerting starts at the next
-        step. Each check's first live run is a forced full run (reasons `live`, `force`), so a condition still
-        true there is reported (and sent) while one that only existed in history stays unsent."""
+        """Every check has evaluated history silently at the caught-up checkpoint: the backfill phase ends. Each
+        check's first run after its own silent evaluation is a forced full run (reasons `live`, `force`), at a
+        block after the caught-up checkpoint, so a condition still true there is reported (and sent) while one
+        that only existed in history stays unsent; the checks that have not had it yet keep it."""
+        ph = self.phase()
         with self.db.tx():
             self.db.set_meta("phase", {"phase": "live", "since": self.clock(), "caught_up_block": block,
-                                       "first_live": sorted(self.checks)})
-        log.info("backfill complete at block %d: alerting starts with the next step", block)
+                                       "history_block": ph["history_block"], "first_live": ph.get("first_live", [])})
+        log.info("backfill complete at block %d: every check evaluated history at block %d", block,
+                 ph["history_block"])
 
     def _cursor(self, check_id: str) -> tuple[int, int]:
         return tuple(self.db.meta(f"cursor:events:{check_id}", [self.cfg.start_block - 1, END_OF_BLOCK]))
@@ -520,15 +537,22 @@ class Worker:
         backfilling = self.backfilling
         if backfilling and not self.caught_up(block):
             return  # history is still being stored; checks evaluate it once the checkpoint caught up
+        history = self._history_block(block) if backfilling else self.phase().get("history_block")
         self.reload_params(block)
         now = self.clock()
         first_rpc_error = None
         for check in self.checks.values():
-            reasons = self.due(check, block, now, force)
-            if not reasons:
-                continue
             try:
-                self.run_check(check, block, reasons)
+                if backfilling and check.id not in self.phase().get("evaluated", ()):
+                    # its silent evaluation of history, pinned to the caught-up checkpoint even when it is retried
+                    # later (a failed run): the blocks after it are evaluated live by the run below
+                    at = min(history, block)
+                    self.run_check(check, at, self.due(check, at, now, force))
+                if history is not None and block <= history:
+                    continue  # alerting starts at the first block after the caught-up checkpoint
+                reasons = self.due(check, block, now, force)
+                if reasons:
+                    self.run_check(check, block, reasons)
             except RpcError as exc:
                 first_rpc_error = first_rpc_error or exc
                 self._run_failed(check, exc, health=False)
@@ -548,6 +572,7 @@ class Worker:
         cursor = self._cursor(check.id)
         wants_inbox = any(isinstance(s, OnInbox) for s in check.schedules())
         entries = self.inbox.pending(self.db.meta(f"cursor:inbox:{check.id}", 0)) if wants_inbox and self.inbox else []
+        entries = list(takewhile(lambda e: e.block <= block, entries))  # a run pinned below the checkpoint
         chain = Chain(self.rpc, block, self.cfg.max_log_range)
         events = (lambda: self.db.events_after(cursor, block, kinds)) if kinds else None
         reorg_ancestor = self.db.meta(f"reorg:{check.id}")
@@ -567,9 +592,10 @@ class Worker:
                 if f.check != check.id:
                     raise ValueError(f"check {check.id} returned a finding for {f.check!r}")
             ph = self.phase()
-            silent = ph["phase"] == "backfill"
-            # Backfill (D17): incidents are opened, escalated and resolved without a message; one still reported
-            # by a live run is sent then (an unsent incident is "unmuted" by its first notifying finding).
+            silent = ph["phase"] == "backfill" and check.id not in ph.get("evaluated", ())
+            # The check's silent evaluation of history (D17): incidents are opened, escalated and resolved without
+            # a message; one still reported by a live run is sent then (an unsent incident is "unmuted" by its
+            # first notifying finding).
             self.alerts.apply([replace(f, notify=False) if silent and not f.resolve else f for f in findings], block)
             if reorg_ancestor is not None:  # the reorg re-find rule (checks/README.md §6.2)
                 self.alerts.resolve_not_refound(check.id, reorg_keys - {f.key for f in findings}, block,
@@ -582,7 +608,8 @@ class Worker:
             if entries:
                 self.db.set_meta(f"cursor:inbox:{check.id}", entries[-1].id)
             if silent:
-                self.db.set_meta("phase", {**ph, "evaluated": sorted({*ph.get("evaluated", ()), check.id})})
+                self.db.set_meta("phase", {**ph, "evaluated": sorted({*ph.get("evaluated", ()), check.id}),
+                                           "first_live": sorted({*ph.get("first_live", ()), check.id})})
             elif check.id in ph.get("first_live", ()):
                 self.db.set_meta("phase", {**ph, "first_live": [c for c in ph["first_live"] if c != check.id]})
             prev = self.db.meta(f"run:{check.id}", {})
@@ -659,7 +686,8 @@ class Worker:
         cp = self.checkpoint()["block"]
         lag = target - cp
         self.db.set_meta("lag_blocks", lag)
-        if lag > self.cfg.lag_alert_blocks and not self.backfilling:  # a backfill is behind by design
+        behind_by_design = self.backfilling and self.phase().get("history_block") is None  # still storing history
+        if lag > self.cfg.lag_alert_blocks and not behind_by_design:
             with self.db.tx():
                 self.alerts.health("lag", f"Checkpoint {cp} is {lag} blocks behind the confirmed head {target}.",
                                    dedup="lag", realert=True)
@@ -731,6 +759,8 @@ class Worker:
             self.write_status(not problems, "; ".join(problems) or None)
         except RpcError as exc:
             self.rpc_failures += 1
+            if self.rpc_failures == 1:
+                self.rpc_outage_since = self.clock()
             self.db.set_meta("rpc_failures", self.rpc_failures)
             log.warning("RPC failure %d: %s", self.rpc_failures, exc)
             if self.rpc_failures in (3, 20, 100):
@@ -738,7 +768,7 @@ class Worker:
                 with self.db.tx():
                     self.alerts.health("rpc", f"{self.rpc_failures} consecutive RPC failures; last: {exc}. "
                                        f"Checkpoint {cp['block'] if cp else 'not set (bootstrap)'}.",
-                                       dedup=f"rpc:{self.rpc_failures}", realert=True)
+                                       dedup=f"rpc:{self.rpc_outage_since}:{self.rpc_failures}")  # per outage
             if not self.bootstrapped:  # no checkpoint yet: no status file (the healthcheck stays red)
                 self.deliver()
                 return

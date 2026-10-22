@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 
 import pytest
-from fakechain import PROXY, FakeChain, FakeRpc, MiniSSV, keys
+from fakechain import PROXY, FakeChain, FakeClock, FakeRpc, MiniSSV, keys
+from harness import make_worker, outbox
 
 import eb_model as M
 from eb_reconcile import DB, Config, Worker, load_config  # noqa: F401
 from eb_storage import cluster_id
+from rpc import RpcError
 
 # The ported #94775 scenarios (V1B.6): `pytest -k m5` selects every test in this module.
 pytestmark = pytest.mark.m5
@@ -445,6 +447,38 @@ def test_rpc_outage_raises_health_alert(tmp_path):
     assert any(k.startswith("health:rpc") for k in w.notifier.keys())
     status = json.loads((tmp_path / "eb.status.json").read_text())
     assert status["healthy"] is True
+
+
+def test_second_outage_in_the_same_window_is_announced(tmp_path):
+    """QA CP3 attempt 1 F5: the outage message is keyed per outage (its first failed step), so a second outage
+    inside one health_realert_s window is announced too (red before: the second one shared the first one's key)."""
+    chain = FakeChain()
+    chain.mine()
+    _, w = make_worker(tmp_path, chain=chain, clock=FakeClock())
+    real = w.rpc.block_number
+
+    def down():
+        raise RpcError("transport error: all 3 RPC endpoints failed", transport=True)
+
+    def outage(steps):
+        w.rpc.block_number = down
+        for _ in range(steps):
+            w.clock.advance(60)
+            w.step()
+        w.rpc.block_number = real
+        chain.mine()
+        w.clock.advance(60)
+        w.step()
+
+    def announced():
+        return [r for r in outbox(w, "kind='health'") if "consecutive RPC failures" in r["text"]]
+
+    outage(5)
+    assert len(announced()) == 1
+    w.clock.advance(1800)  # 30 min later, a second 5-step outage
+    outage(5)
+    assert len(announced()) == 2, "second outage not announced"
+    assert sum("rpc-recovered" in r["text"] for r in outbox(w, "kind='health'")) == 2
 
 
 def test_delivery_retries_then_succeeds(tmp_path):

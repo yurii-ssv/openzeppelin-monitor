@@ -278,7 +278,8 @@ def test_cp3_lagging_api_is_probed_once_per_retry_interval_and_compared_once_it_
     calls = u.api.calls
     u.close()
     assert u.api.calls == calls + 1 and not u.w.db.meta("check:m11:state_evals")  # one probe, DEFERRED
-    assert u.w.db.conn.execute("SELECT 1 FROM outbox WHERE key LIKE 'health:proof-api-weekly%'").fetchone()
+    text = u.w.db.conn.execute("SELECT text FROM outbox WHERE key LIKE 'health:proof-api-weekly%'").fetchone()[0]
+    assert "DEFERRED" in text and "retried every 1800 s" in text  # QA CP3 attempt 1 F3: the real retry interval
     for _ in range(5):  # M11 runs every 300 s; inside the 1800 s retry interval nothing is asked
         tick(u.w, u.oc, 1, seconds=300)
     assert u.api.calls == calls + 1

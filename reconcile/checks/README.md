@@ -95,8 +95,8 @@ says which. Every run is at the current checkpoint block (intermediate blocks ar
 | (framework) | a parameter event was scanned, the parameters were re-read after a reorg, or they became readable again after a failed read (after `prepare`) | `params` |
 | (framework) | the chain was reorganised below the checkpoint (durable until the check's run commits, also across a restart; `ctx.reorg_ancestor`) | `reorg` |
 | (framework) | `once` / `step(force=True)` | `force` |
-| (framework) | silent backfill (D17): the check's one evaluation of history once the checkpoint caught up; its findings open, escalate and resolve incidents **without sending** (applied with `notify=False`) | `backfill`, `force` |
-| (framework) | the first run after the backfill (phase `live`): a forced full run; a key still reported is sent then (`open`), a key only found in history stays unsent | `live`, `force` |
+| (framework) | silent backfill (D17): the check's one evaluation of history, pinned to the caught-up checkpoint (`ctx.block` is that block even when a failed run is retried later); its findings open, escalate and resolve incidents **without sending** (applied with `notify=False`) | `backfill`, `force` |
+| (framework) | the check's first run after its own silent evaluation, at a block after the caught-up checkpoint (in the same step when the silent run was a retry; the other checks need not have finished theirs): a forced full run; a key still reported is sent then (`open`), a key only found in history stays unsent | `live`, `force` |
 
 Cursors (`meta` keys `cursor:events:<id>`, `cursor:inbox:<id>`) are durable and advance only when a
 run commits, so no event or inbox entry is lost across a crash. A reorg rewinds event cursors to the

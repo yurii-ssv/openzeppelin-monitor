@@ -577,8 +577,9 @@ class M11UpdaterLiveness(Check):
                     what = "weekly full-state leaf comparison" if scope is None else "leaf re-comparison"
                     if scope is None:  # retried once per full_state_retry_s, not every run (CP3)
                         ctx.set_state("state_full_tried", {"at": ctx.clock(), "ref": latest.ref_block})
+                    retry = f"every {self.config['full_state_retry_s']} s" if scope is None else "every run"
                     ctx.health("proof-api-weekly", f"M11 {what} at blockNum {latest.ref_block} DEFERRED: "
-                               f"{result['error']}; retried every run.", dedup="proof-api-weekly")
+                               f"{result['error']}; retried {retry}.", dedup="proof-api-weekly")
                 else:
                     ev = {"ref": latest.ref_block, "commit_block": latest.block, "block": block,
                           "scope": None if scope is None else sorted(scope), **result}

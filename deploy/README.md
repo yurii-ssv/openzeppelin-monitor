@@ -82,18 +82,26 @@ parameters, inbox) or a reorg re-evaluation is pending. Metrics: `ssv_watch_chec
 A new database starts in phase `backfill`: the worker scans proxy logs from `start_block` (24,920,727) in steps of
 `backfill.blocks_per_step` (50,000) blocks, `eth_getLogs` windows of at most `max_log_range` (5,000), without
 waiting between steps (about 1.3M blocks: a few minutes, longer when the public RPCs rate-limit). Checks do not run
-while the checkpoint is behind. Once it is within `backfill.live_within_blocks` (12) of the scan target, every check
-evaluates the whole history once, **silently** (a full run: incidents are opened, escalated and resolved without a
-message; baselines and per-check tables are built). When every check has committed that run, the phase becomes
-`live` (`status.phase.caught_up_block`); the next step runs each check once more, forced, and from then on
-alerts are sent. A condition still true at that first live run (a low wallet, a cluster in the liquidation zone, an
+while the checkpoint is behind. The first checkpoint within `backfill.live_within_blocks` (12) of the scan target is
+the caught-up checkpoint (`status.phase.history_block`): history ends there. Each check evaluates the whole history
+once there, **silently** (a full run: incidents are opened, escalated and resolved without a message; baselines and
+per-check tables are built). From the first block after the caught-up checkpoint, each check that has committed its
+silent run alerts: its next run, at a later block, is forced, and from then on its alerts are sent, whatever the
+other checks do. A condition still true at that first live run (a low wallet, a cluster in the liquidation zone, an
 open M5 shortfall, a dissenting oracle that votes again) is sent then, as `open`; one that only existed in history
 (an old failed round, a past event) is never sent and stays visible in `status`/`export` as an incident with
-`alerts = 0`. Events up to the caught-up block are history, including failed transactions the Monitor wrote to the
-inbox during the backfill. While backfilling: `status.phase` shows `progress` and `remaining_blocks`, the lag
-health alert and the daily digest are off, health messages (RPC, inbox, parameters, check errors) are sent. A
-restart resumes the backfill from its checkpoint. A check that keeps failing its silent run keeps the phase at
-`backfill` (its `check-error` health message says why).
+`alerts = 0`. Events up to the caught-up checkpoint are history, including failed transactions the Monitor wrote to
+the inbox during the backfill; every later block is live. A check whose silent run fails (an RPC error, a broken
+input) raises its usual `check-error` health message (an RPC error counts as an RPC failure) and does not hold the
+other checks back; its silent run is retried every step, still pinned to the caught-up checkpoint (state read at
+that block: after more than about 100 blocks this needs one endpoint of the failover list that serves historical
+state; a pruned endpoint's error moves the read to the next one, and the D16 public endpoints served it when
+checked), and the blocks after it are then evaluated live in the same step. The phase stays `backfill`
+until every check has committed its silent run, then becomes `live` (`status.phase.caught_up_block` = that step's
+checkpoint). While `backfill`: `status.phase` shows `progress`, `remaining_blocks` and the checks that `evaluated`
+history; until the caught-up checkpoint the lag health alert is off; the daily digest starts with phase `live`;
+health messages (RPC, inbox, parameters, check errors) are always sent. A restart resumes the backfill from its
+checkpoint.
 
 ### RPC failover (D16)
 
@@ -150,8 +158,12 @@ endpoints is re-read at the next step. Logs name endpoints by host or by the var
   `.env.example`).
 - **Security**: `readOnlyRootFilesystem: true` for the worker (an `emptyDir` at `/tmp` is harmless; SQLite keeps
   temporary data in memory), non-root uid 10001, `allowPrivilegeEscalation: false`.
-- **Probes**: liveness/readiness = the compose healthcheck command (status file healthy and written within 10
-  min); give the first start a 30 min startup budget (backfill). Metrics: port 9464, path `/metrics`.
+- **Probes**: readiness = the compose healthcheck command (status file healthy and written within 10 min). Liveness
+  = staleness only (`time.time() - s['at'] < 600`: every step writes the status file, a failing one with
+  `healthy: false`), or none: a liveness probe on `healthy` restarts the pod (the Monitor with it) on every upstream
+  RPC outage longer than its budget, which a restart does not fix; the outage is already reported (`rpc` health
+  message, `healthy: false`, `ssv_watch_rpc_consecutive_failures`). Give the first start a 30 min startup budget
+  (backfill). Metrics: port 9464, path `/metrics`.
 - **Backup**: volume snapshots of the PVC (stop the worker or accept a crash-consistent SQLite+WAL snapshot,
   which SQLite recovers on open).
 

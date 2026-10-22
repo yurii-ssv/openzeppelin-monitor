@@ -37,7 +37,8 @@ def render(conn: sqlite3.Connection, check_ids: list[str]) -> str:
     phase = meta("phase") or {"phase": "live"}
     backfilling = phase.get("phase") == "backfill"
     target = meta("scan_target")
-    metric("ssv_watch_backfill", "gauge", "1 while history is backfilled silently (no alerts, D17); 0 once live.",
+    metric("ssv_watch_backfill", "gauge", "1 until every check has evaluated history silently (D17; a check alerts "
+           "after its own silent evaluation); 0 once live.",
            [({}, int(backfilling))])
     metric("ssv_watch_backfill_remaining_blocks", "gauge", "Blocks between the checkpoint and the scan target while "
            "backfilling (0 once live).",

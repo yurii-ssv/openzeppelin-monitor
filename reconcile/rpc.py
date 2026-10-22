@@ -78,6 +78,13 @@ def resolve_endpoints(entries, primary_env: str | None = None, environ=None) -> 
     return [x for x in out if not (x[1] in seen or seen.add(x[1]))]
 
 
+def _answer(body) -> bool:
+    """A JSON-RPC answer to one call: an object with `result` or `error`. Anything else (a gateway's
+    `{"message": "Bad Gateway"}`, an object with neither member) is a failure of that endpoint. Batch answers are
+    checked item by item in `Rpc.batch`, which falls back to single calls."""
+    return isinstance(body, dict) and ("result" in body or "error" in body)
+
+
 def _deterministic(err) -> bool:
     """A JSON-RPC error every healthy endpoint gives alike: a revert (with or without revert data)."""
     if not isinstance(err, dict):
@@ -89,7 +96,8 @@ class Rpc:
     """JSON-RPC over HTTP with ordered failover across endpoints (D16).
 
     Each request goes to the active endpoint first, then to the others in configured order. A transport
-    failure (unreachable, timeout, HTTP 5xx/429, a body that is not JSON) moves to the next endpoint; so does a
+    failure (unreachable, timeout, HTTP 5xx/429, a body that is not a JSON-RPC answer, e.g. an HTTP error with a
+    gateway's JSON or an object with neither `result` nor `error`) moves to the next endpoint; so does a
     JSON-RPC error that is not a revert (rate limit, unknown block, range or capacity errors), because another
     endpoint may answer it. A revert is an answer and is never retried elsewhere. Failover never invents a
     result: an endpoint answering `[]` or `null` is a result; when every endpoint fails the request raises
@@ -131,8 +139,8 @@ class Rpc:
                 body = json.loads(exc.read())
             except (ValueError, OSError):
                 body = None
-            if isinstance(body, (dict, list)) and exc.code != 429:
-                return body
+            if exc.code != 429 and (isinstance(body, list) or (isinstance(body, dict) and "error" in body)):
+                return body  # a JSON-RPC error; a gateway's own JSON with an HTTP error is a transport failure
             err = RpcError(f"transport error: HTTP {exc.code}", transport=True)
             err.retry = exc.code not in (401, 403, 404)
             raise err from None
@@ -167,6 +175,9 @@ class Rpc:
                     errors[i] = str(exc)
                     if not getattr(exc, "retry", True):
                         dead.add(i)
+                    continue
+                if isinstance(payload, dict) and not _answer(out):
+                    errors[i] = "transport error: not a JSON-RPC answer"
                     continue
                 err = out.get("error") if isinstance(out, dict) else None
                 if err and n > 1 and not _deterministic(err):

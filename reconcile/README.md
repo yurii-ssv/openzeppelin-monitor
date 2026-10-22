@@ -79,7 +79,8 @@ docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml logs -f e
 Start with `"alerts": {"mode": "record"}`: alerts are written as JSON lines and kept in the outbox.
 Switch to `"live"` after the record-only soak. The first start backfills from `start_block` (the
 v2.0.0 activation, 24,920,727) **silently** (D17, `backfill`): about 1.3M blocks in 5,000-block `eth_getLogs`
-windows, then one silent evaluation of the history by every check; alerting starts with the next step. State
+windows, then one silent evaluation of the history by every check at the caught-up checkpoint; each check alerts
+from its first run at a later block, whatever the others do (one failing its silent run does not hold them back). State
 lives in the named volume `watch-data` (D18). A database written by the pre-framework worker is
 migrated in place on start (its open M5 incidents keep their ids and are not re-sent; messages it
 queued but had not sent keep their keys, take the framework severity names and are delivered on their

@@ -7,7 +7,10 @@ endpoint failing raises; a scan window whose reads straddle an endpoint switch i
 
 from __future__ import annotations
 
+import json
 import random
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from fakechain import PROXY, FakeChain, MiniSSV, keys
@@ -199,6 +202,89 @@ def test_chain_batch_counts_guards_and_rejects_short_answers():
         view.batch("eth_getBlockByNumber", [[hex(1), False], [hex(2), False]])
     with pytest.raises(RpcError):
         Chain(Endpoints(chain, {A: "ok"}), chain.sealed + 5).headers([chain.sealed + 3])  # the node lacks it
+
+
+# ---------------------------------------------------------------- QA CP3 attempt 1 F2: real HTTP endpoints
+
+
+@pytest.fixture
+def http_endpoint():
+    """A local HTTP JSON-RPC endpoint per call: `behaviour(body) -> (status, json-able or bytes)`; returns its URL
+    (an API key in the path) and the request bodies it received."""
+    servers = []
+
+    def start(behaviour):
+        hits = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+                hits.append(body)
+                code, out = behaviour(body)
+                data = out if isinstance(out, bytes) else json.dumps(out).encode()
+                self.send_response(code)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
+        servers.append(server)
+        return f"http://127.0.0.1:{server.server_address[1]}/v3/SECRETKEY123", hits
+
+    yield start
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+def _healthy(body):
+    if isinstance(body, list):
+        return 200, [{"jsonrpc": "2.0", "id": b["id"], "result": "0x10"} for b in body]
+    return 200, {"jsonrpc": "2.0", "id": body["id"], "result": [] if body["method"] == "eth_getLogs" else "0x10"}
+
+
+@pytest.mark.parametrize("name, behaviour", [
+    ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+    ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+    ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+    ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+    ("429", lambda b: (429, b"too many")),
+    ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+    ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                      "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+])
+def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+    """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+    nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+    the healthy fallback never asked); never a clean result from the broken one."""
+    a, _ = http_endpoint(behaviour)
+    b, hits_b = http_endpoint(_healthy)
+    rpc = Rpc([a, b], timeout=5, retries=1, primary_retry_s=300)
+    assert rpc.block_number() == 0x10, name
+    assert rpc.get_logs("0x" + "11" * 20, 0, 4999, 5000, ["0x" + "22" * 32]) == []
+    assert len(hits_b) == 2
+
+
+@pytest.mark.parametrize("behaviour", [
+    lambda b: (502, {"message": "Bad Gateway"}),
+    lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)}),
+])
+def test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error(http_endpoint, behaviour):
+    """With every endpoint broken this way the request raises a transport error (`get_logs` does not split it
+    into single blocks; never `[]`), and the message names hosts only, never the key in the path."""
+    a, hits = http_endpoint(behaviour)
+    c, _ = http_endpoint(behaviour)
+    for urls in ([a], [a, c]):
+        rpc = Rpc(urls, timeout=5, retries=0)
+        with pytest.raises(RpcError) as e:
+            rpc.get_logs("0x" + "11" * 20, 0, 4999, 5000, ["0x" + "22" * 32])
+        assert e.value.transport and "SECRETKEY" not in str(e.value)
+    assert len(hits) == 2  # one request each time: no window split
 
 
 # ---------------------------------------------------------------- scan through failover
