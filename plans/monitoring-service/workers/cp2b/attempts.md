@@ -119,3 +119,35 @@ Other rows: thresholds_from_chain `test_m9::test_thresholds_from_chain_active_sl
 - Earlier falsifiers F9-clock (its anchor `age = ctx.clock() - mark["at"]` no longer exists: the clock estimate was replaced by chain time; its successor is F8-clock) and F11-window (`blocks_for` removed; successor F8-slots) are retired; F9-streak, F10-open and F-book-reorg anchors still exist and were not re-run separately (their tests are in the green V2x.1 rows).
 - NOT RUN: archive re-fetch of the 2026-08 outage logs and of the current rounds (the saved dumps were replayed; the QA re-fetched them on 2026-10-21 and matched them byte for byte); the anvil-fork M9 scenario is CP3 (V3.8).
 - Next action: records commit, worker_done; fresh Codex QA.
+
+<a id="attempt-5"></a>
+## Attempt 5 — repair 2 (QA attempt 2 FAIL, QA2-F1..F4)
+
+- Observed UTC: 2026-10-21 (start, interrupted by a laptop sleep) – 2026-10-22T07:40Z
+- Task / Dispatch: `task_c6cfebbb9a86` / `ctx_a4d4ed1bcc36` (run `run_96be3e0c7302`), worker `term_e558e079-de63-4b25-bc0e-17a9d7e224d5`
+- Frozen start head: `28981fc7b240c7d8988b6b5cd5501d263ad7ac0b` (porcelain 0); code/evidence commits `3e2a155` … `3fc0c7b`, then the records commit (= lane head in worker_done)
+- Action and concrete outcome: fixes, regressions, state table, sweep in [plan.md § Repair 2](plan.md#repair-2-qa-attempt-2-fail--fresh-implementer). QA Appendix A on the start head: exit 1, 5 failed / 11 passed (= the report).
+- `git merge --no-edit plan/monitoring-service`: CONFLICT in `execution-log.md` (not writable) and `reconcile/config.example.json` (other lanes' `m6`/`m7` keys) → `git merge --abort`, tree clean.
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| V2x.1 M9 / M10 / M11 | `bash plans/monitoring-service/workers/cp2b/evidence/verify.sh` (each row its own pytest; run at `3fc0c7b`) | exit 0: 68 / 23 / 72 passed, 0 skipped | local | `evidence/verification.repair2.log` |
+| V2x.2 thresholds_from_chain | same | exit 0: 2 / 1 / 1 | local | same |
+| V2x.3 restart | same | exit 0: 3 / 2 / 5 | local | same |
+| V2x.4 rpc_budget | same | exit 0: 1 / 1 / 1 | local | same |
+| V2b.7 | same, `-k from_the_clock` | exit 0, 1 passed | local | same |
+| qa1 regressions | same, `-k qa1` | exit 0: 8 / 1 / 7 | local | same |
+| qa2 regressions | same, `-k qa2` (M9, M11) | exit 0: 8 / 12 | local | same |
+| adversarial sweep | `… reconcile/tests/test_m9_m10_m11_sweep.py` | exit 0, 44 passed | local | same |
+| QA attempt-1 Appendix A as published | extracted by the script | exit 1, 23 passed / 2 failed (unchanged: the two setups that predate F6, repair-1 decision 4) | local | same |
+| QA attempt-2 Appendix A as published | extracted by the script | exit 1, **15 passed / 1 failed**: only `test_m9_second_weak_commit_is_sent` (N1, a NOTE outside the repair brief); QA2-F1..F4 reproducers pass | local | same |
+| V2x.6 | `… reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | exit 0, **447 passed**; ruff exit 0 | local | same |
+| RED on frozen / GREEN now | frozen code (`git archive 28981fc reconcile`) + repair-2 tests | frozen: 43 failed / 164 passed in the lane files (incl. 20 M9/M10 and 9 M11 sweep cases); of the 22 tests new in repair 2, 15 RED there, 7 GREEN (controls / benign twins); head: all pass | local | `evidence/red_green_repair2.txt` |
+| V2x.5 falsifiers (repair 2) | `bash plans/monitoring-service/workers/cp2b/evidence/falsify_repair2.sh` | 18 mutations (R2-F1-literal, -start, -own, -evidence, R2-F2-abort, -budget, R2-F3-definite, -latest, R2-F4-mark, -lower, R2-book, SWEEP2-m9-literal, SWEEP2-m11-abort, -mark, -definite, SWEEP2-book, R2-F1-proof, R2-F1-definite): every mutated exit 1, every restored exit 0; porcelain after each pair shows no `reconcile/` path (only the untracked evidence logs of this attempt) | local | `evidence/falsifiers_repair2.log` |
+| V2x.5 falsifiers (repair 1, re-run) | `bash …/evidence/falsify_repair1.sh` | 13 of 15 red/green as before; **S-superseded: anchor error** (its line is the reading withdrawn by QA2-F1; successor R2-F1-literal mutates in the opposite direction); **F1-proof survives** (mutated exit 0): its named test now stops at the `definite` guard before `proven`; both lines are re-guarded by R2-F1-proof / R2-F1-definite (red/green) | local | `evidence/falsifiers_repair1.rerun-repair2.log` |
+| LIVE M9 record replay (saved dump) | `reconcile/.venv/bin/python …/evidence/live_replay.py …/evidence/outage_2026_08_logs.json 400` | exit 0; incidents, messages (89) and health **identical** to repair 1 (no stray blockNum in the record) | local | `evidence/outage_2026_08_replay.repair2.out.json` |
+| LIVE M9/M10 current rounds (saved dump) | same with `live_recent_logs.json` | exit 0; 0 incidents, 0 messages (identical) | local | `evidence/live_recent_replay.repair2.out.json` |
+| LIVE M11 weekly comparison (network, read-only) | `reconcile/.venv/bin/python …/evidence/live_m11_leaves.py https://ethereum-rpc.publicnode.com` (runs the repaired `compare_leaves` with the default `proof_api_run_budget_s` 600) | exit 0 at 2026-10-22T07:20Z; block 26,246,610, latest blockNum 26,244,378; 506 active ETH clusters, 0 stale tuples, **506 compared, 0 unknown** (the budget did not truncate a normal run: 266.1 s < 600 s), 3 mismatches (`0x07bdd21f…` chain 16,192 / leaf 16,160; `0x778c05ae…` 31,296 / 31,360; `0xa9f7bfa1…` 18,080 / 18,048); 506 eth_call + 507 eth_getStorageAt. One comparison at one root establishes no age (F6): the check warns only if they still differ at the next evaluated root; not root-caused here (QA attempt 2 traced the previous such mismatch to validator changes after the root) | ethereum-rpc.publicnode.com + SSV API v4 + ssv-oracle proof API | `evidence/live_m11_leaves.repair2.out` |
+
+- NOT RUN: archive re-fetch of the outage/current-round dumps (QA attempt 2 re-fetched them and matched them byte for byte; the saved dumps were replayed); the anvil-fork M9 scenario (CP3, V3.8); N1/N2 (NOTEs, not in the repair brief).
+- Next action: records commit, worker_done; fresh QA (Claude Opus 5.5, capped round policy).

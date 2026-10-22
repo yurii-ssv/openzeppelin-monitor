@@ -1,0 +1,38 @@
+2026-10-22T07:20Z
+{
+ "rpc": "ethereum-rpc.publicnode.com",
+ "block": 26246610,
+ "latest_committed_ref": 26244378,
+ "api_rows_active_eth": 506,
+ "api_tuple_stale_skipped": 0,
+ "compared": 506,
+ "mismatches": [
+  {
+   "cluster": "0x07bdd21fbc840d6c7b9e8c15af6103d89402b389a5b5d91fd8af0089ff46b13c",
+   "owner": "0x9d934341b6a837b87904139719afb231b130a5a9",
+   "onchain_eb": 16192,
+   "leaf_eb": 16160
+  },
+  {
+   "cluster": "0x778c05aeb4d2542af24242a1eebc1176bfb35147b1a2bb8bea87335e30112233",
+   "owner": "0xe2758939507b35a22c30039a7da04b54cdc4c9a0",
+   "onchain_eb": 31296,
+   "leaf_eb": 31360
+  },
+  {
+   "cluster": "0xa9f7bfa12dd9c3803f03d5f640f2aaa459cf29e11a5afbe0196c99836d920dff",
+   "owner": "0xe2758939507b35a22c30039a7da04b54cdc4c9a0",
+   "onchain_eb": 18080,
+   "leaf_eb": 18048
+  }
+ ],
+ "unknown": 0,
+ "unknown_reasons": [],
+ "error": null,
+ "rpc_calls": {
+  "eth_getStorageAt": 507,
+  "eth_call": 506
+ },
+ "seconds": 266.1
+}
+exit 0

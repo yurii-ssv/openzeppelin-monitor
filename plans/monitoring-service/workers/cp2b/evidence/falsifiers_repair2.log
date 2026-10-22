@@ -1,0 +1,181 @@
+head aded44df9d59e075c3ee979d7224efcb72af80b4 at 2026-10-22T07:19Z
+[R2-F1-literal] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed in 0.25s
+[R2-F1-literal] mutated exit: 1
+2 passed in 0.20s
+[R2-F1-literal] restored exit: 0
+[R2-F1-literal] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F1-start] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F1-start] mutated exit: 1
+1 passed in 0.16s
+[R2-F1-start] restored exit: 0
+[R2-F1-start] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F1-own] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F1-own] mutated exit: 1
+1 passed in 0.17s
+[R2-F1-own] restored exit: 0
+[R2-F1-own] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F1-evidence] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F1-evidence] mutated exit: 1
+1 passed in 0.16s
+[R2-F1-evidence] restored exit: 0
+[R2-F1-evidence] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F2-abort] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.24s
+[R2-F2-abort] mutated exit: 1
+1 passed in 0.17s
+[R2-F2-abort] restored exit: 0
+[R2-F2-abort] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F2-budget] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F2-budget] mutated exit: 1
+1 passed in 0.16s
+[R2-F2-budget] restored exit: 0
+[R2-F2-budget] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F3-definite] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F3-definite] mutated exit: 1
+1 passed in 0.16s
+[R2-F3-definite] restored exit: 0
+[R2-F3-definite] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F3-latest] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F3-latest] mutated exit: 1
+1 passed in 0.17s
+[R2-F3-latest] restored exit: 0
+[R2-F3-latest] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F4-mark] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed in 0.26s
+[R2-F4-mark] mutated exit: 1
+2 passed in 0.18s
+[R2-F4-mark] restored exit: 0
+[R2-F4-mark] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F4-lower] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F4-lower] mutated exit: 1
+1 passed in 0.16s
+[R2-F4-lower] restored exit: 0
+[R2-F4-lower] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-book] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-book] mutated exit: 1
+1 passed in 0.17s
+[R2-book] restored exit: 0
+[R2-book] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[SWEEP2-m9-literal] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+20 failed, 4 passed, 20 deselected in 1.87s
+[SWEEP2-m9-literal] mutated exit: 1
+24 passed, 20 deselected in 1.69s
+[SWEEP2-m9-literal] restored exit: 0
+[SWEEP2-m9-literal] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[SWEEP2-m11-abort] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+10 failed, 10 passed, 24 deselected in 0.92s
+[SWEEP2-m11-abort] mutated exit: 1
+20 passed, 24 deselected in 1.22s
+[SWEEP2-m11-abort] restored exit: 0
+[SWEEP2-m11-abort] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[SWEEP2-m11-mark] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+7 failed, 13 passed, 24 deselected in 1.38s
+[SWEEP2-m11-mark] mutated exit: 1
+20 passed, 24 deselected in 1.24s
+[SWEEP2-m11-mark] restored exit: 0
+[SWEEP2-m11-mark] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[SWEEP2-m11-definite] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed, 19 passed, 24 deselected in 1.26s
+[SWEEP2-m11-definite] mutated exit: 1
+20 passed, 24 deselected in 1.29s
+[SWEEP2-m11-definite] restored exit: 0
+[SWEEP2-m11-definite] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[SWEEP2-book] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed, 19 passed, 24 deselected in 1.26s
+[SWEEP2-book] mutated exit: 1
+20 passed, 24 deselected in 1.27s
+[SWEEP2-book] restored exit: 0
+[SWEEP2-book] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F1-proof] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F1-proof] mutated exit: 1
+1 passed in 0.16s
+[R2-F1-proof] restored exit: 0
+[R2-F1-proof] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
+[R2-F1-definite] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.18s
+[R2-F1-definite] mutated exit: 1
+1 passed in 0.16s
+[R2-F1-definite] restored exit: 0
+[R2-F1-definite] git status --porcelain: '?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair1.rerun-repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/falsifiers_repair2.log
+?? plans/monitoring-service/workers/cp2b/evidence/live_recent_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/outage_2026_08_replay.repair2.out.json
+?? plans/monitoring-service/workers/cp2b/evidence/red_green_repair2.txt'
