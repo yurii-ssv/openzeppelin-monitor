@@ -1,12 +1,13 @@
 ---
 # Ports `8081` for metrics server.
 #
-# Config: render the tracked templates first, `deploy/render.sh --out config`
-# (CP3 adds the runbook); `./config` is mounted read-only. Secrets and RPC endpoints are never in the
-# files: the rendered config refers to the environment variables passed through below, which come
-# from the shell or an untracked `.env` (names listed in `.env.example`).
-# Data: `./data` (override with MONITOR_DATA_DIR) is persistent: the Monitor's last processed block
-# and the failed-tx inbox (`data/inbox/failed-tx.jsonl`, read by the worker) live there.
+# Config: render the tracked templates first, `deploy/render.sh --out config` (runbook: deploy/README.md);
+# `./config` (override with MONITOR_CONFIG_DIR, e.g. ./.local-dry/config for a local run) is mounted
+# read-only. Secrets and RPC endpoints are never in the files: the rendered config refers to the
+# environment variables passed through below, which come from the shell or an untracked `.env` (names
+# listed in `.env.example`).
+# Data: the named volume `monitor-data` (D18) is persistent: the Monitor's last processed block and the
+# failed-tx inbox (`inbox/failed-tx.jsonl`, read by the worker of docker-compose.reconcile.yaml) live there.
 
 services:
   monitor:
@@ -46,8 +47,8 @@ services:
     security_opt:
       - no-new-privileges
     volumes:
-      - ./config:/app/config/:ro
-      - ${MONITOR_DATA_DIR:-./data}:/app/data
+      - ${MONITOR_CONFIG_DIR:-./config}:/app/config/:ro
+      - monitor-data:/app/data
       - ${LOG_DATA_DIR:-./logs}:/app/logs
     networks:
       - monitor-network
@@ -91,3 +92,7 @@ networks:
     internal: true
   monitor-network:
     driver: bridge
+
+volumes:
+  # The Monitor's data dir (last processed block, failed-tx inbox). Shared read-only with the worker.
+  monitor-data: {}

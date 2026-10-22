@@ -139,10 +139,11 @@ class Rpc:
         except (OSError, ValueError, http.client.HTTPException) as exc:  # URLError, timeouts, resets, bad JSON
             raise RpcError(f"transport error: {type(exc).__name__}", transport=True) from None
 
-    def _select(self, i: int) -> None:
+    def _select(self, i: int, errors: dict | None = None) -> None:
         if i != self.active:
-            log.warning("RPC endpoint %s now serves requests (was %s)", self.endpoints[i][0],
-                        self.endpoints[self.active][0])
+            why = "; ".join(f"{self.endpoints[j][0]}: {e}" for j, e in sorted((errors or {}).items()))
+            log.log(logging.INFO if i == 0 else logging.WARNING, "RPC endpoint %s now serves requests (was %s)%s",
+                    self.endpoints[i][0], self.endpoints[self.active][0], f"; skipped {why}" if why else "")
             self.active, self.switched_at = i, time.monotonic()
             self.switches += 1
 
@@ -174,7 +175,7 @@ class Rpc:
                     if answer is None or order.index(i) < order.index(answer[0]):
                         answer = (i, out)
                     continue
-                self._select(i)
+                self._select(i, errors)
                 return out
             if answer is not None or len(dead) == n:
                 break
@@ -182,7 +183,7 @@ class Rpc:
                 time.sleep(delay)
                 delay = min(delay * 2, 20)
         if answer is not None:
-            self._select(answer[0])
+            self._select(answer[0], errors)
             return answer[1]
         detail = "; ".join(f"{self.endpoints[i][0]}: {e}" for i, e in sorted(errors.items()))
         if n == 1:

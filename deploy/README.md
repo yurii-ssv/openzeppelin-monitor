@@ -1,7 +1,8 @@
 # deploy/
 
-Tracked Monitor config templates and the offline gates that protect them. Nothing here is a secret;
-secrets stay `{"type":"environment","value":"<NAME>"}` references.
+Tracked Monitor config templates, the offline gates that protect them, and the runbook of the service
+([Runbook](#runbook-running-the-service)). Nothing here is a secret; secrets stay
+`{"type":"environment","value":"<NAME>"}` references.
 
 | Path | What it is |
 |---|---|
@@ -13,6 +14,141 @@ secrets stay `{"type":"environment","value":"<NAME>"}` references.
 | `check-m15-coverage.sh` | each of the 17 M15/M10 events (spec names + `ModuleUpgraded`, full signature from the reference ABI) is on the Discord monitor, and none is unconditional on a Telegram route |
 | `abi/` | the committed reference ABI the gate compares against |
 | `tests/` | `selftest.sh`, `abi-mutation-sweep.sh`, `m13-fork-regression.sh` |
+
+## Runbook: running the service
+
+Two containers share one data volume: the **Monitor** (`docker-compose.yaml`, stateless rules, appends failed
+transactions to `inbox/failed-tx.jsonl`) and the **watch worker** (`docker-compose.reconcile.yaml`, service
+`eb-reconcile`: stateful checks M1–M14, SQLite, incidents, outbox). Every command below runs from the repo root
+with both files; set this once per shell:
+
+```bash
+export COMPOSE_FILE=docker-compose.yaml:docker-compose.reconcile.yaml
+```
+
+### Configure (once)
+
+| What | How |
+|---|---|
+| Monitor config | production: `deploy/render.sh --out config --strict` (secrets in the environment); local or soak without real channels: `scripts/local-dry-run.sh --prepare` (renders into `.local-dry/config` and keeps only `TEST_*` triggers, the inbox bridge and a local log) and `export MONITOR_CONFIG_DIR=./.local-dry/config` |
+| Worker config | `cp reconcile/config.example.json reconcile/config.json` (gitignored); keep `"alerts": {"mode": "record"}` until routes are enabled; add `"record_path": "/data/alerts-record.jsonl"` to keep recorded alerts in the volume |
+| Secrets and RPC | environment only (`.env`, untracked; names in `.env.example` and in the header of `docker-compose.reconcile.yaml`). Never a value in a tracked file. `docker compose config` prints resolved values: never paste its output |
+| RPC (D16) | the worker's `rpc_urls`, in failover order: `https://mainnet.gateway.tenderly.co`, `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`; `MAINNET_RPC_URL`, when set, replaces the first. The Monitor reads `MAINNET_RPC_URL` (and `MAINNET_RPC_URL_2`, optional) |
+
+### Start, stop, restart
+
+```bash
+docker compose build                     # Monitor (Rust, ~4 min first time) and worker images
+docker compose up -d                     # inbox-init creates the empty inbox, then the worker starts
+docker compose ps                        # eb-reconcile shows (healthy) once a step succeeded in the last 10 min
+docker compose logs -f eb-reconcile      # or monitor
+docker compose stop                      # stop, keep everything
+docker compose up -d                     # start again: the worker resumes from its durable checkpoint
+docker compose down                      # remove containers; the named volumes (state) are KEPT
+```
+
+State lives in the named volumes `<project>_watch-data` (worker: SQLite + WAL, status file, recorded alerts) and
+`<project>_monitor-data` (Monitor: last processed block, `inbox/failed-tx.jsonl`). `docker compose down -v` deletes
+them: the worker then backfills from `start_block` again (silently) and the Monitor restarts at the head. Backup:
+`docker run --rm -v <project>_watch-data:/d -v "$PWD":/b alpine tar czf /b/watch-data.tgz -C /d .` after
+`docker compose stop eb-reconcile` (or a volume snapshot).
+
+### Status and metrics
+
+```bash
+docker compose exec eb-reconcile python eb_reconcile.py status   # JSON: phase, checkpoint, lag, checks, inputs, open incidents
+docker compose exec eb-reconcile python eb_reconcile.py export   # every incident and outbox message (JSON)
+docker compose exec eb-reconcile cat /data/eb-reconcile.status.json   # what the healthcheck reads (healthy, at, error)
+docker compose exec eb-reconcile tail -n 20 /data/alerts-record.jsonl # record mode: what would have been sent
+curl -s http://127.0.0.1:9464/metrics                            # Prometheus text, host loopback only
+```
+
+`status` and `export` open the database read-only: they answer while a check's run holds the write lock. Read
+`healthy` and `error` in the status file: `false` while a step fails (RPC), an input is unreadable (live
+parameters, inbox) or a reorg re-evaluation is pending. Metrics: `ssv_watch_checkpoint_block`,
+`ssv_watch_lag_blocks`, `ssv_watch_backfill` (1 while backfilling), `ssv_watch_backfill_remaining_blocks`,
+`ssv_watch_open_incidents{check,severity}`, `ssv_watch_outbox_undelivered`, `ssv_watch_outbox_failing`,
+`ssv_watch_check_last_run_seconds{check}`, `ssv_watch_check_last_run_block{check}`,
+`ssv_watch_check_errors_total{check}`, `ssv_watch_rpc_consecutive_failures`, `ssv_watch_inbox_entries{state}`,
+`ssv_watch_input_unavailable{input}`. Alert on: lag > 50 for 10 min, `rpc_consecutive_failures` ≥ 3,
+`outbox_failing` > 0, `input_unavailable` = 1, a check's `last_run_seconds` older than 2× its interval.
+
+### Backfill phase (D17)
+
+A new database starts in phase `backfill`: the worker scans proxy logs from `start_block` (24,920,727) in steps of
+`backfill.blocks_per_step` (50,000) blocks, `eth_getLogs` windows of at most `max_log_range` (5,000), without
+waiting between steps (about 1.3M blocks: a few minutes, longer when the public RPCs rate-limit). Checks do not run
+while the checkpoint is behind. Once it is within `backfill.live_within_blocks` (12) of the scan target, every check
+evaluates the whole history once, **silently** (a full run: incidents are opened, escalated and resolved without a
+message; baselines and per-check tables are built). When every check has committed that run, the phase becomes
+`live` (`status.phase.caught_up_block`); the next step runs each check once more, forced, and from then on
+alerts are sent. A condition still true at that first live run (a low wallet, a cluster in the liquidation zone, an
+open M5 shortfall, a dissenting oracle that votes again) is sent then, as `open`; one that only existed in history
+(an old failed round, a past event) is never sent and stays visible in `status`/`export` as an incident with
+`alerts = 0`. Events up to the caught-up block are history, including failed transactions the Monitor wrote to the
+inbox during the backfill. While backfilling: `status.phase` shows `progress` and `remaining_blocks`, the lag
+health alert and the daily digest are off, health messages (RPC, inbox, parameters, check errors) are sent. A
+restart resumes the backfill from its checkpoint. A check that keeps failing its silent run keeps the phase at
+`backfill` (its `check-error` health message says why).
+
+### RPC failover (D16)
+
+Each request goes to the endpoint that answered last, then to the others in order; after `rpc_primary_retry_s`
+(300 s) the first is tried again. A transport failure (unreachable, timeout, HTTP 429/5xx) or a JSON-RPC error
+other than a revert moves to the next endpoint; a revert is an answer; an empty result (`[]`, `null`) is a result.
+When all fail, the step fails: after 3 consecutive failed steps a `rpc` health message is queued (again at 20 and
+100), and `rpc-recovered` when a step succeeds again. A scan window whose reads were answered by two different
+endpoints is re-read at the next step. Logs name endpoints by host or by the variable name, never by URL.
+
+### Rotate secrets
+
+1. Change the value in `.env` (or the Kubernetes Secret). Values never go into `config/`, `reconcile/config.json`
+   or a tracked file.
+2. `TELEGRAM_CHAT_ID` is substituted into the Monitor's Telegram triggers at render time: re-run
+   `deploy/render.sh --out config --strict` after changing it. Tokens and webhooks are read at start.
+3. `docker compose up -d` recreates the containers whose environment changed (state is kept).
+4. Revoke the old token/webhook at the provider after the new one delivered a message.
+
+### Enable routes (record → live)
+
+1. Soak in record mode first (A10, 48 h): `alerts.mode: "record"`; review `export` and the record file. Record
+   mode marks every message delivered (receipt `recorded`), so switching to live never replays the soak.
+2. Test channels: set `TEST_TELEGRAM_TOKEN`, `TEST_TELEGRAM_CHAT_ID`, `TEST_DISCORD_WEBHOOK` in `.env`; in
+   `reconcile/config.json` set `"mode": "live"`, `"telegram_token_env": "TEST_TELEGRAM_TOKEN"`,
+   `"telegram_chat_id_env": "TEST_TELEGRAM_CHAT_ID"`, `"discord_webhook_env": "TEST_DISCORD_WEBHOOK"`;
+   `docker compose up -d --force-recreate eb-reconcile`. Prove each route with one message:
+
+   ```bash
+   for r in telegram discord; do docker compose exec eb-reconcile python -c "import json, notify; \
+     c = json.load(open('/app/config.json')); \
+     print(notify.make_notifier(c['alerts']).send('health', 'SSV watch: route test ($r)', 'route-test', '$r'))"; done
+   ```
+
+   For the Monitor, `scripts/local-dry-run.sh --prepare` with the `TEST_*` variables set routes its triggers to
+   the test channels.
+3. Production: point the three `*_env` names back at `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `DISCORD_WEBHOOK_INFO`,
+   render the Monitor config with `deploy/render.sh --out config --strict`, unset `MONITOR_CONFIG_DIR`, and
+   `docker compose up -d --force-recreate`; repeat the route test.
+
+### Kubernetes (D18; DevOps owns the manifests)
+
+- **One replica**, never two: a StatefulSet (or a Deployment with `strategy: Recreate`), so two workers never open
+  the same database.
+- **Storage**: one ReadWriteOnce PVC on block storage (1–5 GiB; the database is ~200 MB after the backfill).
+  Not NFS/EFS or another network filesystem: SQLite in WAL mode needs POSIX locks and shared memory on a local
+  filesystem.
+- **One pod, two containers** (Monitor and worker) sharing the PVC: the Monitor mounts it at `/app/data`, the
+  worker mounts a `subPath: watch` at `/data` and `subPath: inbox` read-only at `/inbox`. An initContainer creates
+  `inbox/failed-tx.jsonl` (empty, `touch`, never truncate) before both start (the compose `inbox-init` service).
+- **Config**: ConfigMaps for the rendered Monitor config (`config/`, read-only at `/app/config`) and the worker's
+  `config.json` (at `/app/config.json`). **Secrets**: a Secret exposed as environment variables (names as in
+  `.env.example`).
+- **Security**: `readOnlyRootFilesystem: true` for the worker (an `emptyDir` at `/tmp` is harmless; SQLite keeps
+  temporary data in memory), non-root uid 10001, `allowPrivilegeEscalation: false`.
+- **Probes**: liveness/readiness = the compose healthcheck command (status file healthy and written within 10
+  min); give the first start a 30 min startup budget (backfill). Metrics: port 9464, path `/metrics`.
+- **Backup**: volume snapshots of the PVC (stop the worker or accept a crash-consistent SQLite+WAL snapshot,
+  which SQLite recovers on open).
 
 ## ABI reference gate (`check-abi.sh`, A8/A9)
 

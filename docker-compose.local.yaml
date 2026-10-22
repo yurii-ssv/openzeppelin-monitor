@@ -25,5 +25,9 @@ services:
       - no-new-privileges
     volumes:
       - ./.local-dry/config:/app/config/:ro
-      - ./.local-dry/data:/app/data
+      # the same named data volume as docker-compose.yaml (D18): the worker reads its inbox/ read-only
+      - monitor-data:/app/data
       - ./.local-dry/logs:/app/logs
+
+volumes:
+  monitor-data: {}

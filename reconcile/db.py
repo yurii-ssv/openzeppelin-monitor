@@ -138,13 +138,24 @@ def _backfill_m5(conn) -> None:
 
 
 class DB:
-    def __init__(self, path: str):
+    def __init__(self, path: str, readonly: bool = False):
+        """`readonly`: a reader beside the running worker (status, export, audit): no migration, no write lock, so
+        it answers while a check's run holds the write transaction."""
+        self.path, self.readonly = path, readonly
+        if readonly:
+            self.conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, isolation_level=None, timeout=30)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA temp_store=MEMORY")
+            self.migrated_from = None
+            return
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.path = path
         self.conn = sqlite3.connect(path, isolation_level=None, timeout=30)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
+        # Sorts and temporary indexes stay in memory: the container's root filesystem is read-only (no /tmp file,
+        # SQLITE_IOERR "disk I/O error" on the first large ORDER BY otherwise).
+        self.conn.execute("PRAGMA temp_store=MEMORY")
         self.migrated_from = migrate(self.conn)
 
     def tx(self):

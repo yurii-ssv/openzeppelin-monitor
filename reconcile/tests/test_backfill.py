@@ -346,3 +346,38 @@ def test_seeded_backfill_sweep(tmp_path, seed):
     assert not any(f"event at {b}" in t for t in texts for b in range(start, caught_up + 1))
     assert w.db.conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0] == len(chain.logs)
     assert isinstance(w.notifier, Capture)
+
+
+# ---------------------------------------------------------------- operator commands
+
+
+def test_status_and_export_answer_while_a_run_holds_the_write_lock(tmp_path, capsys):
+    """`status` and `export` open the database read-only: a check's long run (one write transaction) does not block
+    them (before CP3 they waited for the lock and failed with "database is locked")."""
+    import time
+    from pathlib import Path
+
+    import eb_reconcile
+
+    raw = json.loads((Path(eb_reconcile.__file__).parent / "config.example.json").read_text())
+    raw.update(db_path=str(tmp_path / "w.sqlite"))  # the inbox path need not exist: status does not read it
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps(raw))
+    chain = FakeChain()
+    start = chain.number
+    history(chain, n=40)
+    w, _ = make(tmp_path, chain, start=start)
+    w.step()
+    writer = sqlite3.connect(tmp_path / "w.sqlite", isolation_level=None)
+    writer.execute("BEGIN IMMEDIATE")  # what a running check's transaction holds
+    try:
+        t0 = time.monotonic()
+        assert eb_reconcile.main(["status", "--config", str(cfg_path)]) == 0
+        status = json.loads(capsys.readouterr().out)
+        assert eb_reconcile.main(["export", "--config", str(cfg_path)]) == 0
+        export = json.loads(capsys.readouterr().out)
+        assert time.monotonic() - t0 < 10
+    finally:
+        writer.execute("ROLLBACK")
+    assert status["phase"]["phase"] == "backfill" and status["checkpoint"]["block"] == w.checkpoint()["block"]
+    assert set(export) == {"incidents", "outbox"}

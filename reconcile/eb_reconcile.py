@@ -20,7 +20,8 @@ Commands:
   run           loop forever
   once          one step with every check forced, then exit (--serve-metrics --hold N keeps /metrics up)
   audit         M5 event-only history report of every root window (no storage reads)
-  status        print checkpoint, check runs, open incidents and undelivered messages
+  status        print phase (backfill/live), checkpoint, check runs, open incidents and undelivered messages
+  export        print every incident and outbox message as JSON (soak evidence, audits); no state change
   verify-layout check the pinned storage layout against the deployed proxy (M5 guard)
 
 Secrets come from environment variables named in the config.
@@ -144,10 +145,11 @@ class Worker:
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
         self.checks = {c.id: c for c in built}
-        with self.db.tx():
-            for c in self.checks.values():
-                for stmt in filter(str.strip, c.schema.split(";")):
-                    self.db.conn.execute(stmt)
+        if not getattr(db, "readonly", False):
+            with self.db.tx():
+                for c in self.checks.values():
+                    for stmt in filter(str.strip, c.schema.split(";")):
+                        self.db.conn.execute(stmt)
         self.topics = sorted(set(TOPIC0.values()))
         self.params = Params(cfg.raw.get("views"), cfg.proxy)
         inbox_cfg = cfg.section("inbox")
@@ -744,7 +746,7 @@ class Worker:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["run", "once", "audit", "status", "verify-layout"])
+    ap.add_argument("command", choices=["run", "once", "audit", "status", "export", "verify-layout"])
     ap.add_argument("--config", default=os.environ.get("EB_RECONCILE_CONFIG", "config.json"))
     ap.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "info"))
     ap.add_argument("--serve-metrics", action="store_true", help="serve /metrics (also on with metrics.enabled)")
@@ -756,10 +758,17 @@ def main(argv=None) -> int:
                         stream=sys.stderr)
 
     cfg = load_config(args.config)
-    db = DB(cfg.db_path)
+    db = DB(cfg.db_path, readonly=args.command in ("audit", "status", "export"))
 
     if args.command == "audit":
         print(json.dumps(audit(db, cfg.start_block), indent=1))
+        return 0
+
+    if args.command == "export":
+        print(json.dumps({
+            "incidents": [dict(r) for r in db.conn.execute("SELECT * FROM incidents ORDER BY opened_at, rowid")],
+            "outbox": [dict(r) for r in db.conn.execute("SELECT * FROM outbox ORDER BY created_at, rowid")],
+        }, indent=1))
         return 0
 
     lock = open(cfg.db_path + ".lock", "w")
@@ -814,6 +823,8 @@ def main(argv=None) -> int:
              (worker.checkpoint() or {}).get("block"), sorted(worker.checks), cfg.alerts.get("mode", "record"))
     while not stop["flag"]:
         worker.step()
+        if worker.bootstrapped and worker.backfilling and worker.rpc_failures == 0:
+            continue  # a bounded backfill step succeeded: take the next one without waiting
         for _ in range(int(cfg.poll_interval_s)):
             if stop["flag"]:
                 break
