@@ -14,6 +14,9 @@ asserts:
                                       same-block re-poison: brute force over every reading of the unverifiable
                                       transactions (coordinator ruling on QA attempt 2 F2);
   no event lost between runs          a poisoning repaired before the run that processed it is reported;
+  no silent change of meaning         the last message of an open incident states its current meaning (transient
+                                      'repaired before this run' or live stale tuple) at its current severity, also
+                                      after a reorg orphans the repair of a transient report (QA attempt 3 F1);
   no window on stale data             M2 velocity counts the window ending at the run's checkpoint;
   never silent on missing input       an empty API answer and an unknown hard rule are health messages.
 
@@ -125,6 +128,7 @@ class M1Walk:
         self.ancestor = None  # lowest ancestor of the reorgs since the last committed run
         self.queue: list[str] = []  # follow-up actions of a composite attack
         self.k2_write = 0
+        self.repair_block = 0
         self.tick()
         self.lo = run_block(self.w, "m1")
         self.first = self.chain.number  # forks stay above the worker's first checkpoint
@@ -225,6 +229,12 @@ class M1Walk:
             self.remember()
             deposit(s)
             self.elems.append((here + 1, ["clean"]))
+            if self.rng.random() < 0.5:
+                # QA attempt 3 F1: this step's run reports it as transient (both blocks confirmed, also further than
+                # the confirmation window), then the next step's reorg orphans the repair; the poisoning survives
+                self.repair_block = here + 1
+                c.mine(self.confirmations + self.rng.randint(0, 3))
+                self.queue.append("reorg_repair")
         elif name == "k2_fix":  # QA attempt 2 F1, step 1: K2's storage changes and the API gives it validly
             self.api, self.k2_invalid = "ok", False
             cid, st = s._get(OWNER2, OPS2)
@@ -233,12 +243,16 @@ class M1Walk:
             s._persist(cid, st)
             c.mine(self.confirmations + 1)
             self.queue.append("reorg_partial")
-        elif name in ("reorg", "crash", "reorg_partial"):
+        elif name in ("reorg", "crash", "reorg_partial", "reorg_repair"):
             depth = self.rng.randint(1, 5)
             fork = max(self.first, c.number - depth)
             if name == "reorg_partial":  # step 2: orphan the change and its resolution; the API omits K2
                 self.api = self.rng.choice(["partial", "empty"])
                 fork = max(self.first, self.k2_write)
+            if name == "reorg_repair":  # orphan exactly the repair (and what follows); the poisoning survives
+                fork = max(self.first, self.repair_block)
+                if self.rng.random() < 0.5:
+                    name = "crash"
             ancestor = self.w.db.conn.execute("SELECT MAX(number) FROM blocks WHERE number < ?", (fork,)).fetchone()[0]
             c.reorg(fork)
             base = self.snap[max(k for k in self.snap if k <= fork)]
@@ -296,6 +310,11 @@ class M1Walk:
         assert (K1 in opened) == (expect is not None), f"K1 open={K1 in opened}, model={expect}"
         if expect is not None:
             assert opened[K1]["severity"] == expect[1], (opened[K1]["severity"], expect)
+            # no silent change of meaning: the last message sent for the incident says what it means now
+            sent = outbox(w, f"incident_id = '{opened[K1]['id']}' AND kind IN ('open', 'update', 'escalate', 'realert')")
+            assert sent, "an open K1 incident was never sent"
+            assert ("repaired before this run" in sent[-1]["text"]) == (expect[0] == "transient"), (sent[-1], expect)
+            assert sent[-1]["severity"] == expect[1], (sent[-1]["severity"], expect)
         # K2: known only through the API; without it the incident is kept as it was, never opened or resolved
         if self.api == "ok":
             assert (K2 in opened) == self.k2_invalid

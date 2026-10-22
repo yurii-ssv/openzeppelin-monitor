@@ -1146,3 +1146,147 @@ def test_m1_unverified_page_stays_for_a_further_poisoning_without_a_repair(tmp_p
     poison(ssv)
     advance(w)
     assert incidents(w, "open")[0]["severity"] == "page" and evidence(w)["re_poison_unverified"] is True
+
+
+# ---------------------------------------------------------------- QA attempt 3 F1: a change of meaning is sent
+
+
+def transient_then_orphaned_repair(tmp_path, restart_now=False, re_poison=False, confirmations=0):
+    """Run 1 processes a poisoning (block b1) and its repair (block b2): 'poisoned and repaired before this run'
+    (transient). Before the next run a reorg replaces the chain from b2; the poisoning survives, unrepaired."""
+    chain, w, ssv = make_m1(tmp_path, confirmations=confirmations)
+    deposit(ssv, value=10**18)
+    chain.mine(confirmations + 1)
+    advance(w)
+    if re_poison:  # an earlier poisoning and its repair, resolved: the transient one is a re-poison (page)
+        poison(ssv)
+        chain.mine(confirmations)
+        advance(w)
+        deposit(ssv)
+        chain.mine(confirmations)
+        advance(w)
+        assert kinds(w) == [("warn", "open"), ("info", "resolved")]
+    tx, stale, repair = poison(ssv)
+    after_poison = dict(ssv._get(OWNER, OPS)[1])
+    deposit(ssv)
+    b2 = chain.sealed
+    chain.mine(confirmations + 3)
+    advance(w)
+    sev = "page" if re_poison else "warn"
+    assert kinds(w)[-1] == (sev, "open") and evidence(w)["transient"] is True
+    assert "repaired before this run" in out(w)[-1]["text"]
+    assert w.checkpoint()["block"] - b2 + 1 > confirmations, "the reorg reaches below the confirmation window"
+    n = len(out(w))
+    chain.reorg(b2)
+    ssv._get(OWNER, OPS)[1].update(after_poison)
+    chain.mine(confirmations + 2)
+    if restart_now:  # the rewind commits, the process dies before the reorg run
+        w.check_reorg()
+        w.scan()
+        w = restart(tmp_path, chain, w, confirmations=confirmations)
+    advance(w)
+    return chain, w, ssv, n, (tx, stale, repair), sev
+
+
+@pytest.mark.parametrize("restart_now", [False, True])
+@pytest.mark.parametrize("re_poison", [False, True])
+@pytest.mark.parametrize("confirmations", [0, 3])
+def test_m1_transient_report_then_a_reorg_orphaning_the_repair_sends_the_live_poisoning(tmp_path, restart_now,
+                                                                                         re_poison, confirmations):
+    """QA attempt 3 F1: the last message said 'repaired, resolved at the next run'; the canonical chain now holds an
+    unrepaired poisoning. The reorg run sends the live state (stale tuple, runbook with the repair tuple) under the
+    same incident, at warn (page for a re-poison), also across a restart between the rewind and the reorg run and
+    with a reorg deeper than the confirmation window."""
+    chain, w, ssv, n, (tx, stale, repair), sev = transient_then_orphaned_repair(
+        tmp_path, restart_now=restart_now, re_poison=re_poison, confirmations=confirmations)
+    assert w.db.meta("reorg:m1") is None
+    assert len(incidents(w, "open")) == 1 and evidence(w).get("transient") is None
+    assert len(out(w)) == n + 1, "the live poisoning is sent once"
+    msg = out(w)[-1]
+    assert (msg["severity"], msg["kind"]) == (sev, "update")
+    assert msg["incident_id"] == incidents(w, "open")[0]["id"]
+    assert "repaired before this run" not in msg["text"] and "deposit(owner, operatorIds, repairTuple)" in msg["text"]
+    assert ("re-poisoned after a repair" if re_poison else "Stale cluster tuple") in msg["text"]
+    ev = evidence(w)
+    assert ev["poison_tx"] == tx and ev["stale_tuple"] == _tup(stale) and ev["repair_tuple"] == _tup(repair)
+    advance(w)
+    tick(w, chain)
+    assert len(out(w)) == n + 1, "not re-sent while the meaning stays"
+    deposit(ssv)
+    chain.mine(confirmations)
+    advance(w)
+    assert kinds(w)[-1] == ("info", "resolved")
+
+
+def test_m1_transient_report_resolved_then_a_reorg_orphaning_the_repair_reopens(tmp_path):
+    """QA attempt 3 control: the transient incident already resolved; the same reorg reopens it and sends."""
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    poison(ssv)
+    after_poison = dict(ssv._get(OWNER, OPS)[1])
+    deposit(ssv)
+    b2 = chain.sealed
+    advance(w)
+    tick(w, chain)
+    assert kinds(w) == [("warn", "open"), ("info", "resolved")]
+    chain.reorg(b2)
+    ssv._get(OWNER, OPS)[1].update(after_poison)
+    chain.mine(2)
+    advance(w)
+    assert kinds(w)[-1] == ("warn", "open") and incidents(w, "open")
+    assert "Stale cluster tuple" in out(w)[-1]["text"]
+
+
+def test_m1_transient_report_with_a_revert_then_a_reorg_orphaning_the_repair_sends_the_live_poisoning(tmp_path):
+    """Generalised F1: the revision was anchored on the newest of poisoning and revert, so with our liquidator's revert
+    after the poisoning both the transient and the stale report carried `revert:<tx>` and the change was silent."""
+    chain, w, ssv, path = inbox_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    _, stale, repair = poison(ssv)
+    after_poison = dict(ssv._get(OWNER, OPS)[1])
+    rtx = failed_tx(chain, path, "liquidate", OWNER, OPS, stale, LIQUIDATOR, INCORRECT_STATE)
+    deposit(ssv)
+    b2 = chain.sealed
+    chain.mine()
+    advance(w)
+    assert kinds(w) == [("warn", "open")]
+    ev = evidence(w)
+    assert ev["transient"] is True and ev["reverts"] == [rtx]
+    chain.reorg(b2)
+    ssv._get(OWNER, OPS)[1].update(after_poison)
+    chain.mine(2)
+    advance(w)
+    assert w.db.meta("reorg:m1") is None and kinds(w) == [("warn", "open"), ("warn", "update")]
+    assert "Stale cluster tuple" in out(w)[-1]["text"] and evidence(w)["reverts"] == [rtx]
+    assert evidence(w)["repair_tuple"] == _tup(repair)
+
+
+def test_m1_repair_tuple_found_after_the_alert_is_sent(tmp_path):
+    """Generalised F1: a state-sweep poisoning alerted with 'Repair tuple: unknown' (the SSV API answered nothing);
+    when the API later gives the canonical tuple the runbook becomes actionable, so the update is sent."""
+    chain = ClusterChain()
+    from fakechain import MiniSSV
+
+    ssv = MiniSSV(chain)
+    chain.mine()
+    start = chain.number
+    deposit(ssv, value=10**18)
+    _, _, repair = poison(ssv)
+    chain.mine(30)
+    rows = []
+    chain, w, _ = api_m1(tmp_path, rows, chain=chain, ssv=ssv, m1={"receipt_window_blocks": 5}, start_block=start,
+                         activation_block=start)
+    advance(w)
+    alerts = outbox(w, "check_id='m1' AND kind != 'health'")
+    assert [(r["severity"], r["kind"]) for r in alerts] == [("warn", "open")] and evidence(w)["repair_tuple"] is None
+    assert "Repair tuple: unknown" in alerts[0]["text"]
+    assert outbox(w, "key LIKE 'health:m1-inventory-empty%'"), "the empty API answer is health"
+    rows.append(api_row_now(ssv, OWNER, OPS))
+    tick(w, chain)
+    alerts = outbox(w, "check_id='m1' AND kind != 'health'")
+    assert [(r["severity"], r["kind"]) for r in alerts] == [("warn", "open"), ("warn", "update")]
+    assert evidence(w)["repair_tuple"] == _tup(repair) and str(_tup(repair)) in alerts[-1]["text"]
+    tick(w, chain)
+    assert len(outbox(w, "check_id='m1' AND kind != 'health'")) == 2

@@ -34,7 +34,10 @@ False-positive cost: a benign helper transaction with differing tuples (two depo
 by a poisoning of an already flagged cluster pages instead of warning. A repair (the last log validates again)
 resolves the incident; a revert alone resolves at the first later run whose validation of the last log succeeds;
 a poisoning repaired before the run that processed it is still reported once (warn, or page when re-poisoned) and
-resolved at the next run. An RPC error or an unexpected revert raises (never "clean"). Off-chain input never proves
+resolved at the next run. The incident's revision names its meaning (state: stale, re-poisoned, unverified,
+transient or unknown; the poisoning; the repair tuple; the last revert), so a change of meaning is re-sent under the
+same id, e.g. a reorg orphaning the repair of a transient report (QA attempt 3 F1); liquidatable is a live balance
+condition and only escalates. An RPC error or an unexpected revert raises (never "clean"). Off-chain input never proves
 recovery: a key with no stored log that the inventory does not list (an empty or partial SSV API answer) is clean
 only when storage holds no such cluster; otherwise its incident is kept (health), and a reorg run raises.
 
@@ -68,7 +71,7 @@ from checks.m1_cluster_abi import (
 from checks.registry import register
 from db import DB
 from eb_events import CLUSTER_KINDS, Event
-from eb_storage import Cluster, cluster_id, eth_cluster_slot, ssv_cluster_slot
+from eb_storage import Cluster, cluster_id, eth_cluster_slot, keccak, ssv_cluster_slot
 from rpc import RpcError
 
 SCHEMA = """
@@ -573,8 +576,11 @@ class M1StaleTuple(Check):
         lines, evidence, title = [f"Cluster {key}"], {"block": block}, None
         if subject.get("owner"):
             lines.append(f"Owner {subject['owner']}, operators {subject.get('operator_ids')}")
-        severity, revision = "warn", None
-        newest = None
+        severity = "warn"
+        # The revision names what the incident means now: its state (stale, re-poisoned, unverified, transient,
+        # unknown), the poisoning, the repair tuple and the last revert. Any change re-sends under the same id, so a
+        # change of meaning (e.g. a reorg orphaning the repair of a transient report) is never applied silently.
+        parts: list[str] = []
         if stale:
             detail = json.loads(poison["detail"])
             repaired_before = self._repaired_before(db, poison)
@@ -616,7 +622,9 @@ class M1StaleTuple(Check):
                             re_poison_unverified=unverified, intra_block=detail.get("intra_block", []))
             if unverified:
                 evidence["note"] = UNVERIFIED
-            newest = (poison["block"], poison["log_index"], f"poison:{poison['tx_hash']}:{poison['log_index']}")
+            state = "re-poison" if repaired_before else "unverified" if unverified else "poison"
+            parts.append(f"{state}:{poison['tx_hash']}:{poison['log_index']}")
+            parts.append("repair:" + (keccak(poison["repair_tuple"].encode()).hex()[:12] if canonical else "unknown"))
         elif transient is not None:
             rows, re_poisoned = transient
             if re_poisoned:
@@ -633,24 +641,23 @@ class M1StaleTuple(Check):
                             stale_tuple=json.loads(last["stale_tuple"]),
                             repair_tuple=json.loads(last["repair_tuple"]) if last["repair_tuple"] else None,
                             re_poisoned=re_poisoned, transient=True, poisonings=[r["tx_hash"] for r in rows])
-            newest = (last["block"], last["log_index"], f"poison:{last['tx_hash']}:{last['log_index']}")
+            parts.append(f"{'transient-re-poison' if re_poisoned else 'transient'}:{last['tx_hash']}:"
+                         f"{last['log_index']}")
         elif unknown:
             title = f"Cluster tuple unknown (M1): {_short(key)}"
             lines.append(f"Status unknown at block {block}: {unknown}.")
             evidence["unknown"] = unknown
-            revision = "unknown"
+            parts.append("unknown")
         if reverts:
             for r in reverts:
                 d = json.loads(r["detail"])
                 lines.append(f"IncorrectClusterState revert of {d['function']} from {d['sender']}: {r['tx_hash']} "
                              f"(block {r['block']}).")
             evidence["reverts"] = [r["tx_hash"] for r in reverts]
-            last = reverts[-1]
-            if newest is None or (last["block"], 1 << 30) > newest[:2]:
-                newest = (last["block"], 1 << 30, f"revert:{last['tx_hash']}")
+            parts.append(f"revert:{reverts[-1]['tx_hash']}")
             title = title or f"IncorrectClusterState revert from our sender (M1): {_short(key)}"
         return Finding(check=self.id, key=key, severity=severity, title=title, body="\n".join(lines),
-                       subject=subject, evidence=evidence, revision=newest[2] if newest else revision)
+                       subject=subject, evidence=evidence, revision="|".join(parts) or None)
 
     # ---------------------------------------------------------------- digest
 
