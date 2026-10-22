@@ -18,10 +18,10 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP0 Baseline and hygiene | VERIFIED — PASS WITH NOTES, integrated (`4fbb9f1`) | QA `ctx_4bd11bbdbf4e` settled | `9772b2d` | Codex gpt-6.1-sol high | done; notes owned by CP1A (schema checks), CP3 (flake), coordinator (V0.4 slash) |
 | CP1A Config lane | VERIFIED — PASS WITH NOTES (QA 5, Opus; head `f5e1fc4`), integrated (`c209d40`) | settled+released | `f5e1fc4` | Claude Opus 5.5 high (QA) | notes N1-N9 to plan §8 at closure; F6/F7 deferred |
 | CP2a Liquidation (M3, M4, M14) | VERIFIED — PASS WITH NOTES (QA 3, Opus; head `2b434cf`), integrated | settled+released | `2b434cf` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; M4 interpretation to amend spec |
-| CP2b Oracle (M9, M10, M11) | IMPLEMENTED (repair 3) — QA 4 RUNNING on Opus, capped (lane head `52b1ae6`) | QA task `task_ca0b592245b7`/`ctx_6791b388d5cc` | `52b1ae6` | Claude Opus 5.5 high (QA) | wait worker_done |
-| CP2c Wallets (M12, M8 floor, M13 watch) | IMPLEMENTED (repair 3) — QA 4 RUNNING on Opus, capped (lane head `dd9522b`) | QA task `task_812997eac1bf`/`ctx_6ee9e307ca8b` | `dd9522b` | Claude Opus 5.5 high (QA) | wait worker_done |
-| CP2d Cluster integrity (M1, M2) | IMPLEMENTED (repair 3) — QA 4 RUNNING on Opus, capped (lane head `24b1599`) | QA task `task_e56bd3237a8c`/`ctx_50414673e4ea` | `24b1599` | Claude Opus 5.5 high (QA) | wait worker_done |
-| CP2e Legacy SSV (M6, M7) | QA FAILED attempt 1 (F1 BLOCKING); repair 1 RUNNING (lane head `b6f90b1`) | task `task_9a6318071980`/`ctx_b4ba8297cc36`, opus/high | `b6f90b1` | Claude Opus high (repair) → Opus QA 2 | premature integration merge (event-0055) still open |
+| CP2b Oracle (M9, M10, M11) | QA FAILED attempt 4 (2 BLOCKING); repair 4 RUNNING (lane head `ffc3b27`; next QA capped) | task `task_2cf9324f8445`/`ctx_12b6ebc17f66`, opus/high | `ffc3b27` | Claude Opus high (repair) → Opus QA 5 capped | M11 revert-rate window; reorg+API down downgrade |
+| CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
+| CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
+| CP2e Legacy SSV (M6, M7) | IMPLEMENTED (repair 1) — QA 2 RUNNING on Opus (lane head `6fafac6`) | QA task `task_391141be8e2b`/`ctx_b95e2f8c7ac2` | `6fafac6` | Claude Opus 5.5 high (QA) | wait worker_done; premature integration merge still open |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
