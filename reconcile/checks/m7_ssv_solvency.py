@@ -26,8 +26,8 @@ health message says M7 cannot evaluate and the open incidents are re-reported un
 
 Completeness guards: every run checks the inventory with `m6_legacy_coverage.inventory_gap` (the chain's
 SSV-side `daoValidatorCount` against the listed legacy validators, and the API's `pagination.total` against
-the listing), so an empty or short API page at a first run, or on a new database, is UNKNOWN and never a
-baseline without the legacy balances (QA cp2e-1 F1). `m7_legacy` remembers every legacy cluster id the
+the listing; an API answer without a single cluster always), so an empty or short API page at a first run, or
+on a new database, is UNKNOWN and never a baseline without the legacy balances (QA cp2e-1 F1, cp2e-2 F1). `m7_legacy` remembers every legacy cluster id the
 inventory listed; one that disappears from the inventory while storage still holds it as `VERSION_SSV` is an
 unpriced claim (UNKNOWN), not a smaller liability. Ids leave the table only when storage says the cluster was
 migrated or no longer exists.

@@ -36,7 +36,8 @@ Completeness (QA cp2e-1 F1): absence from the SSV API is not evidence, and at a 
 database) nothing persisted would reveal a short listing. Every full sweep therefore checks the inventory
 against two counts (`inventory_gap`): the chain's SSV-side `daoValidatorCount` must equal the validators of the
 active, storage-validated legacy clusters (it covers every cluster M6 can warn or page on: both need
-validators), and the listing (API rows and scanned logs) must hold the API's own `pagination.total`. A gap is
+validators), and the listing (API rows and scanned logs) must hold the API's own `pagination.total`; an API
+answer without a single cluster is a gap whatever both counts say (QA cp2e-2 F1). A gap is
 the same UNKNOWN health message and the summary (weekly digest) says the counts are a lower bound; the listed
 clusters are still evaluated and open incidents leave only on positive proof, as above.
 
@@ -193,7 +194,10 @@ def inventory_gap(ctx: Ctx, inv) -> str | None:
     Chain: the validators of the active, storage-validated legacy clusters must add up to the SSV-side
     `daoValidatorCount` (a cluster missing from the API and the logs, or an unvalidated tuple, breaks it).
     API: the listing (API rows and scanned logs) must hold at least the API's own `pagination.total` (an empty or
-    short page; it also covers the legacy clusters without validators, whose balance is still an M7 claim)."""
+    short page; it also covers the legacy clusters without validators, whose balance is still an M7 claim).
+    An API answer without a single cluster is a gap whatever its total and `daoValidatorCount` say (QA cp2e-2
+    F1): next to a proxy with legacy storage an empty listing is a degenerate answer, and a self-consistent one
+    (`total` 0, no validators left on legacy clusters) would otherwise hide every inert legacy balance."""
     gaps = []
     listed_vc = sum(c.cluster.validator_count for c in inv.clusters.values()
                     if c.version == "SSV" and c.valid and c.cluster.active)
@@ -203,6 +207,8 @@ def inventory_gap(ctx: Ctx, inv) -> str | None:
         gaps.append(f"its active legacy clusters hold {listed_vc} validators, daoValidatorCount is {dao}")
     total, why = api_total(ctx)
     from_api = sum(1 for c in inv.clusters.values() if "api" in c.sources)
+    if from_api == 0:
+        gaps.append(f"the SSV API listed no clusters (pagination.total {total}); an empty listing is never complete")
     if total is None:
         gaps.append(f"{why}: the listing of {from_api} API rows cannot be confirmed complete")
     elif len(inv.clusters) < total:
