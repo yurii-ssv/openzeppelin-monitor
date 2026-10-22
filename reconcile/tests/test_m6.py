@@ -620,6 +620,25 @@ def test_m6_unreadable_api_total_is_unknown_not_clean(tmp_path):
     assert len(health) == 1 and "pagination.total unavailable" in health[0] and "SSV API unreachable" in health[0]
 
 
+def test_m6_short_page_offset_by_a_log_only_cluster_is_unknown(tmp_path):
+    """QA cp2e-3 F1 (N3): an inert legacy cluster (no validators) is the row a short page drops and an ETH cluster
+    known only from the logs would offset it: the digest summary and health say the inventory is incomplete."""
+    lw = world(tmp_path)
+    b, a = lw.legacy(owner(2), count=0), lw.legacy(owner(1))
+    lw.views(b, balance=7 * SSV, burn=0)
+    lw.views(a, balance=500 * SSV)
+    lw.chain.mine()
+    w = lw.start()
+    lw.ssv.register(owner(9), (5, 6, 7, 8), [b"\x01" * 48])
+    lw.chain.mine()
+    lw.api_fault = "short"
+    advance(w)
+    health = _health(w)
+    assert len(health) == 1 and "inventory incomplete" in health[0]
+    assert "listed 1 clusters of its pagination.total 2" in health[0]
+    assert w.db.meta("check:m6:summary")["inventory_gap"]
+
+
 def test_m6_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count(tmp_path):
     """The API agrees with itself (one row, total 1) but its index lost a burning legacy cluster: the chain's
     SSV-side daoValidatorCount (ProtocolLib.updateDAOSSV) does not add up."""
@@ -800,15 +819,18 @@ def test_m6_reorg_orphaning_a_liquidation_restores_the_observed_start(tmp_path):
 
 SWEEP_STORIES = ("page_orphaned", "page_survives", "resolution_orphaned", "clear_orphaned")
 SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert", "empty_total0")
-BLINDING = {"empty", "short", "error", "view_revert"}  # faults that hide the cluster under attack from the run
+EXHAUSTIVE_FAULTS = ("short_masked",)  # QA cp2e-3 F1: every confirmation × depth × restart, outside the seed
+BLINDING = {"empty", "short", "error", "view_revert", "short_masked"}  # faults that hide the cluster under attack from the run
 
 
 def _sweep_cases(seed=20261022):
-    """Every story × fault, twice, with confirmations, reorg depth and restart point drawn from a fixed seed."""
+    """Every story × fault, twice, with confirmations, reorg depth and restart point drawn from a fixed seed (the
+    draws of the original faults unchanged); the faults added later, every combination."""
     rng = random.Random(seed)
     for story, fault in itertools.product(SWEEP_STORIES, SWEEP_FAULTS):
         for _ in range(2):
             yield story, fault, rng.choice((0, 3)), rng.choice(("1", "N")), rng.choice((None, "detected", "before"))
+    yield from itertools.product(SWEEP_STORIES, EXHAUSTIVE_FAULTS, (0, 3), ("1", "N"), (None, "detected", "before"))
 
 
 class _M6Sweep:
@@ -923,7 +945,9 @@ def test_m6_adversarial_sweep(tmp_path, story, fault, conf, depth, restart):
     lw.ssv.clusters[raw].update(saved)
     sw.truth_zero = story != "page_orphaned"
     sw.set_truth(sw.truth_zero, revert=fault == "view_revert")
-    lw.api_fault = fault if fault != "view_revert" else None
+    lw.api_fault = {"view_revert": None, "short_masked": "short"}.get(fault, fault)
+    if fault == "short_masked":  # a cluster only the scanned logs know would offset the row the page drops
+        lw.ssv.register(owner(9), (5, 6, 7, 8), [b"\x01" * 48])
     if restart == "before":
         lw.restart()
     elif restart == "detected":

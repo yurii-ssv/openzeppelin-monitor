@@ -34,11 +34,13 @@ def findings_out(w):
     return outbox(w, "severity!='health' AND kind NOT IN ('digest', 'realert')")  # re-alerts: framework cadence
 
 
-def world(tmp_path, m7=None, proxy=BALANCED, cssv=STAKED, count=2, **kw):
+def world(tmp_path, m7=None, proxy=BALANCED, cssv=STAKED, count=2, bystander=False, **kw):
     lw = LegacyWorld(tmp_path, only=("m7",), **kw)
     lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed, **(m7 or {})}}
     a = lw.legacy(owner(1), count=count)
     lw.views(a, balance=CLUSTER)
+    if bystander:  # a listed legacy cluster without validators or balance (rows[1]: a short page keeps it)
+        lw.views(lw.legacy(owner(2), count=0), balance=0, burn=0)
     lw.ledger(proxy_ssv=proxy, cssv_supply=cssv, network=NETWORK, operators=OPS)
     lw.chain.mine()
     lw.start()
@@ -584,6 +586,103 @@ def test_m7_empty_api_next_to_a_cluster_from_the_logs_is_unknown(tmp_path):
     assert len(health) == 1 and "listed no clusters" in health[0]
 
 
+# ---------------------------------------------------------------- QA cp2e-3 F1: log-only clusters never offset a short page
+
+
+def _masked_world(tmp_path):
+    """QA cp2e-3 F1 (P1): the inert legacy cluster b (0 validators, 7 SSV) is the row a short page drops (rows[0]);
+    the burning legacy cluster a (1 validator) stays listed, so daoValidatorCount 1 = listed 1. True surplus
+    1 + 2 - 7 = -4 SSV; without b's claim it reads +3 SSV."""
+    lw = LegacyWorld(tmp_path, only=("m7",))
+    lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed}}
+    b = lw.legacy(owner(2), count=0)
+    a = lw.legacy(owner(1), count=1)
+    lw.views(b, balance=7 * SSV, burn=0)
+    lw.views(a, balance=CLUSTER)
+    lw.ledger(proxy_ssv=BALANCED + 2 * SSV, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.start()
+    return lw
+
+
+def _log_only(lw, n=1):
+    """`n` ETH clusters registered after the start block: in the scanned logs, not (yet) in the API."""
+    for i in range(n):
+        lw.ssv.register(owner(9 + i), (5, 6, 7, 8), [bytes([1 + i]) * 48])
+    lw.chain.mine()
+
+
+def test_m7_p1_short_page_masked_by_a_log_only_cluster_first_run(tmp_path):
+    """QA cp2e-3 F1 (P1): the API serves [a] with its true pagination.total 2 while one cluster is known only from
+    the logs. The log-only cluster is not an API row: the page is short, UNKNOWN, no +3 SSV baseline."""
+    lw = _masked_world(tmp_path)
+    _log_only(lw)
+    lw.api_fault = "short"
+    advance(lw.w)
+    assert incidents(lw.w) == {}
+    health = _health(lw.w)
+    assert len(health) == 1 and "UNKNOWN" in health[0] and "listed 1 clusters of its pagination.total 2" in health[0]
+    lw.api_fault = None  # the API recovers: the true surplus pages; one baseline
+    day(lw)
+    inc = incidents(lw.w)
+    assert "surplus-floor" in inc and inc["surplus"]["revision"] == str(-4 * SSV)
+    assert sorted(_opened(lw.w)) == [("info", "open"), ("page", "open")]
+
+
+def test_m7_p1_masking_persists_on_the_next_daily_run(tmp_path):
+    """QA cp2e-3 F1 (P1 persistence): the API stays short and a 2 SSV leak lands the next day (true -6 SSV): still
+    UNKNOWN, never a surplus of exactly 1 SSV; the page goes out once the listing is whole."""
+    lw = _masked_world(tmp_path)
+    _log_only(lw)
+    lw.api_fault = "short"
+    advance(lw.w)
+    lw.ledger(proxy_ssv=BALANCED, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    day(lw)
+    assert incidents(lw.w) == {} and findings_out(lw.w) == []
+    assert all("pagination.total 2" in h for h in _health(lw.w)) and len(_health(lw.w)) == 2
+    lw.api_fault = None
+    day(lw)
+    inc = incidents(lw.w)
+    assert "surplus-floor" in inc and inc["surplus"]["revision"] == str(-6 * SSV)
+
+
+def test_m7_p1_control_short_page_alone_is_unknown(tmp_path):
+    lw = _masked_world(tmp_path)
+    lw.chain.mine()
+    lw.api_fault = "short"
+    advance(lw.w)
+    assert incidents(lw.w) == {} and any("UNKNOWN" in h for h in _health(lw.w))
+
+
+@pytest.mark.parametrize("log_only", [1, 2])
+@pytest.mark.parametrize("point", ["first", "lost_database", "after_baseline", "reorg"])
+def test_m7_short_page_offset_by_log_only_clusters_is_unknown_at_every_point(tmp_path, point, log_only):
+    """F1's input at every point a run can meet it, with as many and with more log-only clusters than rows dropped:
+    no new baseline, no changed revision, no resolve; health says UNKNOWN."""
+    lw = _masked_world(tmp_path)
+    if point != "first":
+        advance(lw.w)
+        assert incidents(lw.w)["surplus"]["revision"] == str(-4 * SSV)
+    if point == "lost_database":
+        lw.tmp_path = tmp_path / "lost"
+        lw.tmp_path.mkdir()
+        lw.start()
+    elif point == "reorg":
+        fork = lw.chain.number
+        lw.chain.mine(2)
+        advance(lw.w)
+        lw.fork(fork)
+    before = incidents(lw.w)
+    _log_only(lw, log_only)
+    lw.api_fault = "short"
+    n = len(findings_out(lw.w))
+    day(lw)
+    assert findings_out(lw.w)[n:] == []
+    after = incidents(lw.w)
+    assert {k: v["revision"] for k, v in after.items()} == {k: v["revision"] for k, v in before.items()}
+    assert any("UNKNOWN" in h for h in _health(lw.w))  # the gap, or (after a baseline) the m7_legacy id check
+
+
 def test_m7_unstake_prefix_read_failure_is_retried_not_zero(tmp_path):
     """The range before start_block is read once with eth_getLogs; an error there fails the run (nothing
     persisted, retried at the next step), never 'no unstakes'."""
@@ -660,22 +759,25 @@ def test_m7_reorg_orphaning_the_repair_that_resolved_the_page_reopens_it(tmp_pat
 
 SWEEP_STORIES = ("leak_orphaned", "leak_survives", "repair_orphaned", "unstake_orphaned")
 SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert", "op_revert", "empty_total0")
+EXHAUSTIVE_FAULTS = ("short_masked",)  # QA cp2e-3 F1: every confirmation × depth × restart, outside the seed
 OP_SEL = "0x" + keccak(b"getOperatorEarningsSSV(uint64)")[:4].hex()
 
 
 def _sweep_cases(seed=20261022):
-    """Every story × fault, twice, with confirmations, reorg depth and restart point drawn from a fixed seed."""
+    """Every story × fault, twice, with confirmations, reorg depth and restart point drawn from a fixed seed (the
+    draws of the original faults unchanged); the faults added later, every combination."""
     rng = random.Random(seed)
     for story, fault in itertools.product(SWEEP_STORIES, SWEEP_FAULTS):
         for _ in range(2):
             yield story, fault, rng.choice((0, 3)), rng.choice(("1", "N")), rng.choice((None, "detected", "before"))
+    yield from itertools.product(SWEEP_STORIES, EXHAUSTIVE_FAULTS, (0, 3), ("1", "N"), (None, "detected", "before"))
 
 
 class _M7Sweep:
     """The M7 ledger with `truth` = the canonical surplus; every step checks the sweep invariants."""
 
-    def __init__(self, tmp_path, conf, count=2):
-        self.lw, self.a = world(tmp_path, confirmations=conf, count=count)
+    def __init__(self, tmp_path, conf, count=2, bystander=False):
+        self.lw, self.a = world(tmp_path, confirmations=conf, count=count, bystander=bystander)
         self.conf, self.proxy, self.cssv = conf, BALANCED, STAKED
         self.truth = SSV
 
@@ -734,8 +836,10 @@ class _M7Sweep:
 
 @pytest.mark.parametrize("story,fault,conf,depth,restart", list(_sweep_cases()))
 def test_m7_adversarial_sweep(tmp_path, story, fault, conf, depth, restart):
-    # a self-consistent empty page (total 0) meets an inert legacy cluster: daoValidatorCount 0 agrees with it
-    sw = _M7Sweep(tmp_path, conf, count=0 if fault == "empty_total0" else 2)
+    # a self-consistent empty page (total 0) meets an inert legacy cluster: daoValidatorCount 0 agrees with it;
+    # short_masked (QA cp2e-3 F1): a short page drops the inert cluster, a log-only ETH cluster would offset it
+    sw = _M7Sweep(tmp_path, conf, count=0 if fault in ("empty_total0", "short_masked") else 2,
+                  bystander=fault == "short_masked")
     lw = sw.lw
     lw.chain.mine(conf)
     sw.step(seconds=0, blocks=0)  # the first run: the 1 SSV baseline
@@ -771,6 +875,9 @@ def test_m7_adversarial_sweep(tmp_path, story, fault, conf, depth, restart):
         lw.views(sw.a, balance=CLUSTER, revert=True)
     elif fault == "op_revert":
         lw.chain.stub_call(VIEWS, OP_SEL + u256(2).hex(), revert="0x")
+    elif fault == "short_masked":
+        _log_only(lw)
+        lw.api_fault = "short"
     else:
         lw.api_fault = fault
     if restart == "before":
