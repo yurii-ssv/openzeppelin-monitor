@@ -21,7 +21,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2b Oracle (M9, M10, M11) | IMPLEMENTED (repair 4) — QA 5 RUNNING on Opus, capped, D14/D15 (lane head `48e997d`) | QA task `task_80f043fd604e`/`ctx_72b394dcb3e3` | `48e997d` | Claude Opus 5.5 high (QA) | wait worker_done; FAIL => reduced CP2b (D14), no repair 5 |
 | CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
-| CP2e Legacy SSV (M6, M7) | QA FAILED attempt 3 (1 BLOCKING); repair 3 RUNNING (lane head `00235da`; next QA capped, D15) | task `task_517a6c9b022b`/`ctx_116bf746a1a4`, opus/high | `00235da` | Claude Opus high (repair) → Opus QA 4 capped | API-completeness class; fallback proposal in event-0071; premature integration merge still open |
+| CP2e Legacy SSV (M6, M7) | IMPLEMENTED (repair 3) — QA 4 RUNNING on Opus, capped, D15 (lane head `45cc774`) | QA task `task_d5a79232b7af`/`ctx_ff8a170155e1` | `45cc774` | Claude Opus 5.5 high (QA) | wait worker_done; premature integration merge still open |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition

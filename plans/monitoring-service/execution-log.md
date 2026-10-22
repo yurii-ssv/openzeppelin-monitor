@@ -775,3 +775,8 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 ## Event 0072 — CP2b repair 4 delivered, QA 5 (capped, D14/D15)
 
 - CP2b repair 4 done, head `48e997d`. Diff outside workers/cp2b within the lane paths (m9/m11 checks, tests, config keys, plan status line); tests m9+m10+m11+sweep 342 passed; the three switches are in `config.example.json`. QA 5 on Opus (`task_80f043fd604e`/`ctx_72b394dcb3e3`, `ms-qa-cp2b-5`, opus/high effective) dispatched with D14/D15 and the no-mutation scope note; if it fails there is no repair 5 and CP2b ships reduced. Released `ctx_12b6ebc17f66`.
+
+## Event 0073 — CP2e repair 3 delivered, QA 4 (capped, D15)
+
+- CP2e repair 3 done, head `45cc774`. Diff outside workers/cp2e within the lane paths (m6, m7 checks, tests, plan status line); test_m6+m7: 323 passed. QA 4 on Opus, capped, D15, no-mutation scope note, dispatched `task_d5a79232b7af`/`ctx_ff8a170155e1` (`ms-qa-cp2e-4`, opus/high effective); the self-consistent partial page is a recorded known residual (NOTE unless reachable by a second path). Released `ctx_116bf746a1a4`.
+- Marco asked (not an action item yet): start block / alerting start. Answer given: backfill from activation block 24,920,727 (already the `start_block`), proposal of a silent backfill then alerting on, for CP3; awaiting Marco's yes.
