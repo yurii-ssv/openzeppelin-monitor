@@ -1572,8 +1572,9 @@ def test_m12_r3_window_below_the_stored_set_is_backfilled_never_undercounted(tmp
 @pytest.mark.parametrize("fault", sorted(FEE_FAULTS))
 @pytest.mark.parametrize("reorg", [False, True])
 def test_m12_r3_every_partial_fee_history_raises_and_keeps_the_page(tmp_path, fault, reorg):
-    """RED for short/shift/ratios/missing/long (accepted before). The run fails (check-error health, errors + 1),
-    the runway page stays, nothing is sent; in a reorg run the marker stays; the full answer then resolves."""
+    """RED, all six: five were accepted; junk raised an RpcError out of the step. The run fails (check-error health,
+    errors + 1), the runway page stays, nothing is sent; in a reorg run the marker stays; the full answer then
+    resolves."""
     c, w, _ = setup(tmp_path, balance=eth(.333), checks={"projection_tip": "none"})
     advance(w)
     c.set_base_fee(gwei(10))
