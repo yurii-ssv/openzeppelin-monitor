@@ -1,0 +1,109 @@
+head 0d0ea72370c4eb2cf5f3c4b49478de8184a905e3 at 2026-10-22T09:57Z
+[R4-F1-window] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.27s
+[R4-F1-window] mutated exit: 1
+1 passed in 0.24s
+[R4-F1-window] restored exit: 0
+[R4-F1-window] git status --porcelain: ''
+[R4-F1-blocknum] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-F1-blocknum] mutated exit: 1
+1 passed in 0.19s
+[R4-F1-blocknum] restored exit: 0
+[R4-F1-blocknum] git status --porcelain: ''
+[R4-F1-older] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-F1-older] mutated exit: 1
+1 passed in 0.20s
+[R4-F1-older] restored exit: 0
+[R4-F1-older] git status --porcelain: ''
+[R4-F1-position] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.20s
+[R4-F1-position] mutated exit: 1
+1 passed in 0.18s
+[R4-F1-position] restored exit: 0
+[R4-F1-position] git status --porcelain: ''
+[R4-F1-drop-guard] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-F1-drop-guard] mutated exit: 1
+1 passed in 0.19s
+[R4-F1-drop-guard] restored exit: 0
+[R4-F1-drop-guard] git status --porcelain: ''
+[R4-F1-drop] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-F1-drop] mutated exit: 1
+1 passed in 0.19s
+[R4-F1-drop] restored exit: 0
+[R4-F1-drop] git status --porcelain: ''
+[R4-F2-error] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-F2-error] mutated exit: 1
+1 passed in 0.19s
+[R4-F2-error] restored exit: 0
+[R4-F2-error] git status --porcelain: ''
+[R4-F2-both] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 2 insertions(+), 2 deletions(-)
+2 failed in 0.24s
+[R4-F2-both] mutated exit: 1
+2 passed in 0.21s
+[R4-F2-both] restored exit: 0
+[R4-F2-both] git status --porcelain: ''
+[R4-F2-partial] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-F2-partial] mutated exit: 1
+1 passed in 0.20s
+[R4-F2-partial] restored exit: 0
+[R4-F2-partial] git status --porcelain: ''
+[R4-G1] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.22s
+[R4-G1] mutated exit: 1
+1 passed in 0.20s
+[R4-G1] restored exit: 0
+[R4-G1] git status --porcelain: ''
+[R4-SWEEP-rate] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+4 failed, 71 passed, 38 deselected in 4.88s
+[R4-SWEEP-rate] mutated exit: 1
+75 passed, 38 deselected in 4.84s
+[R4-SWEEP-rate] restored exit: 0
+[R4-SWEEP-rate] git status --porcelain: ''
+[R4-SWEEP-G1] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed in 0.22s
+[R4-SWEEP-G1] mutated exit: 1
+2 passed in 0.27s
+[R4-SWEEP-G1] restored exit: 0
+[R4-SWEEP-G1] git status --porcelain: ''
+[R4-D14-dissent] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.22s
+[R4-D14-dissent] mutated exit: 1
+1 passed in 0.17s
+[R4-D14-dissent] restored exit: 0
+[R4-D14-dissent] git status --porcelain: ''
+[R4-D14-revert] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-D14-revert] mutated exit: 1
+1 passed in 0.19s
+[R4-D14-revert] restored exit: 0
+[R4-D14-revert] git status --porcelain: ''
+[R4-D14-proof] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R4-D14-proof] mutated exit: 1
+1 passed in 0.19s
+[R4-D14-proof] restored exit: 0
+[R4-D14-proof] git status --porcelain: ''
+[R4-D14-resolve-once] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 deletion(-)
+2 failed in 0.30s
+[R4-D14-resolve-once] mutated exit: 1
+2 passed in 0.28s
+[R4-D14-resolve-once] restored exit: 0
+[R4-D14-resolve-once] git status --porcelain: ''
+[R3-RR-lead-r4] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.22s
+[R3-RR-lead-r4] mutated exit: 1
+1 passed in 0.20s
+[R3-RR-lead-r4] restored exit: 0
+[R3-RR-lead-r4] git status --porcelain: ''
+[R3-RR-attr-r4] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed, 1 passed in 0.22s
+[R3-RR-attr-r4] mutated exit: 1
+2 passed in 0.19s
+[R3-RR-attr-r4] restored exit: 0
+[R3-RR-attr-r4] git status --porcelain: ''

@@ -184,3 +184,34 @@ Other rows: thresholds_from_chain `test_m9::test_thresholds_from_chain_active_sl
 - NOT RUN: the LIVE M11 weekly comparison (273 s, network; `compare_leaves` is unchanged in repair 3); archive re-fetch of the dumps; the anvil-fork M9 scenario (CP3, V3.8); N1–N3 (NOTEs, not required).
 - Next action: records commit, worker_done; fresh QA (Claude Opus 5.5, capped round policy).
 
+
+## Attempt 7 — repair 4 (QA attempt 4 FAIL, QA4-F1, QA4-F2)
+
+- Observed UTC: 2026-10-22T09:15Z – 2026-10-22T10:05Z
+- Task / Dispatch: `task_2cf9324f8445` / `ctx_12b6ebc17f66` (run `run_96be3e0c7302`), worker `term_878b1791-f066-47e1-b7c3-3b82f2731ab7`
+- Frozen start head: `ffc3b275169d4ca70afa0ee2a76d67c1b16e34f3` (porcelain 0; code = `a17872d`); commits `6835967` (code + tests), `9729253`, `0d0ea72` (falsifiers), `441f407` (verification rows), evidence commit, records commit (= lane head in worker_done)
+- Action and concrete outcome: fixes, R4-G1, D14 switches, state table, sweep in [plan.md § Repair 4](plan.md#repair-4-qa-attempt-4-fail--fresh-implementer). QA Appendix A on the start head: exit 1, 5 failed / 6 passed (= the report). Coordinator: D15 received; one `ask` (D14 switches): ruling "add the three default-on switches now".
+- `git merge --no-edit plan/monitoring-service`: not done (allowed, not required).
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| V2x.1 M9 / M10 / M11 | `bash plans/monitoring-service/workers/cp2b/evidence/verify.sh` (each row its own pytest; run at `441f407`, porcelain 0) | exit 0: 91 / 24 / 114 passed, 0 skipped | local | `evidence/verification.repair4.log` |
+| V2x.2 thresholds_from_chain | same | exit 0: 2 / 1 / 1 | local | same |
+| V2x.3 restart | same | exit 0: 3 / 2 / 7 | local | same |
+| V2x.4 rpc_budget | same | exit 0: 1 / 1 / 1 | local | same |
+| V2b.7 | same, `-k from_the_clock` | exit 0, 2 passed | local | same |
+| qa1 / qa2 / qa3 regressions | same | exit 0: 8 / 1 / 7; 8 / 12; 7 / 7 | local | same |
+| repair-3 rows | same, `-k r3_` | exit 0: 14 / 1 / 8 | local | same |
+| qa4 regressions / repair-4 rows | same, `-k qa4` (M11), `-k r4_` (M9, M11) | exit 0: 14; 3 / 12 | local | same |
+| adversarial sweep | `… reconcile/tests/test_m9_m10_m11_sweep.py` | exit 0, 113 passed | local | same |
+| QA attempt-1 / -2 / -3 Appendix A as published | extracted by the script | exit 1: 23 / 2, 15 / 1 (N1), 10 / 1 (adapted control) — unchanged | local | same |
+| QA attempt-4 Appendix A as published | extracted by the script | exit 1, **9 passed / 2 failed**: `test_m9_commit_root_revert_from_a_rotated_out_key_does_not_stay_open_forever` (N4), `test_m9_newly_activated_slot_is_not_absent_for_rounds_before_it_existed` (N5): NOTEs, not in the brief; QA4-F1 (2) and QA4-F2 reproducers pass | local | same |
+| V2x.6 | `… reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | exit 0, **582 passed**; ruff exit 0 | local | same |
+| RED on frozen / GREEN now | frozen checks (`git archive ffc3b27 reconcile/checks`) + head tests | 31 new/renamed tests: **26 RED**, 5 GREEN (twins/controls + one untested-but-right row); lane files 55 failed / 287 passed; sweep 29 / 113 RED; head: 31 / 31 pass | local | `evidence/red_green_repair4.txt` |
+| V2x.5 falsifiers (repair 4) | `bash …/evidence/falsify_repair4.sh` | 18 mutations (R4-F1-window, -blocknum, -older, -position, -drop-guard, -drop, R4-F2-error, -both, -partial, R4-G1, R4-SWEEP-rate, R4-SWEEP-G1, R4-D14-dissent, -revert, -proof, -resolve-once, R3-RR-lead-r4, R3-RR-attr-r4): every mutated exit 1, restored exit 0, porcelain `''` | local | `evidence/falsifiers_repair4.log` |
+| V2x.5 falsifiers (repairs 1–3, re-run) | `bash …/falsify_repair{1,2,3}.sh` | repair 3: 16 red/green + **R3-RR-lead, R3-RR-attr anchor errors** (lines rewritten by QA4-F1; re-guarded in repair 4, red/green); repair 2: 18 / 18; repair 1: 12 red/green, F1-proof survives, F8-clock and S-superseded anchor errors (as recorded in repairs 2–3); porcelain `''` after every pair | local | `evidence/falsifiers_repair1-3.rerun-repair4.log` |
+| LIVE M9 record / current rounds (saved dumps) | `reconcile/.venv/bin/python …/evidence/live_replay.py …/outage_2026_08_logs.json 400` and `… live_recent_logs.json 400` | exit 0 both; output **byte-identical** to repair 3 | local | `evidence/*_replay.repair4.out.json` |
+| Sweep exploration (scratch, once) | M11 seeds 60–1499, M9/M10 seeds 12–299 × {0, 3} | 2016 passed, 0 failed on the final code; before R4-G1, M11 seeds 92, 332, 456, 569 failed (also on frozen) | local | plan.md § Repair 4 |
+
+- NOT RUN: LIVE reads (M11 weekly comparison, current rounds re-fetch); the original `falsify.sh` five (arguments not recorded); archive re-fetch; anvil-fork M9 scenario (CP3); N1–N5 (NOTEs); mutation campaigns (owner scope).
+- Next action: records commit, worker_done; fresh QA (Claude Opus 5.5, capped round, D15).
