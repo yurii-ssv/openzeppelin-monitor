@@ -717,3 +717,58 @@ def test_m6_events_of_one_scan_step_are_evaluated_at_the_run_block(tmp_path):
     advance(w)
     assert [r["kind"] for r in outbox(w, "severity!='health'")] == ["open", "resolved"]
     assert "was liquidated" in outbox(w)[-1]["text"] and set(w.db.meta("run:m6")["reasons"]) == {"events"}
+
+
+def _observed_start(tmp_path):
+    """Clear at one sweep, liquidatable (deep below the threshold at once: a fee jump) from the next: the start is
+    observed, clear + 1, and the warn is W blocks away."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1))
+    lw.views(a, balance=200 * SSV, liquidatable=False)
+    lw.chain.mine()
+    w = lw.start()
+    advance(w)
+    clear = w.checkpoint()["block"]
+    lw.views(a, balance=lw.deficit(W + 50_000), liquidatable=True)
+    lw.sweep()
+    assert w.db.conn.execute("SELECT liquidatable_since FROM m6_clusters").fetchone()[0] == clear + 1
+    return lw, w, a, clear
+
+
+def _after_restore(w, clear):
+    row = w.db.conn.execute("SELECT * FROM m6_clusters").fetchone()
+    assert row["liquidatable_since"] == clear + 1 and row["since_estimated"] == 0
+    assert outbox(w, "severity!='health'") == []  # lag < W: no warn from a re-estimated start
+
+
+def test_m6_reorg_restores_the_canonical_start_a_deleted_clear_observation_overwrote(tmp_path):
+    """A deleted block saw the cluster clear (overwriting its row); the new chain keeps it liquidatable. The rewind
+    restores the canonical state at the ancestor (start clear + 1, observed), never a balance estimate that dates
+    it before the canonical clear sweep (here: more than W blocks back, a false warn)."""
+    lw, w, a, clear = _observed_start(tmp_path)
+    lw.clock.advance(3600)
+    fork = lw.chain.number
+    lw.views(a, balance=lw.deficit(W + 50_000), liquidatable=False)  # deleted chain: clear (a validator removal)
+    lw.chain.mine()
+    advance(w)
+    assert w.db.conn.execute("SELECT liquidatable_since FROM m6_clusters").fetchone()[0] is None
+    lw.fork(fork)
+    lw.chain.mine()
+    advance(w)
+    _after_restore(w, clear)
+
+
+def test_m6_reorg_orphaning_a_liquidation_restores_the_observed_start(tmp_path):
+    """The liquidation that deleted the cluster's row lived on a deleted block: the row comes back as it was."""
+    lw, w, a, clear = _observed_start(tmp_path)
+    st = lw.ssv.clusters[bytes.fromhex(a.cid[2:])]
+    saved = dict(st)
+    fork = lw.chain.number
+    lw.ssv.liquidate(a.owner, a.ops)
+    advance(w)
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m6_clusters").fetchone()[0] == 0
+    lw.fork(fork)
+    st.update(saved)
+    lw.chain.mine()
+    advance(w)
+    _after_restore(w, clear)

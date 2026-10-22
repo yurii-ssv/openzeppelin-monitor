@@ -40,11 +40,14 @@ validators), and the listing (API rows and scanned logs) must hold the API's own
 the same UNKNOWN health message and the summary (weekly digest) says the counts are a lower bound; the listed
 clusters are still evaluated and open incidents leave only on positive proof, as above.
 
-Reorg rule (checks/README.md §6.2): a run with `ctx.reorg_ancestor` = A first rewinds `m6_clusters` (a
-`last_clear_block` above A is forgotten; a liquidatable start first observed above A is dropped, and
-re-derived by this run), then sweeps every legacy cluster of the inventory at the new block AND every key of
-an open M6 incident (which covers `ctx.reorg_keys`) and every cluster with a persisted row; each open key
-gets a finding, a `resolve=True` or an UNKNOWN re-report.
+Reorg rule (checks/README.md §6.2): every write of a row (and every deletion: a tombstone) is also kept in
+`m6_obs` by block, for `OBS_HISTORY_BLOCKS` (far beyond any reorg the worker follows). A run with
+`ctx.reorg_ancestor` = A first restores each row touched above A to its canonical state at A: the latest
+observation at or below A (a deleted block's clear observation or liquidation never overwrites the canonical
+start); a row without such an observation forgets every value derived above A (a `last_clear_block` above A,
+a start first observed above A: re-derived by this run). The run then sweeps every legacy cluster of the
+inventory at the new block AND every key of an open M6 incident (which covers `ctx.reorg_keys`) and every
+cluster with a persisted row; each open key gets a finding, a `resolve=True` or an UNKNOWN re-report.
 """
 
 from __future__ import annotations
@@ -72,8 +75,17 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS m6_clusters (
   cluster_id TEXT PRIMARY KEY, last_clear_block INTEGER, liquidatable_since INTEGER,
   first_liquidatable_block INTEGER, since_estimated INTEGER, last_block INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS m6_obs (
+  cluster_id TEXT NOT NULL, block INTEGER NOT NULL, last_clear_block INTEGER, liquidatable_since INTEGER,
+  first_liquidatable_block INTEGER, since_estimated INTEGER, gone INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (cluster_id, block)
 )
 """
+ROW = ("last_clear_block", "liquidatable_since", "first_liquidatable_block", "since_estimated")
+# m6_obs keeps every row state this long (and the latest one before it): ~1 day of blocks, far beyond the worker's
+# reorg search (`reorg_search_depth` recorded blocks) and Ethereum finality (64 blocks)
+OBS_HISTORY_BLOCKS = 7_200
 
 
 def cluster_call(selector: bytes, owner: str, operator_ids, cluster) -> bytes:
@@ -199,6 +211,18 @@ def inventory_gap(ctx: Ctx, inv) -> str | None:
     return "; ".join(gaps) or None
 
 
+def _store(db, cid: str, block: int, values: tuple, history: bool = True) -> None:
+    """Write a cluster's row (`ROW` values) as of `block`, and keep it in `m6_obs` for reorg restores."""
+    db.execute("INSERT INTO m6_clusters (cluster_id, last_clear_block, liquidatable_since, first_liquidatable_block, "
+               "since_estimated, last_block) VALUES (?,?,?,?,?,?) ON CONFLICT(cluster_id) DO UPDATE SET "
+               "last_clear_block=excluded.last_clear_block, liquidatable_since=excluded.liquidatable_since, "
+               "first_liquidatable_block=excluded.first_liquidatable_block, since_estimated=excluded.since_estimated, "
+               "last_block=excluded.last_block", (cid, *values, block))
+    if history:
+        db.execute("INSERT OR REPLACE INTO m6_obs (cluster_id, block, last_clear_block, liquidatable_since, "
+                   "first_liquidatable_block, since_estimated, gone) VALUES (?,?,?,?,?,?,0)", (cid, block, *values))
+
+
 def require_views(settings: dict, check_id: str) -> str:
     views = settings.get("views")
     if not views:
@@ -242,9 +266,7 @@ class M6LegacyCoverage(Check):
         db = ctx.db.conn
         ancestor = ctx.reorg_ancestor
         if ancestor is not None:  # rows derived from deleted blocks (README §6.2 rule 5)
-            db.execute("UPDATE m6_clusters SET last_clear_block=NULL WHERE last_clear_block>?", (ancestor,))
-            db.execute("UPDATE m6_clusters SET liquidatable_since=NULL, first_liquidatable_block=NULL, "
-                       "since_estimated=NULL WHERE first_liquidatable_block>?", (ancestor,))
+            self._rewind(db, ancestor)
         # copies from `prepare`: the framework re-runs it after every parameter reload and every reorg (§5.1)
         period, min_coll = self.period, self.min_collateral
         warn_blocks = period * int(self.config["warn_after_window_bps"]) // 10_000
@@ -292,21 +314,10 @@ class M6LegacyCoverage(Check):
                 if since is None:
                     since, estimated = self._back_date(block, v, period, min_coll, row.get("last_clear_block"))
                     first = block
-                db.execute(
-                    "INSERT INTO m6_clusters (cluster_id, last_clear_block, liquidatable_since, "
-                    "first_liquidatable_block, since_estimated, last_block) VALUES (?,?,?,?,?,?) "
-                    "ON CONFLICT(cluster_id) DO UPDATE SET liquidatable_since=excluded.liquidatable_since, "
-                    "first_liquidatable_block=excluded.first_liquidatable_block, "
-                    "since_estimated=excluded.since_estimated, last_block=excluded.last_block",
-                    (c.cluster_id, row.get("last_clear_block"), since, first, int(estimated), block))
+                _store(db, c.cluster_id, block, (row.get("last_clear_block"), since, first, int(estimated)))
             else:
                 since = None
-                db.execute(
-                    "INSERT INTO m6_clusters (cluster_id, last_clear_block, liquidatable_since, "
-                    "first_liquidatable_block, since_estimated, last_block) VALUES (?,?,NULL,NULL,NULL,?) "
-                    "ON CONFLICT(cluster_id) DO UPDATE SET last_clear_block=excluded.last_clear_block, "
-                    "liquidatable_since=NULL, first_liquidatable_block=NULL, since_estimated=NULL, "
-                    "last_block=excluded.last_block", (c.cluster_id, block, block))
+                _store(db, c.cluster_id, block, (block, None, None, None))
             zero = v["balance"] == 0 and vc > 0
             lag = block - since if since is not None else None
             late = lag is not None and lag > warn_blocks
@@ -337,12 +348,16 @@ class M6LegacyCoverage(Check):
                     findings[cid] = unknown_rereport(self.id, opened[cid], why)
                 continue
             db.execute("DELETE FROM m6_clusters WHERE cluster_id=?", (cid,))
+            db.execute("INSERT OR REPLACE INTO m6_obs (cluster_id, block, gone) VALUES (?,?,1)", (cid, block))
             if cid in opened:
                 findings[cid] = self._resolved(cid, opened[cid], block, state)
         summary["inactive"] = sum(1 for c in legacy.values() if c.valid and not c.cluster.active)
         summary["burn_per_block"] = str(summary["burn_per_block"])
         if scope is None:
             ctx.set_state("summary", summary)
+            horizon = block - OBS_HISTORY_BLOCKS  # keep the newest observation at or below it, drop older ones
+            db.execute("DELETE FROM m6_obs WHERE block<? AND (gone=1 OR EXISTS (SELECT 1 FROM m6_obs n WHERE "
+                       "n.cluster_id=m6_obs.cluster_id AND n.block>m6_obs.block AND n.block<=?))", (horizon, horizon))
 
         if unknown or gap:
             names = ", ".join(sorted(unknown)[:10])
@@ -354,6 +369,24 @@ class M6LegacyCoverage(Check):
                 text += f" Legacy inventory incomplete: {gap}; unlisted clusters are not evaluated."
             ctx.health("m6-unknown", text, dedup=f"m6-unknown:{','.join(sorted(unknown))}:{gap}", realert=True)
         return list(findings.values())
+
+    @staticmethod
+    def _rewind(db, ancestor: int) -> None:
+        """Every row touched above `ancestor` back to its canonical state there (see the module docstring)."""
+        touched = {r[0] for r in db.execute("SELECT cluster_id FROM m6_clusters WHERE last_block>?", (ancestor,))}
+        touched |= {r[0] for r in db.execute("SELECT DISTINCT cluster_id FROM m6_obs WHERE block>?", (ancestor,))}
+        db.execute("DELETE FROM m6_obs WHERE block>?", (ancestor,))
+        for cid in sorted(touched):
+            prev = db.execute("SELECT * FROM m6_obs WHERE cluster_id=? ORDER BY block DESC LIMIT 1", (cid,)).fetchone()
+            if prev is None:  # nothing observed at or below the ancestor: forget what came from above it
+                db.execute("UPDATE m6_clusters SET last_clear_block=NULL WHERE cluster_id=? AND last_clear_block>?",
+                           (cid, ancestor))
+                db.execute("UPDATE m6_clusters SET liquidatable_since=NULL, first_liquidatable_block=NULL, "
+                           "since_estimated=NULL WHERE cluster_id=? AND first_liquidatable_block>?", (cid, ancestor))
+            elif prev["gone"]:
+                db.execute("DELETE FROM m6_clusters WHERE cluster_id=?", (cid,))
+            else:
+                _store(db, cid, prev["block"], tuple(prev[k] for k in ROW), history=False)
 
     def _back_date(self, block: int, v: dict, period: int, min_coll: int, last_clear: int | None) -> tuple[int, bool]:
         """Estimated first liquidatable block from chain values (see the module docstring)."""
