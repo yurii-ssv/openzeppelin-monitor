@@ -644,3 +644,9 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - CP2d repair 2 done, head `6a93e1a`. Diff outside workers/cp2d is within allowed writes (m1/m2 checks, their tests, plan status line); test_m1+m2+sweep 238 passed, ruff clean. The worker recorded the API-ahead-of-checkpoint warn as a NOTE (ruling A).
 - QA 3 on Opus, capped, dispatched `task_527ba7657316`/`ctx_6a9a342fb10e` (worktree `ms-qa-cp2d-3`, effective claude/opus/high). Released `ctx_e0f0fb329a9f`.
+
+## Event 0062 — CP2c VERIFIED revoked; repair 3
+
+- The late Codex CP2c QA 2 (`ms-qa-cp2c-2`, commit `422b494`, FAIL) tested the pre-repair head `c6b0a63` and found F1 M12 uses block counts (7200/50400) for the 24 h / 7 d windows (one missed slot hides a >0.04 ETH daily spend; a transaction 11 days old stays in the 7-day set and pages a false runway) and F2 a partial `eth_feeHistory` resolves a runway page and clears the reorg marker. I ran its reproducer file against the verified head `945fd4d`: 6 failed / 11 passed, so both defects are real and the Opus QA 3 PASS missed them. The VERIFIED status (event-0058) is revoked; CP2c plan status line amended; the merge of the lane into `plan/monitoring-service` stays (the code is integrated, not accepted).
+- Imported the Codex report and reproducer into the lane (`f779b45`, `qa/cp2c-attempt-2-codex.md`, `qa/cp2c-attempt-2-codex-test_new.py`). Repair 3 dispatched `task_d8441a07b246`/`ctx_30d9cb9479da` (opus/high effective); next QA fresh Opus, capped.
+- Lesson: an Opus QA PASS is not proof against the time-window class (DEFECT-CLASSES 4) and the degenerate-input class (1); QA packets for the CP2c re-verification and CP2b/CP2d should name both explicitly.
