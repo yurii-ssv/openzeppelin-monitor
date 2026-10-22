@@ -167,3 +167,57 @@ Pending human input: none; soak (OG3) commands in plan.md "Soak handoff".
 Next owner: Claude Opus QA on the CP3 head (re-check M11 too).
 Preservation: local stack project ms-cp3 left running (stop: docker compose -p ms-cp3 down).
 ```
+
+## Repair 1 (QA attempt 1 FAIL → fresh repair, task `task_833791dccdfb` / `ctx_926e07c5cccb`)
+
+Frozen start head `8f59453` (QA commit on `91ca3a7`), confirmed with `git rev-parse HEAD`. Implementer: Claude Opus
+5.5 high. Code commit `6667248`; this record and the plan line in the following commit (head in `worker_done`).
+`git merge --no-edit plan/monitoring-service` (5c49c8a) was attempted and **aborted**: it conflicts in
+`execution-log.md` (not writable by this repair) and `plan.md`; the coordinator merges the plan branch.
+
+| Finding | Fix | Regressions (red on `91ca3a7`, green on the repair) |
+|---|---|---|
+| F1 BLOCKING (D17) | `phase.history_block` = the first caught-up checkpoint, set once. Each check runs its silent evaluation **pinned there** (`ctx.block` = that block, events and inbox entries up to it), also when a failed run is retried at a later step; a check alerts from its first run at a block after it (forced `live` run; in the same step when the silent run was a retry), whatever the other checks do. `silent` is per check (`check.id not in evaluated`); `first_live` collects each check at its silent commit. No run alerts at a block ≤ `history_block`. Phase `live` (`caught_up_block` = that step's checkpoint) once every check evaluated. The lag alert is off only until the caught-up checkpoint. A backfill phase written before the repair keeps its evaluated checks' forced live run. | `test_backfill.py`: QA Appendix A ported — `test_live_event_while_another_check_blocks_go_live_is_paged` RED, `test_m13_top_up_and_drain_after_catch_up_while_another_check_blocks_go_live` RED (now equal to the live control: page open + info resolved), `test_one_transient_rpc_error_in_a_silent_run_silences_the_next_live_event` RED, `test_m13_top_up_after_catch_up_while_another_check_blocks_go_live` green on both (as QA measured), `test_restart_mid_scan_and_mid_silent_evaluation_stays_silent_then_live_once` green on both; new sweep `test_seeded_backfill_sweep_with_a_check_failing_its_silent_run[0-23]` (exception or transport RpcError for 1–6 attempts, either check order, 3 restarts, live blocks/events mined while it fails; after **every** step every event after the caught-up checkpoint is sent, exactly once, none before; the failing check's first run is at `history_block`, its next one later; check-error health; level iff it holds) RED 24/24 (23 on the per-step invariant, 1 on the new key); `test_lag_alert_starts_at_the_caught_up_checkpoint_while_a_check_still_fails` |
+| F5 | `rpc` health dedup = `rpc:<clock of the outage's first failed step>:<n>` (per outage, like `rpc-recovered`), no window re-key | `test_worker.py::test_second_outage_in_the_same_window_is_announced` RED (1 row) → 2 rows, 2 `rpc-recovered` |
+| F2 | `rpc.py`: an HTTP error is an answer only with a JSON-RPC `error` object (or a batch list); otherwise a transport failure of that endpoint (401/403/404 not retried). A single call's 200 object with neither `result` nor `error` is a transport failure of that endpoint. Batches keep their per-item check and fallback to single calls | `test_rpc_failover.py` (local HTTP endpoints, the probe's cases): `test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[…]` 502 gateway JSON / 403 JSON / 200 without result+error RED → the fallback answers (`call` and `get_logs` `[]` from B); 500 JSON-RPC error, 429, 200 HTML, range error green on both (controls); `test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error[0-1]` RED → `RpcError(transport=True)`, no window split, no key in the message |
+| F3 | M11 DEFERRED text: the weekly comparison says `retried every <full_state_retry_s> s`; the scoped re-comparison (really every run) keeps "every run" | `test_m11.py::test_cp3_lagging_api_is_probed_once_per_retry_interval_and_compared_once_it_caught_up` asserts "retried every 1800 s" |
+| F4 | `deploy/README.md` Kubernetes: readiness = the healthcheck; liveness = staleness only (`time.time() - s['at'] < 600`) or none | docs |
+
+Docs: `deploy/README.md` "Backfill phase (D17)" rewritten (per-check alerting, pinned retry, archive note: a retry
+more than ~100 blocks after the catch-up needs one endpoint of the failover list serving that state; a pruned
+endpoint's error fails over), `reconcile/README.md`, `checks/README.md` run-reason rows, `ssv_watch_backfill` help.
+
+State table rows (new state of the repair):
+
+| State / input | (a) empty | (b) error | (c) partial | (d) reorg | (e) restart | (f) same block | (g) time anchor |
+|---|---|---|---|---|---|---|---|
+| `phase.history_block` | unset until the first caught-up step; a pre-repair backfill phase gets it then (its `evaluated` → `first_live`) | a failing silent run keeps it; retried pinned there each step | some checks evaluated: those alert, the rest retry | a reorg below it: reads by number on the new chain, `min(history_block, checkpoint)` | durable (meta) | no run alerts at a block ≤ it | block, not clock |
+| `phase.first_live` (backfill and live) | — | the forced live run failing keeps the check in it | per check | — | durable: `test_restart_mid_scan_and_mid_silent_evaluation…` | waits for a later block | — |
+| `Worker.rpc_outage_since` (memory) | set at failure 1 | — | — | — | reset (a restart's outage is announced anew at failure 3) | — | clock |
+
+Verification (repair 1, measured): suite **2242 passed** (2202 + 40), `ruff check reconcile` clean (ruff 0.17.1).
+Reproducers on `91ca3a7` (`git archive` + the repaired test files, scratchpad): 33 failed / 99 passed in
+`test_backfill.py test_worker.py test_rpc_failover.py` (every failure one of the RED rows above); all green on the repair.
+Stack `ms-cp3` rebuilt and restarted on the repair (`COMPOSE_FILE=docker-compose.yaml:docker-compose.reconcile.yaml`,
+`MAINNET_RPC_URL`/`_2` as in the soak handoff, `MONITOR_CONFIG_DIR=./.local-dry/config`, `docker compose -p ms-cp3 up
+-d --build`, 21:57:09Z; Monitor unchanged, not recreated). State survived (named volume): `status` at 21:57:2xZ checkpoint 26,250,976 (the pre-restart checkpoint), phase `live`, `caught_up_block` 26,250,543, `first_live` [], 1 open incident (m7 info), undelivered 0; the first step after the restart ran every interval check (public-RPC 429s, failover to rpc.mevblocker.io and back); at 22:01:11Z `status`: checkpoint **26,250,995** (advanced), lag 0, `live`, no check errors, undelivered 0; status file `healthy: true` (18 s old); container `(healthy)`, 0 restarts.
+
+Not done (not required): N-1, N-4, N-6. No mutation campaign (owner scope note).
+
+### Completion handoff (repair 1, ≤ 250 words, also sent as the `worker_done` summary)
+
+```text
+Task / live dispatch: task_833791dccdfb / ctx_926e07c5cccb
+Assignment outcome: QA1 F1 (BLOCKING), F5, F2, F3, F4 fixed with regressions.
+Base -> head: 8f59453 -> mtabasco/ms-cp3 (code 6667248 + records commit; head in worker_done).
+Changed: reconcile/eb_reconcile.py (per-check silent phase pinned to phase.history_block; per-outage rpc
+  health key; lag alert after the catch-up), rpc.py (non-JSON-RPC answers fail over), m11 text, metrics help,
+  tests (test_backfill, test_worker, test_rpc_failover, test_m11), deploy/README.md (backfill, K8s probes),
+  reconcile/README.md, checks/README.md, workers/cp3/plan.md, plan.md CP3 line.
+Verification: suite 2242 passed (2202 + 40), ruff clean; on 91ca3a7 33 new tests RED (3 of the 4 F1
+  reproducers [the fourth was green on the frozen head too, as QA measured], 24/24 failing-check sweep
+  seeds, F5, 5 F2), all green now.
+Stack ms-cp3 rebuilt/restarted 21:57:09Z: state kept, checkpoint 26250976 -> 26250995, live, healthy.
+Not done: N-1, N-4, N-6 (not required); plan-branch merge aborted (conflict in execution-log.md, not writable).
+Next owner: fresh QA on the CP3 head (re-check F1 with a failing silent run).
+```
