@@ -76,10 +76,12 @@ def test_m6_benign_positive_balance_not_liquidatable_stays_silent(tmp_path):
 
 
 def test_m6_liquidatable_longer_than_half_window_warns(tmp_path):
-    """No baseline (worker start): the start is back-dated from balance and burn: W + 1 blocks below the threshold."""
+    """No baseline (worker start): the start is back-dated from balance and burn. W + 2 blocks of burn below the
+    threshold: one block back adds one block of burn, so the balance was below it (strict `<`,
+    ClusterLib.isLiquidatable) at this block and the W + 1 before it: the first liquidatable block is W + 1 ago."""
     lw = world(tmp_path)
     a = lw.legacy(owner(1))
-    lw.views(a, balance=lw.deficit(W + 1), liquidatable=True)
+    lw.views(a, balance=lw.deficit(W + 2), liquidatable=True)
     lw.chain.mine()
     w = lw.start()
     advance(w)
@@ -92,15 +94,31 @@ def test_m6_liquidatable_longer_than_half_window_warns(tmp_path):
 
 
 def test_m6_benign_liquidatable_exactly_half_window_stays_silent(tmp_path):
+    """QA cp2e-1 F2 (PR1c): first liquidatable block exactly W blocks ago (balance W + 1 blocks of burn below the
+    threshold, so W + 1 blocks ago it was at the threshold, not liquidatable): the rule is `>`, silent."""
     lw = world(tmp_path)
     a = lw.legacy(owner(1))
-    lw.views(a, balance=lw.deficit(W), liquidatable=True)
+    lw.views(a, balance=lw.deficit(W + 1), liquidatable=True)
     lw.chain.mine()
     w = lw.start()
     advance(w)
     assert outbox(w) == [] and incidents(w) == []
     row = w.db.conn.execute("SELECT * FROM m6_clusters").fetchone()
     assert row["liquidatable_since"] == w.checkpoint()["block"] - W
+
+
+def test_m6_backdated_start_of_a_cluster_that_just_crossed_is_now(tmp_path):
+    """QA cp2e-1 F2 (PR1a): one block of burn below the threshold: the previous block held exactly the threshold,
+    which the strict rule does not liquidate, so the first liquidatable block is this one (not estimated) — the
+    same start as the chain observed block by block."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1))
+    lw.views(a, balance=lw.deficit(1), liquidatable=True)
+    lw.chain.mine()
+    w = lw.start()
+    advance(w)
+    row = w.db.conn.execute("SELECT * FROM m6_clusters").fetchone()
+    assert row["liquidatable_since"] == w.checkpoint()["block"] and row["since_estimated"] == 0
 
 
 def test_m6_observed_start_is_not_back_dated_before_the_last_clear_sweep(tmp_path):
@@ -230,7 +248,7 @@ def test_m6_unvalidated_tuple_is_unknown_and_keeps_the_incident_open(tmp_path):
 def test_m6_reverting_or_empty_view_is_unknown_not_clean(tmp_path, answer):
     lw = world(tmp_path)
     a, b = lw.legacy(owner(1)), lw.legacy(owner(2))
-    lw.views(a, balance=lw.deficit(W + 1), liquidatable=True)
+    lw.views(a, balance=lw.deficit(W + 2), liquidatable=True)
     lw.views(b, balance=0, liquidatable=True)
     lw.chain.mine()
     w = lw.start()
@@ -294,7 +312,7 @@ def test_m6_thresholds_from_chain_period_change_moves_the_warn(tmp_path):
 
 def test_m6_thresholds_from_chain_back_dating_uses_the_live_minimum_collateral(tmp_path):
     """Above period × burn, the live minimum collateral sets the threshold the back-dating starts from."""
-    lw = world(tmp_path, params={"minimum_liquidation_collateral_ssv": PERIOD_SSV * BURN + (W + 1) * BURN})
+    lw = world(tmp_path, params={"minimum_liquidation_collateral_ssv": PERIOD_SSV * BURN + (W + 2) * BURN})
     a = lw.legacy(owner(1))
     lw.views(a, balance=PERIOD_SSV * BURN, liquidatable=True)  # exactly period × burn: below the collateral rule
     lw.chain.mine()
@@ -324,7 +342,7 @@ def test_m6_params_unavailable_skips_the_run(tmp_path):
 def test_m6_restart_does_not_duplicate_the_open_incident(tmp_path):
     lw = world(tmp_path)
     a, b = lw.legacy(owner(1)), lw.legacy(owner(2))
-    lw.views(a, balance=lw.deficit(W + 1), liquidatable=True)
+    lw.views(a, balance=lw.deficit(W + 2), liquidatable=True)
     lw.views(b, balance=0, liquidatable=True)
     lw.chain.mine()
     w = lw.start()
@@ -499,7 +517,7 @@ def test_m6_reorg_forgets_a_clear_observation_on_deleted_blocks(tmp_path):
     been liquidatable all along, so the back-dated start is used."""
     lw = world(tmp_path)
     a = lw.legacy(owner(1))
-    lw.views(a, balance=lw.deficit(W + 1), liquidatable=True)
+    lw.views(a, balance=lw.deficit(W + 2), liquidatable=True)
     lw.chain.mine()
     w = lw.start()
     w.scan()  # the start block is recorded; no check run yet
@@ -509,7 +527,7 @@ def test_m6_reorg_forgets_a_clear_observation_on_deleted_blocks(tmp_path):
     advance(w)
     assert outbox(w) == [] and w.db.conn.execute("SELECT last_clear_block FROM m6_clusters").fetchone()[0] >= fork
     lw.fork(fork)
-    lw.views(a, balance=lw.deficit(W + 1), liquidatable=True)
+    lw.views(a, balance=lw.deficit(W + 2), liquidatable=True)
     lw.chain.mine()
     advance(w)
     assert [r["severity"] for r in outbox(w, "severity!='health'")] == ["warn"]
@@ -540,3 +558,161 @@ def test_m6_stub_params_dated_values(tmp_path):
     w = lw.start()
     advance(w)
     assert w.checks["m6"].period == PERIOD_SSV and w.checks["m6"].min_collateral == 1
+
+
+# ---------------------------------------------------------------- QA cp2e-1 F1: an incomplete inventory is UNKNOWN
+
+
+def _health(w):
+    return [r["text"] for r in outbox(w, "severity='health'")]
+
+
+def test_m6_first_sweep_with_an_empty_api_listing_is_unknown_not_clean(tmp_path):
+    """QA cp2e-1 F1 (PR2): nothing persisted yet and the API answers 200 with an empty page: never read as 'no
+    legacy clusters'. The chain's daoValidatorCount and the API's own pagination.total both say it is short."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1))
+    lw.views(a, balance=0, liquidatable=True)
+    lw.chain.mine()
+    w = lw.start()
+    w.inventory.http_get = lambda url: {"clusters": [], "pagination": {"pages": 1, "total": 1}}
+    advance(w)
+    health = _health(w)
+    assert len(health) == 1 and "UNKNOWN" in health[0] and "inventory incomplete" in health[0]
+    assert "daoValidatorCount is 1" in health[0] and "pagination.total 1" in health[0]
+    assert w.db.meta("check:m6:summary")["inventory_gap"]
+    w.inventory.http_get = lw.http_get  # the API recovers (next refresh): the page goes out
+    lw.sweep()
+    assert [r["severity"] for r in pages(w)] == ["page"]
+
+
+@pytest.mark.parametrize("fault", ["short", "no_total"])
+def test_m6_listing_short_of_its_total_or_without_one_is_unknown(tmp_path, fault):
+    lw = world(tmp_path)
+    a, b = lw.legacy(owner(1)), lw.legacy(owner(2))
+    lw.views(a, balance=0, liquidatable=True)  # the row the short page drops
+    lw.views(b, balance=500 * SSV)
+    lw.chain.mine()
+    w = lw.start()
+    lw.api_fault = fault
+    advance(w)
+    assert pages(w) == [] and incidents(w) == []
+    health = _health(w)
+    assert len(health) == 1 and "inventory incomplete" in health[0]
+    assert ("pagination.total 2" if fault == "short" else "no pagination.total") in health[0]
+
+
+def test_m6_unreadable_api_total_is_unknown_not_clean(tmp_path):
+    """The listing is cached (api_refresh_s) and the total cannot be read: completeness is unknown."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1))
+    lw.views(a, balance=500 * SSV)
+    lw.chain.mine()
+    w = lw.start(inventory={"api_url": "https://api.invalid/api/v4/mainnet", "api_refresh_s": 10**9})
+    advance(w)
+    assert _health(w) == []
+    lw.api_fault = "error"
+    lw.sweep()
+    health = _health(w)
+    assert len(health) == 1 and "pagination.total unavailable" in health[0] and "SSV API unreachable" in health[0]
+
+
+def test_m6_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count(tmp_path):
+    """The API agrees with itself (one row, total 1) but its index lost a burning legacy cluster: the chain's
+    SSV-side daoValidatorCount (ProtocolLib.updateDAOSSV) does not add up."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1), count=2, api=False)
+    b = lw.legacy(owner(2))
+    lw.views(a, balance=0, liquidatable=True)
+    lw.views(b, balance=500 * SSV)
+    lw.chain.mine()
+    w = lw.start()
+    advance(w)
+    health = _health(w)
+    assert len(health) == 1 and "hold 1 validators, daoValidatorCount is 3" in health[0]
+
+
+def test_m6_restart_on_a_lost_database_with_an_empty_api_is_unknown(tmp_path):
+    """The persisted set is gone (a new data dir) and the API is empty at the first sweep of the new process."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1))
+    lw.views(a, balance=0, liquidatable=True)
+    lw.chain.mine()
+    w = lw.start()
+    advance(w)
+    assert len(pages(w)) == 1
+    lw.tmp_path = tmp_path / "lost"
+    lw.tmp_path.mkdir()
+    lw.api_fault = "empty"
+    w = lw.start()
+    advance(w)
+    assert pages(w) == [] and "inventory incomplete" in _health(w)[0]
+
+
+def test_m6_digest_of_an_incomplete_inventory_says_unknown_not_zero(tmp_path):
+    lw = world(tmp_path, alerts={"mode": "record", "label": "test", "digest_interval_s": 86_400})
+    a = lw.legacy(owner(1), count=2)
+    lw.views(a, balance=100 * SSV)
+    lw.chain.mine()
+    w = lw.start()
+    lw.api_fault = "empty"
+    advance(w)
+    line = outbox(w, "kind='digest'")[0]["text"]
+    assert "0 active" in line and "UNKNOWN: the legacy inventory is incomplete" in line
+
+
+# ---------------------------------------------------------------- QA cp2e-1 F3: reorg enumeration, resolved keys
+
+
+def test_m6_reorg_run_reports_an_open_key_without_a_persisted_row(tmp_path):
+    """README §6.2: a reorg run enumerates the check's open incidents, not only its own rows (QA cp2e-1 QF6d). The
+    row is lost and the API no longer lists the cluster; storage still says legacy: UNKNOWN, kept open."""
+    lw, w, a, fork = _page_at_fork(tmp_path)
+    inc = incidents(w)[0]["id"]
+    w.db.conn.execute("DELETE FROM m6_clusters")
+    lw.rows.clear()
+    lw.fork(fork)
+    lw.views(a, balance=0, liquidatable=True)
+    lw.chain.mine()
+    lw.clock.advance(601)  # past inventory.api_refresh_s
+    advance(w)
+    assert [i["id"] for i in incidents(w)] == [inc] and w.db.meta("reorg:m6") is None
+    assert any("not in the inventory" in t for t in _health(w))
+
+
+def test_m6_reorg_orphaning_the_liquidation_that_resolved_the_page_reopens_it(tmp_path):
+    """QA cp2e-1 PR10: the resolution of an ALREADY RESOLVED key came from a deleted block (its liquidation): the
+    reorg run re-evaluates the cluster on the new chain, where it is still active at zero."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1))
+    lw.views(a, balance=0, liquidatable=True)
+    lw.chain.mine()
+    w = lw.start()
+    advance(w)
+    st = lw.ssv.clusters[bytes.fromhex(a.cid[2:])]
+    saved = dict(st)
+    fork = lw.chain.number
+    lw.ssv.liquidate(a.owner, a.ops)
+    advance(w)
+    assert incidents(w) == [] and outbox(w)[-1]["kind"] == "resolved"
+    lw.fork(fork)
+    st.update(saved)  # the new chain never liquidated it
+    lw.chain.mine()
+    advance(w)
+    assert [i["key"] for i in incidents(w)] == [a.cid] and len(pages(w)) == 2
+
+
+def test_m6_events_of_one_scan_step_are_evaluated_at_the_run_block(tmp_path):
+    """Two cluster events between runs (a validator removal, then the liquidation): one event run at the
+    checkpoint, one resolution, no page from the intermediate state."""
+    lw = world(tmp_path)
+    a = lw.legacy(owner(1), count=2)
+    lw.views(a, balance=0, liquidatable=True)
+    lw.chain.mine()
+    w = lw.start()
+    advance(w)
+    lw.ssv.remove(a.owner, a.ops, [b"\x02" * 48])
+    lw.ssv.liquidate(a.owner, a.ops)
+    advance(w)
+    assert [r["kind"] for r in outbox(w, "severity!='health'")] == ["open", "resolved"]
+    assert "was liquidated" in outbox(w)[-1]["text"] and set(w.db.meta("run:m6")["reasons"]) == {"events"}

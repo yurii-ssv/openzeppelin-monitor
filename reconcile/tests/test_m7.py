@@ -10,6 +10,7 @@ from fixtures_legacy import CSSV, SEL, SSV, VIEWS, LegacyWorld, owner
 from harness import advance, outbox
 
 from eb_storage import keccak, u256
+from rpc import RpcError
 
 pytestmark = pytest.mark.m7
 
@@ -398,3 +399,170 @@ def test_m7_reorg_with_the_leak_on_the_new_chain_keeps_the_page(tmp_path):
     lw.chain.mine()
     advance(lw.w)
     assert incidents(lw.w)["surplus-floor"]["id"] == page_id and len(outbox(lw.w, "severity='page' AND kind!='realert'")) == 1
+
+
+# ---------------------------------------------------------------- QA cp2e-1 F1: an incomplete inventory is UNKNOWN
+
+
+def _health(w):
+    return [r["text"] for r in outbox(w, "severity='health'")]
+
+
+def _opened(w):
+    return [(r["severity"], r["kind"]) for r in findings_out(w) if r["kind"] == "open"]
+
+
+def _short_world(tmp_path, proxy):
+    lw = LegacyWorld(tmp_path, only=("m7",))
+    lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed}}
+    a = lw.legacy(owner(1), count=2)
+    lw.views(a, balance=CLUSTER)
+    lw.ledger(proxy_ssv=proxy, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.start()
+    return lw, a
+
+
+def test_m7_first_run_with_an_empty_api_listing_is_unknown_not_a_baseline(tmp_path):
+    """QA cp2e-1 F1 (PR2): one legacy cluster of 100 SSV, the proxy 50 SSV short (true surplus -49 SSV). An empty
+    API page at the first run must not drop the cluster's claim: no baseline of 51 SSV, UNKNOWN health."""
+    lw, _ = _short_world(tmp_path, BALANCED - 50 * SSV)
+    lw.w.inventory.http_get = lambda url: {"clusters": [], "pagination": {"pages": 1, "total": 1}}
+    advance(lw.w)
+    assert incidents(lw.w) == {}
+    health = _health(lw.w)
+    assert len(health) == 1 and "UNKNOWN" in health[0] and "inventory incomplete" in health[0]
+    lw.w.inventory.http_get = lw.http_get  # the API recovers: the true surplus pages; one baseline, no "changed"
+    day(lw)
+    inc = incidents(lw.w)
+    assert "surplus-floor" in inc and inc["surplus"]["revision"] == str(-49 * SSV)
+    assert sorted(_opened(lw.w)) == [("info", "open"), ("page", "open")]
+
+
+def test_m7_incomplete_inventory_still_pages_when_the_upper_bound_is_below_the_floor(tmp_path):
+    lw, _ = _short_world(tmp_path, BALANCED - CLUSTER - 2 * SSV)  # below the floor even without the cluster
+    lw.api_fault = "empty"
+    advance(lw.w)
+    page = outbox(lw.w, "severity='page' AND kind!='realert'")
+    assert len(page) == 1 and "surplus at most" in page[0]["text"] and "surplus" not in incidents(lw.w)
+
+
+@pytest.mark.parametrize("fault", ["short", "no_total"])
+def test_m7_listing_short_of_its_total_or_without_one_is_unknown(tmp_path, fault):
+    lw, _ = _short_world(tmp_path, BALANCED)
+    lw.legacy(owner(2), count=0)  # inert, with a positive balance: a claim no validator count reveals
+    lw.views(lw.refs[1], balance=7 * SSV, burn=0)
+    lw.ledger(proxy_ssv=BALANCED + 7 * SSV, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.api_fault = fault
+    advance(lw.w)
+    assert incidents(lw.w) == {}
+    health = _health(lw.w)
+    assert len(health) == 1 and "inventory incomplete" in health[0]
+    assert ("pagination.total 2" if fault == "short" else "no pagination.total") in health[0]
+
+
+def test_m7_unreadable_api_total_is_unknown_not_a_change(tmp_path):
+    lw, _ = _short_world(tmp_path, BALANCED)
+    lw.w = lw.start(inventory={"api_url": "https://api.invalid/api/v4/mainnet", "api_refresh_s": 10**9})
+    advance(lw.w)
+    assert incidents(lw.w)["surplus"]["revision"] == str(SSV)
+    lw.api_fault = "error"
+    day(lw)
+    assert len(findings_out(lw.w)) == 1 and "pagination.total unavailable" in _health(lw.w)[0]
+
+
+def test_m7_cluster_missing_from_the_api_and_its_total_is_found_by_the_dao_validator_count(tmp_path):
+    lw = LegacyWorld(tmp_path, only=("m7",))
+    lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed}}
+    a = lw.legacy(owner(1), count=2, api=False)  # the API's index lost it: no row, and its total says 0
+    lw.views(a, balance=CLUSTER)
+    lw.ledger(proxy_ssv=BALANCED - 50 * SSV, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.start()
+    advance(lw.w)
+    assert incidents(lw.w) == {} and "hold 0 validators, daoValidatorCount is 2" in _health(lw.w)[0]
+
+
+def test_m7_restart_on_a_lost_database_with_an_empty_api_is_unknown(tmp_path):
+    lw, _ = _short_world(tmp_path, BALANCED - 50 * SSV)
+    advance(lw.w)
+    assert "surplus-floor" in incidents(lw.w)
+    lw.tmp_path = tmp_path / "lost"
+    lw.tmp_path.mkdir()
+    lw.api_fault = "empty"
+    lw.start()
+    advance(lw.w)
+    assert incidents(lw.w) == {} and "inventory incomplete" in _health(lw.w)[0]
+
+
+def test_m7_unstake_prefix_read_failure_is_retried_not_zero(tmp_path):
+    """The range before start_block is read once with eth_getLogs; an error there fails the run (nothing
+    persisted, retried at the next step), never 'no unstakes'."""
+    lw = LegacyWorld(tmp_path, only=("m7",))
+    frm = lw.chain.sealed
+    lw.legacy(owner(1), count=2)
+    lw.views(lw.refs[0], balance=CLUSTER)
+    lw.chain.mine()
+    lw.unstake(USER, 40 * SSV)
+    lw.chain.mine(3)
+    lw.ledger(proxy_ssv=BALANCED, cssv_supply=STAKED - 40 * SSV, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": frm}}
+    w = lw.start()
+    handle = lw.chain._handle
+
+    def pruned(m, p):
+        if m == "eth_getLogs" and int(p[0]["toBlock"], 16) < w.cfg.start_block:
+            raise ValueError("history pruned")
+        return handle(m, p)
+
+    lw.chain._handle = pruned
+    with pytest.raises(RpcError, match="history pruned"):  # an RPC failure of the step (worker: rpc health)
+        advance(w)
+    assert incidents(w) == {} and w.db.meta("check:m7:unstake_prefix") is None
+    assert w.db.meta("run:m7")["errors"] == 1
+    lw.chain._handle = handle
+    lw.clock.advance(60)
+    advance(w)  # the failed run is retried at the next step
+    ev = json.loads(incidents(w)["surplus"]["evidence"])
+    assert ev["outstanding_unstake"] == str(40 * SSV) and ev["surplus"] == str(SSV)
+
+
+# ---------------------------------------------------------------- QA cp2e-1 F3: reorg runs, resolved keys
+
+
+def test_m7_reorg_run_whose_re_evaluation_is_unknown_keeps_both_keys_without_a_second_baseline(tmp_path):
+    """QA cp2e-1 F3 (QF7b, PR12): both keys were last seen above the ancestor; the new chain's ledger cannot be
+    priced (a reverting legacy view). Each key is re-reported unchanged under its id; no baseline is re-sent."""
+    lw, fork = _leak_at_fork(tmp_path)
+    ids = {k: v["id"] for k, v in incidents(lw.w).items()}
+    assert set(ids) == {"surplus", "surplus-floor"}
+    lw.fork(fork)
+    lw.views(lw.refs[0], balance=CLUSTER, revert=True)
+    lw.chain.mine()
+    advance(lw.w)
+    assert {k: v["id"] for k, v in incidents(lw.w).items()} == ids and lw.w.db.meta("reorg:m7") is None
+    assert any("UNKNOWN" in t for t in _health(lw.w))
+    lw.views(lw.refs[0], balance=CLUSTER)  # priced again: the new chain balances
+    day(lw)
+    inc = incidents(lw.w)
+    assert set(inc) == {"surplus"} and inc["surplus"]["id"] == ids["surplus"]
+    assert sorted(_opened(lw.w)) == [("info", "open"), ("page", "open")]
+
+
+def test_m7_reorg_orphaning_the_repair_that_resolved_the_page_reopens_it(tmp_path):
+    """An ALREADY RESOLVED key whose resolution (the SSV coming back) lived on a deleted block."""
+    lw, _ = world(tmp_path, proxy=BALANCED - 5 * SSV)
+    advance(lw.w)
+    lw.clock.advance(DAY)
+    fork = lw.chain.number
+    lw.ledger(proxy_ssv=BALANCED, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    advance(lw.w)
+    assert "surplus-floor" not in incidents(lw.w)
+    lw.fork(fork)
+    lw.chain.mine()
+    advance(lw.w)
+    assert "surplus-floor" in incidents(lw.w)
+    assert len(outbox(lw.w, "severity='page' AND kind='open'")) == 2
