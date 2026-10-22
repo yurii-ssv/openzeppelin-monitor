@@ -1206,3 +1206,61 @@ def test_m13_state_settings_are_validated_at_construction(tmp_path):
     for k in ("state_window_blocks", "state_fallback_after"):
         with pytest.raises(SystemExit, match=k):
             setup(tmp_path / k, checks={k: 0})
+
+
+# ---------------------------------------------------------------- repair 3: QA attempt 2 (Codex) Appendix A, M13 part
+# (ported verbatim except the module prefix; green on f779b45 and after)
+
+
+@pytest.mark.parametrize('addr', [RETIRED_SLOT4, RETIRED_LIQUIDATOR])
+def test_qa2c_m13_resolved_topup_reorg_replacement(tmp_path, addr):
+    c, w = setup(tmp_path)
+    top_up(c, addr, value=eth(.6))
+    step(w, c)
+    b = c.sealed
+    fork = c.number
+    drain(c, addr, value=eth(.6) - 21000 * c.base_fee(c.number))
+    step(w, c)
+    assert not open_keys(w)
+    c.reorg(fork)
+    top_up(c, addr, value=eth(.2))
+    step(w, c)
+    assert set(open_keys(w)) == {f'{addr}:{b}', f'{addr}:{fork}'}
+    assert len([x for x in sent(w) if x[0] == 'page' and x[1] == 'open']) == 3
+
+
+@pytest.mark.parametrize('out_first', [False, True])
+def test_qa2c_m13_same_block_topup_and_spend(tmp_path, out_first):
+    c, w = setup(tmp_path)
+    c.set_balance(RETIRED_SLOT4, eth(2))
+    step(w, c)
+    old = set(open_keys(w))
+    if out_first:
+        drain(c, value=eth(.2))
+        top_up(c, value=eth(.5))
+    else:
+        top_up(c, value=eth(.5))
+        drain(c, value=eth(.2))
+    b = c.number
+    step(w, c)
+    assert f'{RETIRED_SLOT4}:{b}' in set(open_keys(w)) - old
+    ev = json.loads(w.db.conn.execute('SELECT evidence FROM incidents WHERE key=?', (f'{RETIRED_SLOT4}:{b}',)).fetchone()[0])
+    assert int(ev['delta_wei']) == eth(.3) - 21000 * c.base_fee(b)
+
+
+def test_qa2c_m13_restart_gap_bounded_two_keys(tmp_path):
+    c, w = setup(tmp_path, checks={'max_blocks_per_run': 7})
+    clock = w.clock
+    start = w.cfg.start_block
+    activation = w.cfg.activation_block
+    w.db.conn.close()
+    c.mine(1000)
+    c.internal_transfer(RETIRED_SLOT4, eth(.2))
+    c.internal_transfer(RETIRED_LIQUIDATOR, eth(.4))
+    c.mine(1000)
+    c, w = wallet_worker(tmp_path, ['m13'], chain=c, clock=clock, start_block=start, activation_block=activation,
+                         checks={'m13': {'max_blocks_per_run': 7}})
+    advance(w)
+    assert len(open_keys(w)) == 2
+    assert w.db.meta('run:m13')['rpc_calls']['eth_getBalance'] <= 14
+    assert len(gaps(w)) == 2
