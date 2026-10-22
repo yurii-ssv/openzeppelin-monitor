@@ -93,6 +93,14 @@ re-emits the canonical tuple.
 5. **Re-poison:** the same cluster is flagged again after a repair.
 
 **Severity.** warn; page on re-poison or on a poisoned cluster that is also liquidatable.
+
+> Amended 2026-10-23 (coordinator ruling on CP2d QA 2 F2, execution-log event-0050): when the intermediate
+> states inside one block cannot be validated from the block-end state (public RPCs have no trace API), an
+> ambiguous re-poison in that block pages under the existing incident, with the evidence marked
+> "unverified intra-block re-poison (no trace)", instead of a health-only message. Validation stays at block
+> granularity: a poison and its repair inside one block are not seen, and the ruling does not reach across a
+> block boundary (plan §8 recorded note CP2d-N4).
+
 **Baseline.** 0 poisoned clusters on mainnet; about 1,300 receipts with several events for one
 cluster in history (scan `evidences/#91419/report-family-stale-event-scan.ts`).
 **Runbook.** Take the canonical tuple from the same receipt and send a zero-value `deposit` with it.
@@ -169,6 +177,14 @@ deficit = (Σ active ETH cluster getBalance + Σ operator getOperatorEarnings
 
 **Any `deficit > 0` → page.** Log the surplus trend as info.
 
+> Amended 2026-10-23 (coordinator ruling, interpretation A, execution-log event-0031; LIVE proof event-0037;
+> confirmed from source and LIVE by CP2a QA 1, event-0043): liabilities = Σ active ETH cluster `getBalance`
+> + Σ `getOperatorEarnings` + `getNetworkEarnings`, counted **once**. At the pin `getNetworkEarnings` already
+> includes the ETH owed to stakers (`claimEthRewards` decrements both `ethDaoBalance` and
+> `stakingEthPoolBalance`), so "staking ETH owed" is not added again; `stakingEthPoolBalance` is evidence only.
+> LIVE at block 26,241,393: surplus +457,600,000 wei (≈ +4.6e-10 ETH) under A; adding the pool would give a
+> false deficit of −208.6 ETH. The surplus is about 0 by construction, so `deficit > 0` stays exact (no tolerance).
+
 **Data / script.** `evidences/#89748/report-staking-insolvency-impact.ts` (public-view version of the
 equation). **Baseline:** no deficit at block 25,907,794.
 **Runbook.** Find the computed-zero or long-liquidatable clusters (M3) and liquidate them; that stops
@@ -191,6 +207,9 @@ That is fee avoidance for one round. Repeating it every round costs about 3.1 M 
 - `ValidatorAdded` with malformed or empty `shares` → **info**. Hold it for correlation with the
   above (the PoC used empty shares).
 
+> Amended 2026-10-23 (owner decision, Marco, execution-log event-0016): M5 pages on the **first confirmed**
+> round, as the preserved `reconcile/` precedent does; the warn-then-page grading above is superseded for M5.
+
 **Baseline.** Expected 0 (exploitation-history scan, `evidences/#94775/`).
 **Runbook.** One round self-corrects at the next root. On repetition, compute the fees avoided and
 escalate to the team: the contract fix (bind the leaf to the validator count at S) is parked.
@@ -209,6 +228,13 @@ Liquidated inside that window, the lifetime loss is **0 SSV**. At 30 / 90 / 365 
 - `isLiquidatableSSV` true for more than **7 days** → **warn** (half the window).
 - `getBalanceSSV == 0` while active → **page**.
 - Weekly digest: count of legacy clusters, validators and SSV/yr burn. The surface only shrinks.
+
+> Amended 2026-10-23 (coordinator rulings Q1 A and Q2 A on CP2e, execution-log event-0042): "more than 7 days"
+> = more than `warn_after_window_bps` (default 5000 bps) × the live `liquidation_threshold_period_ssv` blocks
+> (dated 100,240 → 50,120 blocks ≈ 6.96 days; it follows the chain); a back-dated start is flagged
+> "estimated start". The page fires only when `validatorCount > 0` and `getBalanceSSV == 0`; active clusters with
+> 0 validators at zero balance are listed explicitly in the weekly digest instead, and a 0 → > 0 validator change
+> at zero balance pages on that block.
 
 **Baseline (2026-09-02).** 198 clusters with balance (155 burning, 424 validators; 43 inert),
 4,062.82 SSV/yr aggregate burn.
@@ -259,6 +285,12 @@ Governance's seed staking position from the activation batch prevents both.
 - `cSSV.totalSupply()` below a floor (suggest the seed amount × 2) → **warn**.
 - Any `commitRoot` revert with `ZeroCSSVSupply` → **page** (also caught by M9).
 
+> Amended 2026-10-23 (owner decision D3, plan §2 and §6 below; floor semantics recorded as CP2c QA note N2,
+> execution-log event-0058 and event-cp2c-qa-attempt-4): the seed holder is the DAO Safe
+> `0xb35096b074fdb9bBac63E3AdaE0Bbde512B2E6b6`, and the floor is 2 × the Safe's cSSV balance, measured at
+> worker start and re-measured daily. The floor therefore follows the Safe's re-measured balance: a change of the
+> Safe's cSSV balance moves the floor only at the next daily measure or at a restart.
+
 **Runbook.** Any `stake()` closes the window immediately (there is no time gate). Ask governance to
 restore the seed position.
 
@@ -284,6 +316,11 @@ zero for six weeks before it.
   This tolerates the routine skipped fourth vote.
 - `commitRoot` from a slot address reverts (`NotOracle`, `AlreadyVoted`, `StaleBlockNumber`,
   `ZeroCSSVSupply`) → **warn**.
+
+> Amended 2026-10-23 (owner decision D14, execution-log event-0068; switch semantics event-0069; fallback not
+> triggered, event-0074): the "three dissenting rounds in a row" page has a per-rule switch,
+> `checks.m9.dissent_enabled` (default true). Off = the rule is not evaluated, one health line is sent, and an
+> open incident of the rule is resolved once with "rule disabled by config". The other M9 triggers have no switch.
 
 **Why it matters.** All slots must run the same tree construction (duplicate-last, **not** OZ
 `StandardMerkleTree`; #93157). A slot on a different build produces a valid-looking but different
@@ -331,6 +368,14 @@ root. On 2026-08-29 it sent 0 updates for three rounds.
   EB from `https://ssv-oracle.ssv.network/api/v1/proof/{clusterId}` at the latest root →
   any mismatch older than one round → **warn**.
 
+> Amended 2026-10-23 (owner decision D14, execution-log event-0068; switch semantics event-0069; fallback not
+> triggered, event-0074): two M11 rules have per-rule switches, both default true:
+> `checks.m11.revert_rate_enabled` (the > 10 % revert-rate warn) and `checks.m11.zero_round_proof_enabled` (the
+> proof-API comparison that raises a zero-update round to page). Off = the rule is not evaluated, one health line,
+> and an open incident of the rule is resolved once with "rule disabled by config". Measured exception, open for
+> the owner: with the proof switch off, an open proof page is recorded at warn without a message instead of
+> resolved (plan §8 recorded note CP2b-QA5-N4).
+
 **Baseline.** 2026-10-12: 506/506 clusters matched the leaf. Since 10-13 we are the only sender
 (about 100 updates/day, 0 reverts).
 
@@ -346,6 +391,16 @@ root. On 2026-08-29 it sent 0 updates for three rounds.
 **Runway = balance ÷ trailing 7-day average daily spend.** Compute it from gas used × the current
 base fee as well, because gas price dominates. At 1.15 gwei the oracle wallet lasts 19.5 days; at
 5 gwei, 4.5 days.
+
+> Amended 2026-10-23 (coordinator decision, execution-log event-0040): the base-fee projection defaults to
+> `checks.m12.projection_tip = "observed"`: the current base fee (mean over the sample) plus the gas-weighted
+> priority fee observed in the window; `"none"` keeps the base-fee-only projection written above. The runway
+> alarms use the **lower** (more pessimistic) of the trailing-spend runway and the projection; both runways and
+> their inputs go into the evidence. An empty tip sample falls back to a dated config default
+> (`fallback_tip_wei`), flagged in the evidence, never zero. Reason (LIVE, block 26,241,459): the oracle wallet
+> pays a fixed 1.000 gwei priority fee while the base fee is 0.03–0.36 gwei, so a base-fee-only projection
+> (59 days) could never alarm against 19.0 days from trailing spend.
+
 **Status 2026-10-20 22:00 UTC.** `0x16A5…` balance 0.3454 ETH → about 11 days to 0.15 ETH (≈ Oct 31), about 19.5 days to 0 (≈ Nov 9).
 Its only funding so far was 0.5 ETH on 10-07, from `0xD63983cEA76a13d7B01d8F7F14D5837330382d42`.
 
@@ -363,6 +418,16 @@ The 2026-10-05 Vault compromise leaked the old slot-4 key; the old liquidator ke
 
 Mute old addresses in every other monitor (rotation step 9).
 
+> Amended 2026-10-23 (owner decision D10, option A, execution-log event-0030; options in event-0026): incoming
+> value to `0x3A98…` and `0x4BC6…` is covered twice: the OpenZeppelin Monitor matches direct transactions, and the
+> worker watches their balances per block (`eth_getBalance` at the checkpoint; any increase → **page**, internal
+> transfers included). The `commitRoot`/`updateClusterBalance` attempt rule and the attacker/consolidation row
+> cover **direct transactions only**. Accepted gap (Marco): INTERNAL calls and constructor interactions of the
+> attacker/consolidation addresses with SSV contracts or our wallets, and transfers to a retired key that net to
+> zero within one block, are not detected (public RPCs have no trace API); documented in `deploy/README.md` and
+> the CP2c README. After a restart gap the balance watch needs an archive RPC for full coverage (plan §8 recorded
+> note CP2c-QA4-N1).
+
 ---
 
 ### M14 — Deposit front-running of liquidations (KI #3, #94187) · RECOMMENDED
@@ -374,6 +439,12 @@ liquidation carrying the old tuple reverts. Sustained, this can keep a cluster a
 cluster, a `ClusterDeposited` for that cluster with a value below its burn for 1 block → **info**.
 Three or more times on the same cluster within 24 h → **warn**. Raise to **page** if the cluster
 also reaches computed zero.
+
+> Amended 2026-10-23 (coordinator ruling on CP2a QA 2 finding M1, execution-log event-0053): a "time" is one
+> distinct front-running deposit transaction on the cluster; hits that share a deposit transaction collapse to one
+> counted time, and the evidence lists the liquidations it blocked. "Within 24 h" is the trailing 24 h of chain
+> (block-header) time anchored at the checkpoint, not 7,200 blocks (CP2a QA 1 finding M1, event-0043; fixed in
+> repair 1, event-0051).
 
 ---
 
@@ -422,6 +493,17 @@ The real safety net is M3 (liquidatable for > N blocks), not the keeper winning 
 - **Reorgs:** confirm alerts on blocks ≥ 2 deep, except M13 and M12 pages.
 - **Reproducible baselines:** every number above comes from a script under `evidences/`. Rerun it
   before changing a threshold.
+
+> Amended 2026-10-23 (owner decision D11, execution-log event-0030): Discord routing of the OpenZeppelin Monitor
+> triggers: the six `*_SUCCESS` triggers (cluster, dao, liquidation, operator, oracle, validator) post to
+> `DISCORD_WEBHOOK_INFO`; the six `*_FAILED` triggers, `ORACLE_DISSENT`, `DAO_SAFE_FAILED` and
+> `LARGE_ETH_TRANSFER` keep their own webhooks. `page` and `warn` go to Telegram (D2, §6).
+
+> Amended 2026-10-23 (owner decision D17, execution-log event-0076): silent backfill. History from `start_block`
+> (activation block 24,920,727) is stored and baselined **without** alerts; alerting starts at the first live block
+> after the catch-up; a state that is still wrong at the first live evaluation alerts then. A reorg across the
+> caught-up checkpoint can still send real new-chain events at blocks at or below it (plan §8 recorded note
+> CP3-QA2-N2).
 
 ## 5. Reference: addresses and live parameters
 
