@@ -73,6 +73,21 @@
       "surplus_floor_wei": 1000000000000000000,
       "cssv": "0xe018D31F120A637828F46aFD6c64EC099d960546",
       "unstake_history_from": 24920727
+    },
+    "m12": {
+      "oracle_wallet": "0x16A503C901615E6e21AA78cFcaFf11822fc2b617",
+      "liquidator_wallet": "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0",
+      "fallback_tip_wei": 1000000000
+    },
+    "m8": {
+      "cssv": "0xe018D31F120A637828F46aFD6c64EC099d960546",
+      "seed_holder": "0xb35096b074fdb9bBac63E3AdaE0Bbde512B2E6b6"
+    },
+    "m13": {
+      "addresses": {
+        "0x3A98EE5f80268Ed91F8A5880d93468b76a9F3bB4": "old oracle slot 4 + EB updater (key leaked 2026-10-05)",
+        "0x4BC656B34De23896fa6069C9862F355b740401aF": "old liquidator (drained 2026-10-06)"
+      }
     }
   }
 }
