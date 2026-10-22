@@ -9,7 +9,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
 - Mode: attended; resumed by Marco (event-0055)
 - Overall acceptance: pending
-- Current checkpoint: CP1A repair; CP2a–e (wave 2)
+- Current checkpoint: CP3
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
 
 | Task | State | Active dispatch / receipt | Frozen head | Owner | Evidence / next action |
@@ -22,13 +22,14 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2e Legacy SSV (M6, M7) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `45cc774`), integrated | settled+released | `45cc774` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; N4 residual recorded |
+| CP3 Integration, compose, fork e2e | DISPATCHED (D19) | task `task_e6121a51fcdb`/`ctx_ad9a6e4a6775`, opus/high | `0c388ec` | Claude Opus high | wait worker_done; then Opus QA, then CP4 |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
 
-- Exact next authorized action and owner: Marco approves the CP3 wave transition (all of CP1A, CP1B, CP2a-e VERIFIED, integration suite 2138 passed); on approval the coordinator dispatches CP3. Also pending Marco: start-block proposal (silent backfill from activation, alerting from the first live block).
-- Ready work with no active dispatch: CP3 (blocked on Marco's approval).
-- Waiting for: Marco (CP3 approval). Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
+- Exact next authorized action and owner: coordinator waits for CP3 worker_done, then a fresh Opus QA (D13, D15, no mutation testing); after CP3 VERIFIED: CP4 final QA, with the 48 h soak run by Marco (OG3).
+- Ready work with no active dispatch: none.
+- Waiting for: CP3 implementer. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
 - Next check/wake mechanism: attended; `orca orchestration check --wait` on the coordinator's Run (15 min) while workers run. Unattended recovery UNVERIFIED (DEF-4).
 - Context resume: verify HEAD/status/runtime, read this file, inspect the next task's latest attempt, continue the first unproven action. Do not reload whole history.
 

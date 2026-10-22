@@ -329,7 +329,7 @@ Rules: M6 for active legacy clusters: `isLiquidatableSSV` for > 7 days → warn;
 
 ### CP3 — Integration, compose, fork e2e, soak start
 
-**Status:** NOT STARTED. **Implementer:** Claude Opus high (single writer). **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1A and CP2a–e VERIFIED.
+**Status:** DISPATCHED (dispatch `ctx_ad9a6e4a6775`, base `0c388ec`, 2026-10-22, D19). **Implementer:** Claude Opus high (single writer). **QA:** Claude Opus 5.5 high (D13). **Inputs:** CP1A and CP2a–e VERIFIED.
 Deliverables: merged `plan/ms/cp3-integration`; `docker-compose.watch.yaml` (service `watch`, image `ssv-watch`, persistent volume, `read_only`, inbox mount, healthcheck); `deploy/README.md` runbook; `fork_e2e.py` scenarios `m5`, `m3`, `m9`, `m12`; local stack run; soak handoff to Marco (OG3) with the exact commands and the evidence to collect.
 **Stop:** V3 rows; timebox 2 days; soak runs 48 h after that.
 
