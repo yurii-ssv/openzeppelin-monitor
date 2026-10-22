@@ -38,6 +38,26 @@ MUT = [
  ("F13d-sweep", "reconcile/checks/m13_retired_keys.py",
   'conn.execute("UPDATE m13_topup SET resolved_block=NULL, resolved_balance=NULL WHERE resolved_block > ?",',
   'conn.execute("SELECT ?",', "reconcile/tests/test_m13.py::test_m13_adversarial_reorg_sweep"),
+ # repair 2 (QA attempt 2 F1-F5)
+ ("F13e", "reconcile/checks/m13_retired_keys.py", "            if block >= closed:\n", "            if True:\n",
+  "reconcile/tests/test_m13.py::test_m13_shorter_chain_orphaning_only_the_drain_waits_for_the_drain_block"),
+ ("F13f", "reconcile/checks/m13_retired_keys.py", "            if block >= b:\n                return True, [self.left_chain",
+  "            if True:\n                return True, [self.left_chain",
+  "reconcile/tests/test_m13.py::test_m13_qa2_f1b_reorg_run_below_the_top_up_block_keeps_the_key_open_and_pages_once"),
+ ("F13g-sweep", "reconcile/checks/m13_retired_keys.py", '        conn.execute("INSERT OR IGNORE INTO m13_orphan',
+  '        conn.execute("SELECT ? OR ?" or "INSERT OR IGNORE INTO m13_orphan',
+  "reconcile/tests/test_m13.py::test_m13_adversarial_reorg_sweep"),
+ ("F13h", "reconcile/checks/m13_retired_keys.py",
+  '            if self.read_failures < self.config["state_fallback_after"]:\n                raise\n            window',
+  '            if True:\n                raise\n            window',
+  "reconcile/tests/test_m13.py::test_m13_qa2_f2_pruned_rpc_restart_gap_recovers_after_bounded_failures_and_says_so"),
+ ("F13i", "reconcile/checks/m13_retired_keys.py", "        except Exception as exc:  # noqa: BLE001",
+  "        except (RpcError, KeyError, TypeError, ValueError) as exc:  # noqa: BLE001",
+  "reconcile/tests/test_m13.py::test_qa2_m13_malformed_receipt_entry_must_not_block_the_page"),
+ ("F8c", "reconcile/checks/m8_supply_floor.py", 'st.get("process") != self.process', "False",
+  "reconcile/tests/test_m8.py::test_qa2_m8_restart_whose_first_run_fails_after_the_seed_read_still_measures_at_start"),
+ ("F12h", "reconcile/checks/m12_wallet_burn.py", 'if hdr["hash"].lower() == t["block_hash"]:', "if True:",
+  "reconcile/tests/test_m12.py::test_qa2_m12_transaction_from_a_non_canonical_block_is_not_counted"),
 ]
 py = f"{ROOT}/reconcile/.venv/bin/python"
 for name, path, old, new, test in MUT:
