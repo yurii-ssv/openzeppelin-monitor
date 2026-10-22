@@ -317,7 +317,7 @@ Rules: M1 per transaction: group tuple-carrying events by cluster id; for groups
 
 ### CP2e — Legacy SSV (M6, M7)
 
-**Status:** NOT STARTED. **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M6, M7, D8, `evidences/#91046/*.mjs`.
+**Status:** IMPLEMENTED — AWAITING QA on lane head `c9e7889c4632daa2ea4f046d3672a9e0f8f8a41c` (code tested at `b4f6c9e`; [worker record](workers/cp2e/plan.md)); V2x.1–V2x.6 pass (297 tests, ruff clean); V2e.7 API side LIVE PASS, log side NOT RUN (public getLogs limits, ask pending); subgraph cross-check DEFERRED (no `SSV_SUBGRAPH_API_KEY`, owner Marco); rulings Q1 A, Q2 A applied. **Implementer:** Claude Opus high. **QA:** Codex gpt-6.1-sol high. **Inputs:** CP1B VERIFIED, spec M6, M7, D8, `evidences/#91046/*.mjs`.
 Rules: M6 for active legacy clusters: `isLiquidatableSSV` for > 7 days → warn; `getBalanceSSV == 0` while active → page; weekly digest of count, validators, SSV/yr burn. M7 daily surplus = proxy SSV − (cSSV supply + outstanding unstakes from `UnstakeRequested`/`UnstakedWithdrawn` logs + live legacy balances + operator SSV earnings + `getNetworkEarningsSSV`); < 1 SSV → page; any change → info. One-time subgraph cross-check of the legacy set (LIVE, optional, `SSV_SUBGRAPH_API_KEY`).
 **Stop:** V2e rows; timebox 1.5 days.
 

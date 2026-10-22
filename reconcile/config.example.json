@@ -62,6 +62,17 @@
           }
         }
       }
+    },
+    "m6": {
+      "sweep_interval_s": 3600,
+      "warn_after_window_bps": 5000,
+      "digest_interval_s": 604800
+    },
+    "m7": {
+      "interval_s": 86400,
+      "surplus_floor_wei": 1000000000000000000,
+      "cssv": "0xe018D31F120A637828F46aFD6c64EC099d960546",
+      "unstake_history_from": 24920727
     }
   }
 }
