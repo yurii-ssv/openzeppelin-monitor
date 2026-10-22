@@ -639,3 +639,8 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - The fenced Codex CP2d QA 2 (`ctx_af1a03ee06d3`) delivered a late worker_done for its report (`qa/cp2d-attempt-2.md`); the report is already in the lane (`cba2fb3`, coordinator commit), `ms-qa-cp2d-2` is at `cba2fb3`, no new content. No action.
 - The fenced Codex CP2c QA 2 (`ms-qa-cp2c-2`, head under test `c6b0a63`, i.e. before repair 2) resumed and sent an escalation: M12 misses a >0.04 ETH daily-spend warning with even one missed slot, and partial `eth_feeHistory` data can resolve an existing runway page without error. These are NOT in the verified CP2c record (QA 3 on `945fd4d` passed). To be checked against `945fd4d` once its report is committed (or by a direct reproducer on the lane); not acted on yet.
+
+## Event 0061 — CP2d repair 2 delivered, QA 3 (capped)
+
+- CP2d repair 2 done, head `6a93e1a`. Diff outside workers/cp2d is within allowed writes (m1/m2 checks, their tests, plan status line); test_m1+m2+sweep 238 passed, ruff clean. The worker recorded the API-ahead-of-checkpoint warn as a NOTE (ruling A).
+- QA 3 on Opus, capped, dispatched `task_527ba7657316`/`ctx_6a9a342fb10e` (worktree `ms-qa-cp2d-3`, effective claude/opus/high). Released `ctx_e0f0fb329a9f`.
