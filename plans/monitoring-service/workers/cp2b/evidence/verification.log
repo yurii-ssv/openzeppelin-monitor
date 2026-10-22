@@ -1,0 +1,46 @@
+head 8354917ad09bcabcbef202673f4dd0cf4af5a972 at 2026-10-21T14:21Z; git status --porcelain lines: 1
+== V2x.1 m9: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py
+37 passed in 1.38s
+exit 0
+== V2x.1 m10: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m10.py
+15 passed in 0.30s
+exit 0
+== V2x.1 m11: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m11.py
+34 passed in 0.26s
+exit 0
+== thresholds_from_chain m9: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py -k thresholds_from_chain
+2 passed, 35 deselected in 0.07s
+exit 0
+== thresholds_from_chain m10: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m10.py -k thresholds_from_chain
+1 passed, 14 deselected in 0.04s
+exit 0
+== thresholds_from_chain m11: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m11.py -k thresholds_from_chain
+1 passed, 33 deselected in 0.05s
+exit 0
+== restart m9: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py -k restart
+2 passed, 35 deselected in 0.05s
+exit 0
+== restart m10: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m10.py -k restart
+1 passed, 14 deselected in 0.04s
+exit 0
+== restart m11: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m11.py -k restart
+2 passed, 32 deselected in 0.05s
+exit 0
+== rpc_budget m9: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py -k rpc_budget
+1 passed, 36 deselected in 0.05s
+exit 0
+== rpc_budget m10: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m10.py -k rpc_budget
+1 passed, 14 deselected in 0.05s
+exit 0
+== rpc_budget m11: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m11.py -k rpc_budget
+1 passed, 33 deselected in 0.08s
+exit 0
+== V2b.7: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py -k from_the_clock
+1 passed, 36 deselected in 0.04s
+exit 0
+== V2x.6 suite: reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests
+326 passed in 11.24s
+exit 0
+== V2x.6 ruff: reconcile/.venv/bin/ruff check reconcile
+All checks passed!
+exit 0

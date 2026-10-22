@@ -1,0 +1,304 @@
+##### falsify_repair1.sh
+head 9729253d03d88a0c2ec7807c0c6a08ddc4f0b4c2 at 2026-10-22T09:45Z
+[F1-retry] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.22s
+[F1-retry] mutated exit: 1
+1 passed in 0.23s
+[F1-retry] restored exit: 0
+[F1-retry] git status --porcelain: ''
+[F1-proof] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 passed in 0.20s
+[F1-proof] mutated exit: 0
+1 passed in 0.21s
+[F1-proof] restored exit: 0
+[F1-proof] git status --porcelain: ''
+[F2-order] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[F2-order] mutated exit: 1
+1 passed in 0.20s
+[F2-order] restored exit: 0
+[F2-order] git status --porcelain: ''
+[F3-split] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[F3-split] mutated exit: 1
+1 passed in 0.18s
+[F3-split] restored exit: 0
+[F3-split] git status --porcelain: ''
+[F3-sameslot] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.20s
+[F3-sameslot] mutated exit: 1
+1 passed in 0.19s
+[F3-sameslot] restored exit: 0
+[F3-sameslot] git status --porcelain: ''
+[F4-events] mutated reconcile/checks/m10_oracle_rotation.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.13s
+[F4-events] mutated exit: 1
+1 passed in 0.12s
+[F4-events] restored exit: 0
+[F4-events] git status --porcelain: ''
+[F5-before] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[F5-before] mutated exit: 1
+1 passed in 0.21s
+[F5-before] restored exit: 0
+[F5-before] git status --porcelain: ''
+[F6-age] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.26s
+[F6-age] mutated exit: 1
+1 passed in 0.20s
+[F6-age] restored exit: 0
+[F6-age] git status --porcelain: ''
+[F7-consecutive] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[F7-consecutive] mutated exit: 1
+1 passed in 0.19s
+[F7-consecutive] restored exit: 0
+[F7-consecutive] git status --porcelain: ''
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+AssertionError: mutation anchor found 0 times
+[F8-clock] anchor error
+[F8-slots] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.22s
+[F8-slots] mutated exit: 1
+1 passed in 0.18s
+[F8-slots] restored exit: 0
+[F8-slots] git status --porcelain: ''
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+AssertionError: mutation anchor found 0 times
+[S-superseded] anchor error
+[SWEEP-m9] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed, 36 passed, 75 deselected in 2.67s
+[SWEEP-m9] mutated exit: 1
+38 passed, 75 deselected in 2.81s
+[SWEEP-m9] restored exit: 0
+[SWEEP-m9] git status --porcelain: ''
+[SWEEP-m11] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+29 failed, 46 passed, 38 deselected in 5.03s
+[SWEEP-m11] mutated exit: 1
+75 passed, 38 deselected in 5.63s
+[SWEEP-m11] restored exit: 0
+[SWEEP-m11] git status --porcelain: ''
+[SWEEP-m10] mutated reconcile/checks/m10_oracle_rotation.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+38 failed, 75 deselected in 3.23s
+[SWEEP-m10] mutated exit: 1
+38 passed, 75 deselected in 2.72s
+[SWEEP-m10] restored exit: 0
+[SWEEP-m10] git status --porcelain: ''
+##### falsify_repair2.sh
+head 9729253d03d88a0c2ec7807c0c6a08ddc4f0b4c2 at 2026-10-22T09:46Z
+[R2-F1-literal] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed in 0.26s
+[R2-F1-literal] mutated exit: 1
+2 passed in 0.21s
+[R2-F1-literal] restored exit: 0
+[R2-F1-literal] git status --porcelain: ''
+[R2-F1-start] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.22s
+[R2-F1-start] mutated exit: 1
+1 passed in 0.19s
+[R2-F1-start] restored exit: 0
+[R2-F1-start] git status --porcelain: ''
+[R2-F1-own] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R2-F1-own] mutated exit: 1
+1 passed in 0.19s
+[R2-F1-own] restored exit: 0
+[R2-F1-own] git status --porcelain: ''
+[R2-F1-evidence] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R2-F1-evidence] mutated exit: 1
+1 passed in 0.18s
+[R2-F1-evidence] restored exit: 0
+[R2-F1-evidence] git status --porcelain: ''
+[R2-F2-abort] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R2-F2-abort] mutated exit: 1
+1 passed in 0.21s
+[R2-F2-abort] restored exit: 0
+[R2-F2-abort] git status --porcelain: ''
+[R2-F2-budget] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R2-F2-budget] mutated exit: 1
+1 passed in 0.20s
+[R2-F2-budget] restored exit: 0
+[R2-F2-budget] git status --porcelain: ''
+[R2-F3-definite] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R2-F3-definite] mutated exit: 1
+1 passed in 0.20s
+[R2-F3-definite] restored exit: 0
+[R2-F3-definite] git status --porcelain: ''
+[R2-F3-latest] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R2-F3-latest] mutated exit: 1
+1 passed in 0.20s
+[R2-F3-latest] restored exit: 0
+[R2-F3-latest] git status --porcelain: ''
+[R2-F4-mark] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed in 0.28s
+[R2-F4-mark] mutated exit: 1
+2 passed in 0.22s
+[R2-F4-mark] restored exit: 0
+[R2-F4-mark] git status --porcelain: ''
+[R2-F4-lower] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R2-F4-lower] mutated exit: 1
+1 passed in 0.21s
+[R2-F4-lower] restored exit: 0
+[R2-F4-lower] git status --porcelain: ''
+[R2-book] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R2-book] mutated exit: 1
+1 passed in 0.21s
+[R2-book] restored exit: 0
+[R2-book] git status --porcelain: ''
+[SWEEP2-m9-literal] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+32 failed, 6 passed, 75 deselected in 3.01s
+[SWEEP2-m9-literal] mutated exit: 1
+38 passed, 75 deselected in 2.63s
+[SWEEP2-m9-literal] restored exit: 0
+[SWEEP2-m9-literal] git status --porcelain: ''
+[SWEEP2-m11-abort] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+54 failed, 21 passed, 38 deselected in 3.51s
+[SWEEP2-m11-abort] mutated exit: 1
+75 passed, 38 deselected in 5.36s
+[SWEEP2-m11-abort] restored exit: 0
+[SWEEP2-m11-abort] git status --porcelain: ''
+[SWEEP2-m11-mark] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+19 failed, 56 passed, 38 deselected in 5.65s
+[SWEEP2-m11-mark] mutated exit: 1
+75 passed, 38 deselected in 5.55s
+[SWEEP2-m11-mark] restored exit: 0
+[SWEEP2-m11-mark] git status --porcelain: ''
+[SWEEP2-m11-definite] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+4 failed, 71 passed, 38 deselected in 5.66s
+[SWEEP2-m11-definite] mutated exit: 1
+75 passed, 38 deselected in 5.96s
+[SWEEP2-m11-definite] restored exit: 0
+[SWEEP2-m11-definite] git status --porcelain: ''
+[SWEEP2-book] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+4 failed, 71 passed, 38 deselected in 5.84s
+[SWEEP2-book] mutated exit: 1
+75 passed, 38 deselected in 5.71s
+[SWEEP2-book] restored exit: 0
+[SWEEP2-book] git status --porcelain: ''
+[R2-F1-proof] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.27s
+[R2-F1-proof] mutated exit: 1
+1 passed in 0.24s
+[R2-F1-proof] restored exit: 0
+[R2-F1-proof] git status --porcelain: ''
+[R2-F1-definite] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.26s
+[R2-F1-definite] mutated exit: 1
+1 passed in 0.20s
+[R2-F1-definite] restored exit: 0
+[R2-F1-definite] git status --porcelain: ''
+##### falsify_repair3.sh
+head 9729253d03d88a0c2ec7807c0c6a08ddc4f0b4c2 at 2026-10-22T09:47Z
+[R3-F1-lead] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+3 failed in 0.31s
+[R3-F1-lead] mutated exit: 1
+3 passed in 0.25s
+[R3-F1-lead] restored exit: 0
+[R3-F1-lead] git status --porcelain: ''
+[R3-F1-walk] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.24s
+[R3-F1-walk] mutated exit: 1
+1 passed in 0.22s
+[R3-F1-walk] restored exit: 0
+[R3-F1-walk] git status --porcelain: ''
+[R3-F2-both] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 2 insertions(+), 2 deletions(-)
+2 failed in 0.24s
+[R3-F2-both] mutated exit: 1
+2 passed in 0.20s
+[R3-F2-both] restored exit: 0
+[R3-F2-both] git status --porcelain: ''
+[R3-F2-self] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.21s
+[R3-F2-self] mutated exit: 1
+1 passed in 0.19s
+[R3-F2-self] restored exit: 0
+[R3-F2-self] git status --porcelain: ''
+[R3-F2-slots] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.20s
+[R3-F2-slots] mutated exit: 1
+1 passed in 0.19s
+[R3-F2-slots] restored exit: 0
+[R3-F2-slots] git status --porcelain: ''
+[R3-RR-zero] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.23s
+[R3-RR-zero] mutated exit: 1
+1 passed in 0.21s
+[R3-RR-zero] restored exit: 0
+[R3-RR-zero] git status --porcelain: ''
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+AssertionError: mutation anchor found 0 times
+[R3-RR-lead] anchor error
+[SWEEP3-m11-F1] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+46 failed, 29 passed, 38 deselected in 4.31s
+[SWEEP3-m11-F1] mutated exit: 1
+75 passed, 38 deselected in 5.37s
+[SWEEP3-m11-F1] restored exit: 0
+[SWEEP3-m11-F1] git status --porcelain: ''
+[SWEEP3-m9-F2] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 2 insertions(+), 2 deletions(-)
+12 failed, 26 passed, 75 deselected in 2.50s
+[SWEEP3-m9-F2] mutated exit: 1
+38 passed, 75 deselected in 2.62s
+[SWEEP3-m9-F2] restored exit: 0
+[SWEEP3-m9-F2] git status --porcelain: ''
+[SWEEP3-m11-RR] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+31 failed, 44 passed, 38 deselected in 4.81s
+[SWEEP3-m11-RR] mutated exit: 1
+75 passed, 38 deselected in 5.47s
+[SWEEP3-m11-RR] restored exit: 0
+[SWEEP3-m11-RR] git status --porcelain: ''
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+AssertionError: mutation anchor found 0 times
+[R3-RR-attr] anchor error
+[R3-RR-evidence] mutated reconcile/checks/m11_updater_liveness.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.25s
+[R3-RR-evidence] mutated exit: 1
+1 passed in 0.24s
+[R3-RR-evidence] restored exit: 0
+[R3-RR-evidence] git status --porcelain: ''
+[R3-dissent-evidence] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.24s
+[R3-dissent-evidence] mutated exit: 1
+1 passed in 0.18s
+[R3-dissent-evidence] restored exit: 0
+[R3-dissent-evidence] git status --porcelain: ''
+[R3-failed-revision] mutated reconcile/checks/m9_oracle_quorum.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.20s
+[R3-failed-revision] mutated exit: 1
+1 passed in 0.18s
+[R3-failed-revision] restored exit: 0
+[R3-failed-revision] git status --porcelain: ''
+[R3-book-regrown] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+1 failed in 0.20s
+[R3-book-regrown] mutated exit: 1
+1 passed in 0.18s
+[R3-book-regrown] restored exit: 0
+[R3-book-regrown] git status --porcelain: ''
+[R3-horizon-cap] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+2 failed in 0.26s
+[R3-horizon-cap] mutated exit: 1
+2 passed in 0.25s
+[R3-horizon-cap] restored exit: 0
+[R3-horizon-cap] git status --porcelain: ''
+[SWEEP3-m9-horizon] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+12 failed, 26 passed, 75 deselected in 2.45s
+[SWEEP3-m9-horizon] mutated exit: 1
+38 passed, 75 deselected in 2.59s
+[SWEEP3-m9-horizon] restored exit: 0
+[SWEEP3-m9-horizon] git status --porcelain: ''
+[R3-F8-clock] mutated reconcile/checks/m9_oracle_common.py:  1 file changed, 1 insertion(+), 1 deletion(-)
+3 failed in 0.35s
+[R3-F8-clock] mutated exit: 1
+3 passed in 0.31s
+[R3-F8-clock] restored exit: 0
+[R3-F8-clock] git status --porcelain: ''

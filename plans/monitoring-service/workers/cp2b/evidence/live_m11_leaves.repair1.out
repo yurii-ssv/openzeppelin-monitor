@@ -1,0 +1,26 @@
+2026-10-21T15:34Z
+{
+ "rpc": "ethereum-rpc.publicnode.com",
+ "block": 26241891,
+ "latest_committed_ref": 26239590,
+ "api_rows_active_eth": 530,
+ "api_tuple_stale_skipped": 0,
+ "compared": 530,
+ "mismatches": [
+  {
+   "cluster": "0xc6d52a5b3f6d7945f0d6bd31a2962ac729ecefbee564687315278ac85372574b",
+   "owner": "0x5ce6430e01a9cd1b9c5389211a3e001fb0e215bd",
+   "onchain_eb": 230930,
+   "leaf_eb": 231442
+  }
+ ],
+ "unknown": 0,
+ "unknown_reasons": [],
+ "error": null,
+ "rpc_calls": {
+  "eth_getStorageAt": 531,
+  "eth_call": 530
+ },
+ "seconds": 291.6
+}
+exit 0

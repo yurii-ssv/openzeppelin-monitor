@@ -1,0 +1,18 @@
+{
+ "_run": "2026-10-21T14:09Z, reconcile/.venv/bin/python plans/monitoring-service/workers/cp2b/evidence/live_m11_leaves.py https://ethereum-rpc.publicnode.com (exit 0); stdout copied verbatim below",
+ "rpc": "ethereum-rpc.publicnode.com",
+ "block": 26241467,
+ "latest_committed_ref": 26239590,
+ "api_rows_active_eth": 530,
+ "api_tuple_stale_skipped": 0,
+ "compared": 530,
+ "mismatches": [],
+ "unknown": 0,
+ "unknown_reasons": [],
+ "error": null,
+ "rpc_calls": {
+  "eth_getStorageAt": 531,
+  "eth_call": 530
+ },
+ "seconds": 283.6
+}

@@ -9,6 +9,7 @@ from checks import m5_eb_desync  # noqa: F401, E402
 from checks import m3_liquidation_zone, m4_conservation_deficit, m14_deposit_frontrun  # noqa: F401, E402
 
 # --- CP2b: oracle family (M9, M10, M11)
+from checks import m9_oracle_quorum, m10_oracle_rotation, m11_updater_liveness  # noqa: F401, E402
 
 # --- CP2c: wallets and supply (M12, M8 floor)
 from checks import m8_supply_floor, m12_wallet_burn, m13_retired_keys  # noqa: F401, E402

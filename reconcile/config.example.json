@@ -103,6 +103,38 @@
       "early_headroom": 900,
       "velocity_window_blocks": 7200,
       "inbox_functions": ["migrateClusterToETH", "reactivate"]
+    },
+    "m9": {
+      "interval_s": 60,
+      "round_timeout_s": 1800,
+      "max_commit_gap_s": 32400,
+      "dissent_streak": 3,
+      "dissent_enabled": true,
+      "min_committing_slots": 3,
+      "absent_rounds": 6,
+      "seconds_per_block": 12,
+      "require_inbox": true
+    },
+    "m10": {
+      "interval_s": 300
+    },
+    "m11": {
+      "interval_s": 300,
+      "update_window_s": 3600,
+      "zero_rounds_page": 2,
+      "revert_rate": 0.1,
+      "updater": null,
+      "updater_slot": 4,
+      "history_rounds": 6,
+      "proof_api": "https://ssv-oracle.ssv.network/api/v1",
+      "proof_api_timeout_s": 15,
+      "proof_api_abort_after": 3,
+      "proof_api_run_budget_s": 600,
+      "full_state_interval_s": 604800,
+      "seconds_per_block": 12,
+      "require_inbox": true,
+      "revert_rate_enabled": true,
+      "zero_round_proof_enabled": true
     }
   }
 }
