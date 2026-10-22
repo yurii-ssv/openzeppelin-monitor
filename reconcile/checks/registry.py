@@ -36,13 +36,17 @@ def resolve_config(cls, settings: dict) -> dict:
     return config
 
 
-def build(settings: dict) -> list:
+def build(settings: dict, only=None) -> list:
+    """The enabled checks, in registration order. `only`: build just these ids (tests build the checks they name
+    instead of disabling every other registered one)."""
     configured = settings.get("checks", {})
-    unknown = set(configured) - set(REGISTRY)
+    unknown = (set(configured) | set(only or ())) - set(REGISTRY)
     if unknown:
         raise SystemExit(f"checks: unknown check id(s) {sorted(unknown)}; registered: {sorted(REGISTRY)}")
     out = []
     for cid, cls in REGISTRY.items():
+        if only is not None and cid not in only:
+            continue
         if not configured.get(cid, {}).get("enabled", True):
             continue
         for name, sig in cls.events.items():

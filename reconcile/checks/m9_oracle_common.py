@@ -183,8 +183,7 @@ class BlockTimes:
         if missing:
             if max(missing) > self.ctx.block:
                 raise ValueError(f"block time asked above the checkpoint {self.ctx.block}: {max(missing)}")
-            self.ctx.rpc.counts["eth_getBlockByNumber"] += len(missing)
-            headers = self.ctx.rpc.rpc.batch([("eth_getBlockByNumber", [hex(b), False]) for b in missing])
+            headers = self.ctx.rpc.batch("eth_getBlockByNumber", [[hex(b), False] for b in missing])
             recorded = {}
             for i in range(0, len(missing), 500):
                 chunk = missing[i : i + 500]
@@ -217,8 +216,7 @@ class BlockTimes:
         lag = (conf + 2) * self.spb if conf >= 0 else 96 * self.spb  # finalized: 64..95 slots behind the head
         at = float(self(self.ctx.block))
         h = max(at, self.ctx.clock() - lag)
-        self.ctx.rpc.counts["eth_getBlockByNumber"] += 1
-        nxt = self.ctx.rpc.rpc.call("eth_getBlockByNumber", [hex(self.ctx.block + 1), False])
+        nxt = self.ctx.rpc.request("eth_getBlockByNumber", [hex(self.ctx.block + 1), False])
         if nxt and nxt.get("timestamp") not in (None, "", "0x"):  # never past a block that exists unprocessed
             h = min(h, max(at, int(nxt["timestamp"], 16) - 1))
         return h

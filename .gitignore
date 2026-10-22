@@ -58,3 +58,8 @@ logs/
 # Local secrets and dry-run state (user-owned, never tracked)
 config.zip
 .local-dry/
+
+# Monitor/worker runtime data (inbox, record-mode alerts, SQLite + WAL)
+data/**/*.jsonl
+data/**/*.sqlite-wal
+data/**/*.sqlite-shm

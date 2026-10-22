@@ -20,7 +20,8 @@ Commands:
   run           loop forever
   once          one step with every check forced, then exit (--serve-metrics --hold N keeps /metrics up)
   audit         M5 event-only history report of every root window (no storage reads)
-  status        print checkpoint, check runs, open incidents and undelivered messages
+  status        print phase (backfill/live), checkpoint, check runs, open incidents and undelivered messages
+  export        print every incident and outbox message as JSON (soak evidence, audits); no state change
   verify-layout check the pinned storage layout against the deployed proxy (M5 guard)
 
 Secrets come from environment variables named in the config.
@@ -36,7 +37,8 @@ import os
 import signal
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from itertools import takewhile
 from pathlib import Path
 
 import checks as registry
@@ -49,7 +51,7 @@ from inbox import Inbox, InboxUnavailable
 from inventory import API_DEFAULT, InventoryCache
 from notify import RecordOnly, Telegram, make_notifier  # noqa: F401 - re-exported
 from params import Params, ParamsUnavailable
-from rpc import Chain, Rpc, RpcError
+from rpc import DEFAULT_RPC_URLS, Chain, Rpc, RpcError, resolve_endpoints
 
 log = logging.getLogger("eb-reconcile")
 
@@ -70,11 +72,13 @@ class Config:
             raise AttributeError(name) from exc
 
     @property
-    def rpc_url(self) -> str:
-        url = os.environ.get(self.raw["rpc_url_env"], "").strip().strip("\"'")
-        if not url:
-            raise SystemExit(f"environment variable {self.raw['rpc_url_env']} is not set")
-        return url
+    def rpc_endpoints(self) -> list[tuple[str, str]]:
+        """[(label, url)] in failover order (D16): `rpc_urls` (URLs or environment variable names; default
+        rpc.DEFAULT_RPC_URLS), the first replaced by the variable `rpc_url_env` names when it is set."""
+        endpoints = resolve_endpoints(self.raw.get("rpc_urls") or DEFAULT_RPC_URLS, self.raw.get("rpc_url_env"))
+        if not endpoints:
+            raise SystemExit("no RPC endpoint: rpc_urls is empty and the variables it names are unset")
+        return endpoints
 
     @property
     def history_complete(self) -> bool:
@@ -97,13 +101,22 @@ DEFAULTS = {
     "rpc_batch_size": 50,
     "rpc_timeout_s": 30,
     "rpc_retries": 4,
+    "rpc_primary_retry_s": 300,
     "lag_alert_blocks": 50,
     "reorg_search_depth": 256,
 }
 
+# Silent backfill (D17): history from start_block is stored and evaluated without alerting. The first checkpoint
+# within `live_within_blocks` of the scan target is the caught-up checkpoint (`history_block`): every check
+# evaluates history silently once, pinned there; blocks after it are live. A check alerts from its first run after
+# its own silent evaluation, whatever the other checks do (one that keeps failing its silent run raises check-error
+# health and does not hold the others back). `blocks_per_step` bounds the scan per step while backfilling (progress
+# in `status`, the status file and /metrics stay fresh).
+BACKFILL_DEFAULTS = {"enabled": True, "live_within_blocks": 12, "blocks_per_step": 50_000}
+
 TOP_LEVEL_KEYS = set(DEFAULTS) | {
     "_comment", "chain_id", "proxy", "views", "activation_block", "start_block", "pr614_guards_from", "rpc_url_env",
-    "db_path", "layout", "alerts", "checks", "inbox", "inventory", "metrics",
+    "rpc_urls", "rpc_primary_retry_s", "backfill", "db_path", "layout", "alerts", "checks", "inbox", "inventory", "metrics",
 }
 
 
@@ -119,7 +132,7 @@ def load_config(path: str) -> Config:
 
 
 def make_rpc(cfg: Config) -> Rpc:
-    return Rpc(cfg.rpc_url, cfg.rpc_timeout_s, cfg.rpc_retries, cfg.rpc_batch_size)
+    return Rpc(cfg.rpc_endpoints, cfg.rpc_timeout_s, cfg.rpc_retries, cfg.rpc_batch_size, cfg.rpc_primary_retry_s)
 
 
 # --------------------------------------------------------------------------- worker
@@ -131,13 +144,16 @@ class Worker:
         self.cfg, self.rpc, self.db, self.clock = cfg, rpc, db, clock
         self.notifier = notifier
         self.rpc_failures = 0
+        self.rpc_outage_since = None  # clock of the first failed step of the current outage
+        self.bootstrapped = False
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
         self.checks = {c.id: c for c in built}
-        with self.db.tx():
-            for c in self.checks.values():
-                for stmt in filter(str.strip, c.schema.split(";")):
-                    self.db.conn.execute(stmt)
+        if not getattr(db, "readonly", False):
+            with self.db.tx():
+                for c in self.checks.values():
+                    for stmt in filter(str.strip, c.schema.split(";")):
+                        self.db.conn.execute(stmt)
         self.topics = sorted(set(TOPIC0.values()))
         self.params = Params(cfg.raw.get("views"), cfg.proxy)
         inbox_cfg = cfg.section("inbox")
@@ -151,6 +167,10 @@ class Worker:
             db, lambda b: Chain(self.rpc, b, cfg.max_log_range), cfg.proxy, clock,
             api_base=inv_cfg.get("api_url", API_DEFAULT) or API_DEFAULT, use_api=bool(inv_cfg.get("api_url", API_DEFAULT)),
             api_refresh_s=inv_cfg.get("api_refresh_s", 600), **kw)
+        self.backfill_cfg = {**BACKFILL_DEFAULTS, **cfg.section("backfill")}
+        unknown = set(self.backfill_cfg) - set(BACKFILL_DEFAULTS)
+        if unknown:
+            raise SystemExit(f"backfill: unknown key(s) {sorted(unknown)}; accepted: {sorted(BACKFILL_DEFAULTS)}")
         self.last_run: dict[str, float] = {}
         self.last_block: dict[str, int] = {}
         self.prepared: set[str] = set()
@@ -176,15 +196,74 @@ class Worker:
                 self.db.set_meta("identity", ident)
             if self.db.meta("checkpoint") is None:
                 self.db.set_meta("checkpoint", {"block": self.cfg.start_block - 1, "hash": None})
+                if self.backfill_cfg["enabled"]:
+                    self.db.set_meta("phase", {"phase": "backfill", "since": self.clock(), "evaluated": []})
+            if self.db.meta("phase") is None:  # backfill disabled, or a database that was already alerting
+                self.db.set_meta("phase", {"phase": "live", "since": self.clock(), "first_live": []})
         known = self.db.meta("topics")
         new = sorted(set(self.topics) - set(known or []))
         if known is not None and new:
             self.backfill(new)
         with self.db.tx():
             self.db.set_meta("topics", self.topics)
+        self.bootstrapped = True
 
     def checkpoint(self) -> dict:
         return self.db.meta("checkpoint")
+
+    # ---- phase (D17 silent backfill)
+
+    def phase(self) -> dict:
+        return self.db.meta("phase") or {"phase": "live", "first_live": []}
+
+    @property
+    def backfilling(self) -> bool:
+        return self.phase()["phase"] == "backfill"
+
+    def caught_up(self, block: int) -> bool:
+        target = self.db.meta("scan_target")
+        return target is not None and target - block <= self.backfill_cfg["live_within_blocks"]
+
+    def _phase_progress(self) -> dict:
+        ph = self.phase()
+        cp, target = (self.checkpoint() or {}).get("block"), self.db.meta("scan_target")
+        out = {**ph, "checkpoint": cp, "target": target}
+        if ph["phase"] == "backfill" and target is not None and cp is not None:
+            start = self.cfg.start_block
+            out["remaining_blocks"] = max(target - cp, 0)
+            out["progress"] = round(min(max((cp - start + 1) / max(target - start + 1, 1), 0), 1), 4)
+        return out
+
+    def wait_s(self) -> float:
+        """Seconds to wait before the next step: none while a backfill still has blocks to scan and the last step
+        succeeded (bounded steps back to back); otherwise `poll_interval_s` (also while the caught-up backfill waits
+        for a check that keeps failing its silent run: no tight retry loop)."""
+        if self.bootstrapped and self.rpc_failures == 0 and self.backfilling \
+                and not self.caught_up(self.checkpoint()["block"]):
+            return 0
+        return self.cfg.poll_interval_s
+
+    def _history_block(self, block: int) -> int:
+        """The caught-up checkpoint (D17): history ends there. Set once, at the first caught-up step."""
+        ph = self.phase()
+        if ph.get("history_block") is None:
+            with self.db.tx():  # a backfill phase written before CP3 repair 1: its evaluated checks still run live
+                ph = {**ph, "history_block": block, "first_live": ph.get("first_live", ph.get("evaluated", []))}
+                self.db.set_meta("phase", ph)
+            log.info("caught up at block %d: history ends there; each check alerts after its silent run", block)
+        return ph["history_block"]
+
+    def _go_live(self, block: int) -> None:
+        """Every check has evaluated history silently at the caught-up checkpoint: the backfill phase ends. Each
+        check's first run after its own silent evaluation is a forced full run (reasons `live`, `force`), at a
+        block after the caught-up checkpoint, so a condition still true there is reported (and sent) while one
+        that only existed in history stays unsent; the checks that have not had it yet keep it."""
+        ph = self.phase()
+        with self.db.tx():
+            self.db.set_meta("phase", {"phase": "live", "since": self.clock(), "caught_up_block": block,
+                                       "history_block": ph["history_block"], "first_live": ph.get("first_live", [])})
+        log.info("backfill complete at block %d: every check evaluated history at block %d", block,
+                 ph["history_block"])
 
     def _cursor(self, check_id: str) -> tuple[int, int]:
         return tuple(self.db.meta(f"cursor:events:{check_id}", [self.cfg.start_block - 1, END_OF_BLOCK]))
@@ -271,10 +350,18 @@ class Worker:
         total = 0
         start = cp["block"] + 1
         step = self.cfg.max_log_range
-        while start <= target:
-            end = min(target, start + step - 1)
+        stop = target
+        if self.backfilling:
+            stop = min(target, cp["block"] + max(int(self.backfill_cfg["blocks_per_step"]), 1))
+        self.db.set_meta("scan_target", target)
+        while start <= stop:
+            end = min(stop, start + step - 1)
+            switches = self.rpc.switches
             events = self._ingest(self.rpc.get_logs(self.cfg.proxy, start, end, step, self.topics))
             end_hash = self.rpc.block_hash(end)
+            if self.rpc.switches != switches:  # logs from one endpoint, the hash from another: not comparable
+                raise RpcError(f"the RPC endpoint changed while reading blocks {start}-{end}; the window is re-read "
+                               f"at the next step")
             self._verify_log_blocks(events, end, end_hash, target)
             with self.db.tx():
                 for ev in events:
@@ -392,6 +479,11 @@ class Worker:
         reasons = set(self.pending.get(check.id, ()))
         if force:
             reasons.add("force")
+        ph = self.phase()
+        if ph["phase"] == "backfill" and check.id not in ph.get("evaluated", ()):
+            reasons |= {"backfill", "force"}  # the silent evaluation of history (D17), a full run
+        elif check.id in ph.get("first_live", ()):
+            reasons |= {"live", "force"}  # the first live evaluation after the backfill, a full run
         for s in check.schedules():
             if isinstance(s, Every):
                 if now - self.last_run.get(check.id, float("-inf")) >= s.seconds:
@@ -442,15 +534,25 @@ class Worker:
         block = self.checkpoint()["block"]
         if block < self.cfg.start_block:
             return
+        backfilling = self.backfilling
+        if backfilling and not self.caught_up(block):
+            return  # history is still being stored; checks evaluate it once the checkpoint caught up
+        history = self._history_block(block) if backfilling else self.phase().get("history_block")
         self.reload_params(block)
         now = self.clock()
         first_rpc_error = None
         for check in self.checks.values():
-            reasons = self.due(check, block, now, force)
-            if not reasons:
-                continue
             try:
-                self.run_check(check, block, reasons)
+                if backfilling and check.id not in self.phase().get("evaluated", ()):
+                    # its silent evaluation of history, pinned to the caught-up checkpoint even when it is retried
+                    # later (a failed run): the blocks after it are evaluated live by the run below
+                    at = min(history, block)
+                    self.run_check(check, at, self.due(check, at, now, force))
+                if history is not None and block <= history:
+                    continue  # alerting starts at the first block after the caught-up checkpoint
+                reasons = self.due(check, block, now, force)
+                if reasons:
+                    self.run_check(check, block, reasons)
             except RpcError as exc:
                 first_rpc_error = first_rpc_error or exc
                 self._run_failed(check, exc, health=False)
@@ -460,6 +562,8 @@ class Worker:
             except Exception as exc:  # noqa: BLE001 - one broken check must not stop the others
                 log.exception("check %s failed at block %d", check.id, block)
                 self._run_failed(check, exc, health=True)
+        if backfilling and set(self.checks) <= set(self.phase().get("evaluated", ())):
+            self._go_live(block)
         if first_rpc_error is not None:
             raise first_rpc_error
 
@@ -468,6 +572,7 @@ class Worker:
         cursor = self._cursor(check.id)
         wants_inbox = any(isinstance(s, OnInbox) for s in check.schedules())
         entries = self.inbox.pending(self.db.meta(f"cursor:inbox:{check.id}", 0)) if wants_inbox and self.inbox else []
+        entries = list(takewhile(lambda e: e.block <= block, entries))  # a run pinned below the checkpoint
         chain = Chain(self.rpc, block, self.cfg.max_log_range)
         events = (lambda: self.db.events_after(cursor, block, kinds)) if kinds else None
         reorg_ancestor = self.db.meta(f"reorg:{check.id}")
@@ -486,7 +591,12 @@ class Worker:
             for f in findings:
                 if f.check != check.id:
                     raise ValueError(f"check {check.id} returned a finding for {f.check!r}")
-            self.alerts.apply(findings, block)
+            ph = self.phase()
+            silent = ph["phase"] == "backfill" and check.id not in ph.get("evaluated", ())
+            # The check's silent evaluation of history (D17): incidents are opened, escalated and resolved without
+            # a message; one still reported by a live run is sent then (an unsent incident is "unmuted" by its
+            # first notifying finding).
+            self.alerts.apply([replace(f, notify=False) if silent and not f.resolve else f for f in findings], block)
             if reorg_ancestor is not None:  # the reorg re-find rule (checks/README.md §6.2)
                 self.alerts.resolve_not_refound(check.id, reorg_keys - {f.key for f in findings}, block,
                                                 reorg_ancestor)
@@ -497,6 +607,11 @@ class Worker:
                 self.db.set_meta(f"reorg:{check.id}", None)
             if entries:
                 self.db.set_meta(f"cursor:inbox:{check.id}", entries[-1].id)
+            if silent:
+                self.db.set_meta("phase", {**ph, "evaluated": sorted({*ph.get("evaluated", ()), check.id}),
+                                           "first_live": sorted({*ph.get("first_live", ()), check.id})})
+            elif check.id in ph.get("first_live", ()):
+                self.db.set_meta("phase", {**ph, "first_live": [c for c in ph["first_live"] if c != check.id]})
             prev = self.db.meta(f"run:{check.id}", {})
             self.db.set_meta(f"run:{check.id}", {
                 "at": now, "block": block, "reasons": sorted(reasons), "findings": len(findings),
@@ -523,7 +638,7 @@ class Worker:
         block = self.checkpoint()["block"]
         with self.db.tx():
             self.alerts.realert()
-            if self.alerts.digest_due() and block >= self.cfg.start_block:
+            if self.alerts.digest_due() and block >= self.cfg.start_block and not self.backfilling:
                 sections = {c.id: self._digest(c, block) for c in self.checks.values()}
                 self.alerts.digest(block, sections)
 
@@ -571,7 +686,8 @@ class Worker:
         cp = self.checkpoint()["block"]
         lag = target - cp
         self.db.set_meta("lag_blocks", lag)
-        if lag > self.cfg.lag_alert_blocks:
+        behind_by_design = self.backfilling and self.phase().get("history_block") is None  # still storing history
+        if lag > self.cfg.lag_alert_blocks and not behind_by_design:
             with self.db.tx():
                 self.alerts.health("lag", f"Checkpoint {cp} is {lag} blocks behind the confirmed head {target}.",
                                    dedup="lag", realert=True)
@@ -589,6 +705,7 @@ class Worker:
         return {
             "identity": self.db.meta("identity"), "schema_version": self.db.meta("schema_version"),
             "checkpoint": self.checkpoint(), "lag_blocks": self.db.meta("lag_blocks"),
+            "phase": self._phase_progress(),
             "checks": {c: {**self.db.meta(f"run:{c}", {}), "state": self.db.meta(f"check:{c}:last_sweep")}
                        for c in self.checks},
             "params_block": self.params.block,
@@ -625,23 +742,36 @@ class Worker:
 
     def step(self, force: bool = False) -> None:
         try:
+            if not self.bootstrapped:  # an RPC outage at start is an RPC failure like any other, not a crash loop
+                self.bootstrap()
             self.check_reorg()
             self.scan()
             self.poll_inbox()
             self.run_checks(force=force)
+            if self.rpc_failures >= 3:  # the outage was announced: say it is over
+                with self.db.tx():
+                    self.alerts.health("rpc-recovered", f"RPC reads succeed again after {self.rpc_failures} "
+                                       f"consecutive failures; checkpoint {self.checkpoint()['block']}.",
+                                       dedup=f"rpc-recovered:{self.checkpoint()['block']}")
             self.rpc_failures = 0
             self.db.set_meta("rpc_failures", 0)
             problems = self.degraded()
             self.write_status(not problems, "; ".join(problems) or None)
         except RpcError as exc:
             self.rpc_failures += 1
+            if self.rpc_failures == 1:
+                self.rpc_outage_since = self.clock()
             self.db.set_meta("rpc_failures", self.rpc_failures)
             log.warning("RPC failure %d: %s", self.rpc_failures, exc)
             if self.rpc_failures in (3, 20, 100):
+                cp = self.checkpoint()
                 with self.db.tx():
                     self.alerts.health("rpc", f"{self.rpc_failures} consecutive RPC failures; last: {exc}. "
-                                       f"Checkpoint {self.checkpoint()['block']}.", dedup=f"rpc:{self.rpc_failures}",
-                                       realert=True)
+                                       f"Checkpoint {cp['block'] if cp else 'not set (bootstrap)'}.",
+                                       dedup=f"rpc:{self.rpc_outage_since}:{self.rpc_failures}")  # per outage
+            if not self.bootstrapped:  # no checkpoint yet: no status file (the healthcheck stays red)
+                self.deliver()
+                return
             self.write_status(False, str(exc))
         inbox_down = bool(self._inbox_problem())
         self.db.set_meta("inputs_unavailable", {"params": not self.params.ok, "inbox": inbox_down})
@@ -655,7 +785,7 @@ class Worker:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["run", "once", "audit", "status", "verify-layout"])
+    ap.add_argument("command", choices=["run", "once", "audit", "status", "export", "verify-layout"])
     ap.add_argument("--config", default=os.environ.get("EB_RECONCILE_CONFIG", "config.json"))
     ap.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "info"))
     ap.add_argument("--serve-metrics", action="store_true", help="serve /metrics (also on with metrics.enabled)")
@@ -667,10 +797,17 @@ def main(argv=None) -> int:
                         stream=sys.stderr)
 
     cfg = load_config(args.config)
-    db = DB(cfg.db_path)
+    db = DB(cfg.db_path, readonly=args.command in ("audit", "status", "export"))
 
     if args.command == "audit":
         print(json.dumps(audit(db, cfg.start_block), indent=1))
+        return 0
+
+    if args.command == "export":
+        print(json.dumps({
+            "incidents": [dict(r) for r in db.conn.execute("SELECT * FROM incidents ORDER BY opened_at, rowid")],
+            "outbox": [dict(r) for r in db.conn.execute("SELECT * FROM outbox ORDER BY created_at, rowid")],
+        }, indent=1))
         return 0
 
     lock = open(cfg.db_path + ".lock", "w")
@@ -692,9 +829,10 @@ def main(argv=None) -> int:
 
     rpc = make_rpc(cfg)
     worker = Worker(cfg, rpc, db, make_notifier(cfg.alerts))
-    worker.bootstrap()
+    log.info("RPC endpoints in failover order: %s", ", ".join(label for label, _ in rpc.endpoints))
 
     if args.command == "verify-layout":
+        worker.bootstrap()
         block = worker.target_block()
         m5 = worker.checks["m5"]
         problems = m5.verify_layout(Chain(rpc, block), db, block, deep=True)
@@ -720,15 +858,15 @@ def main(argv=None) -> int:
     stop = {"flag": False}
     signal.signal(signal.SIGTERM, lambda *_: stop.update(flag=True))
     signal.signal(signal.SIGINT, lambda *_: stop.update(flag=True))
-    log.info("starting: proxy %s from block %d (checkpoint %d), checks %s, alerts=%s", cfg.proxy, cfg.start_block,
-             worker.checkpoint()["block"], sorted(worker.checks), cfg.alerts.get("mode", "record"))
+    log.info("starting: proxy %s from block %d (checkpoint %s), checks %s, alerts=%s", cfg.proxy, cfg.start_block,
+             (worker.checkpoint() or {}).get("block"), sorted(worker.checks), cfg.alerts.get("mode", "record"))
     while not stop["flag"]:
         worker.step()
-        for _ in range(int(cfg.poll_interval_s)):
+        for _ in range(int(worker.wait_s())):
             if stop["flag"]:
                 break
             time.sleep(1)
-    log.info("stopped at checkpoint %d", worker.checkpoint()["block"])
+    log.info("stopped at checkpoint %s", (worker.checkpoint() or {}).get("block"))
     return 0
 
 

@@ -95,6 +95,8 @@ says which. Every run is at the current checkpoint block (intermediate blocks ar
 | (framework) | a parameter event was scanned, the parameters were re-read after a reorg, or they became readable again after a failed read (after `prepare`) | `params` |
 | (framework) | the chain was reorganised below the checkpoint (durable until the check's run commits, also across a restart; `ctx.reorg_ancestor`) | `reorg` |
 | (framework) | `once` / `step(force=True)` | `force` |
+| (framework) | silent backfill (D17): the check's one evaluation of history, pinned to the caught-up checkpoint (`ctx.block` is that block even when a failed run is retried later); its findings open, escalate and resolve incidents **without sending** (applied with `notify=False`) | `backfill`, `force` |
+| (framework) | the check's first run after its own silent evaluation, at a block after the caught-up checkpoint (in the same step when the silent run was a retry; the other checks need not have finished theirs): a forced full run; a key still reported is sent then (`open`), a key only found in history stays unsent | `live`, `force` |
 
 Cursors (`meta` keys `cursor:events:<id>`, `cursor:inbox:<id>`) are durable and advance only when a
 run commits, so no event or inbox entry is lost across a crash. A reorg rewinds event cursors to the
@@ -159,7 +161,7 @@ worker status file (`<db>.status.json`) has `healthy: false` with the reason in 
 | `ctx.check_id`, `ctx.block` | the check id; the checkpoint block of this run |
 | `ctx.reorg_ancestor` | the lowest common ancestor of the reorgs since the check's last successful run, or None (§6.1) |
 | `ctx.reorg_keys` | reorg runs only (else empty): `frozenset` of the keys of this check's **open** incidents whose `last_seen_block` > `ctx.reorg_ancestor`. Each must be reported again by this run, or the framework resolves it (§6.2) |
-| `ctx.rpc` | `rpc.Chain` pinned to `block`: `call(to, data) -> bytes`, `call_many([(to, data), …])`, `balance(addr)`, `balances([…])`, `storage(addr, [slots])`, `code(addr)`, `transaction(hash)`, `logs(address, [topic0, …], start, end=None)` (any contract, raw logs). A revert raises `RpcError` with `.data` = revert data. `ctx.rpc.counts` is a `Counter` of JSON-RPC calls made by this run (also stored as `rpc_calls` in `meta run:<id>`). |
+| `ctx.rpc` | `rpc.Chain` pinned to `block`: `call(to, data) -> bytes`, `call_many([(to, data), …])`, `balance(addr)`, `balances([…])`, `storage(addr, [slots])`, `code(addr)`, `transaction(hash)`, `logs(address, [topic0, …], start, end=None)` (any contract, raw logs), `headers([blocks], full=False)`, `batch(method, [params, …], blocks=())` (any other read-only method, batched; `blocks` named must be ≤ the pinned block; a short answer raises `RpcError`), `request(method, params)` (one unpinned read, e.g. the unconfirmed next block). Every endpoint of `rpc_urls` is tried in order before an `RpcError` (D16; a revert is an answer, never retried elsewhere). A revert raises `RpcError` with `.data` = revert data. `ctx.rpc.counts` is a `Counter` of JSON-RPC calls made by this run (also stored as `rpc_calls` in `meta run:<id>`). |
 | `ctx.params` | live parameters at the last successful reload (`params.py`; failed reads: §5.1): `network_fee`, `network_fee_ssv`, `liquidation_threshold_period`, `liquidation_threshold_period_ssv`, `minimum_liquidation_collateral`, `minimum_liquidation_collateral_ssv`, `operator_fee_increase_limit`, `maximum_operator_fee`, `minimum_operator_eth_fee`, `validators_per_operator_limit`, `quorum_bps`, `cooldown_duration`, `active_oracle_ids` (4 ids, 0 = empty slot), `oracles` ({id: address}), `min_blocks_between_updates`; `ctx.params.block` = read block; `ctx.params.enabled` is False when `views` is not configured; `ctx.params.ok` is False while the values are invalid (`ctx.params.error` says why). Attribute, item or `.get` access; ints, raw units (wei, blocks, bps). Access while invalid raises `params.ParamsUnavailable`. |
 | `ctx.inventory(block=None)` | `inventory.Inventory` at the block (cached per block): `.clusters` {`0x…` id: `ClusterInfo`}, `.operators` {op id: {"clusters", "validators"}} over validated clusters, `.invalid` (exist in storage, no candidate tuple validates — M1 input), `.stats()`. `ClusterInfo`: `cluster_id`, `owner`, `operator_ids`, `version` ("ETH" / "SSV" from storage; None = not in storage), `cluster` (`eb_storage.Cluster`, storage-validated, or None), `valid`, `legacy`, `tuple_source` ("logs" / "api"), `sources`, `api_migrated`, `api` (raw API row). API pages are refetched at most every `inventory.api_refresh_s`. |
 | `ctx.events()` | iterator of new stored `eb_events.Event`s of the subscribed kinds (empty without `OnEvents`) |
@@ -309,7 +311,14 @@ to the run with reason `reorg` (`ctx.reorg_ancestor` = A, set until that run com
 5. Own tables and `ctx.set_state`: enumerate the keys to re-check from what you persisted (e.g. `SELECT key
    FROM m<N>_state`) as well as from surviving data; delete or rewrite rows derived from blocks above A.
    Inbox-derived keys: re-derive from `inbox` rows with `canonical = 1` (`SELECT tx_hash FROM inbox WHERE
-   canonical = 1`); delivered entries are not delivered again.
+   canonical = 1`); delivered entries are not delivered again. **Lowered checkpoint** (a reorg onto a shorter
+   chain, or a node behind the checkpoint): a delivered entry whose block is now above the checkpoint is
+   `canonical = NULL` (not re-confirmed yet), neither evidence nor absence: keep the keys it supports (UNKNOWN) and
+   re-derive it once it is `canonical = 1` again, drop it at `canonical = 0`. Status at CP3: M14 holds such entries
+   (`await_confirmation`); M1 and M2 drop inbox-derived rows only at `canonical = 0` (kept meanwhile); M9 and M11
+   derive from `canonical = 1` rows at or below the checkpoint, so their inbox-derived warns (`revert:<address>`,
+   `revert-rate`) can resolve in that reorg run and reopen once the entry is re-confirmed (a transient warn, a
+   NOTE under D15).
 
 Pattern (see `tests/test_reorg_sweep.py::Watch`, `tests/test_reorg_refind.py::FailedTxWatch`):
 
@@ -356,7 +365,10 @@ input, value)`, `write(slot, value)`, `calls` log of every `eth_call`, `down` to
 real logs and storage), `FakeClock` (`advance(s)`), `keys(n, start)`. Stubs and balances take effect from
 the pending block (`chain.number`); mine once before the block you read.
 
-`tests/harness.py`: `make_worker(tmp_path, [instances] | only=["m3"], checks={...}, clock=…, views=…)`,
+`tests/harness.py`: `make_worker(tmp_path, [instances] | only=["m3"], checks={...}, clock=…, views=…)` builds
+the given instances, or the registered checks named in `only`, or (neither) M5 plus the checks named in `checks=`
+(`registry.build(settings, only=…)`; no test depends on what else is registered); the silent backfill is off unless
+the test passes `backfill={...}`;
 `advance(w)`, `outbox(w, where)`, `Capture` (notifier; `.sent` = (severity, key, text, route)),
 `stub_params(chain, **values)` (every Views getter; call again + emit the parameter event to model a
 change), `api_row(...)` (one SSV API row; set `w.inventory.http_get` to serve pages and pass
@@ -382,4 +394,7 @@ reconcile/.venv/bin/python -m pytest -q reconcile/tests
 reconcile/.venv/bin/ruff check reconcile
 reconcile/.venv/bin/python reconcile/eb_reconcile.py once --config <cfg> --serve-metrics --hold 30
 reconcile/.venv/bin/python reconcile/tests/fake_once.py --port 9464 --hold 30   # once on the fake chain
+FORK_RPC_URL=https://mainnet.gateway.tenderly.co reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py --scenario m3
 ```
+
+Deployment, phases and operations: [`deploy/README.md`](../../deploy/README.md#runbook-running-the-service).

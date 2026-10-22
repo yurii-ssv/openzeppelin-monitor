@@ -34,6 +34,15 @@ def render(conn: sqlite3.Connection, check_ids: list[str]) -> str:
     metric("ssv_watch_checkpoint_block", "gauge", "Last scanned and stored block.", [({}, cp.get("block", -1))])
     metric("ssv_watch_lag_blocks", "gauge", "Confirmed head minus checkpoint at the last lag check.",
            [({}, meta("lag_blocks", -1))])
+    phase = meta("phase") or {"phase": "live"}
+    backfilling = phase.get("phase") == "backfill"
+    target = meta("scan_target")
+    metric("ssv_watch_backfill", "gauge", "1 until every check has evaluated history silently (D17; a check alerts "
+           "after its own silent evaluation); 0 once live.",
+           [({}, int(backfilling))])
+    metric("ssv_watch_backfill_remaining_blocks", "gauge", "Blocks between the checkpoint and the scan target while "
+           "backfilling (0 once live).",
+           [({}, max(target - cp.get("block", 0), 0) if backfilling and target is not None else 0)])
     open_counts = conn.execute(
         "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity").fetchall()
     metric("ssv_watch_open_incidents", "gauge", "Open incidents by check and severity.",

@@ -159,7 +159,8 @@ class Alerts:
         )
         if not send:
             return 0
-        kind = "escalate" if escalated else "update"
+        # an incident tracked without a message until now (notify=False, or a silent backfill) is opened by it
+        kind = "escalate" if escalated else ("open" if not row["alerts"] else "update")
         key = f"{inc_id}:{f.revision}" if revised else f"{inc_id}:{kind}:{f.severity}:{block}"
         return int(self.enqueue(key, f.severity, self._text(f.severity, f.title, f.body, inc_id), kind,
                                 f.check, inc_id, unique=True))

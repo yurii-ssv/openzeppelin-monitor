@@ -34,29 +34,20 @@ class Capture:
 
 
 def make_worker(tmp_path, stubs=None, *, only=None, chain=None, clock=None, notifier=None, **over):
-    """A bootstrapped Worker on a FakeChain. `stubs`: check instances; `only`: ids of registered checks
-    to build from the registry (config from `checks=`); neither: every registered check."""
+    """A bootstrapped Worker on a FakeChain. `stubs`: check instances; otherwise the registered checks named in
+    `only`, or (without `only`) M5 plus every check named in `checks=`. The silent backfill (D17) is off unless
+    the test passes `backfill=`."""
     chain = chain or FakeChain()
     raw = {
         "chain_id": 1, "proxy": PROXY, "activation_block": chain.sealed, "start_block": chain.sealed,
         "rpc_url_env": "UNUSED", "confirmations": 0, "max_log_range": 10_000, "db_path": str(tmp_path / "w.sqlite"),
         "alerts": {"mode": "record", "label": "test", "digest_interval_s": 0},
-        "inventory": {"api_url": None},
+        "inventory": {"api_url": None}, "backfill": {"enabled": False},
     }
     raw.update(over)
-    if only is None and stubs is None:
-        # registered lane checks are built only when a test names them in `checks=` (or via `only=`)
-        configured = {cid: dict(c) for cid, c in raw.get("checks", {}).items()}
-        for cid in registry.REGISTRY:
-            if cid != "m5" and cid not in configured:
-                configured[cid] = {"enabled": False}
-        raw["checks"] = configured
-    if only is not None:
-        checks_cfg = {cid: dict(c) for cid, c in raw.get("checks", {}).items()}
-        for cid in registry.REGISTRY:
-            checks_cfg[cid] = {**checks_cfg.get(cid, {}), "enabled": cid in only}
-        raw["checks"] = checks_cfg
     cfg = Config({**DEFAULTS, **raw})
+    if stubs is None:
+        stubs = registry.build(cfg.raw, only=list(only) if only is not None else ["m5", *raw.get("checks", {})])
     w = Worker(cfg, FakeRpc(chain), DB(cfg.db_path), notifier or Capture(), clock=clock or FakeClock(),
                checks=stubs)
     w.bootstrap()

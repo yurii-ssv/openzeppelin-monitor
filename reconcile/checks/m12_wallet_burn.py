@@ -57,8 +57,8 @@ next block's, `gasUsedRatio` one per block. An answer that is shorter, longer, s
 `PartialResult` (a check error: `check-error` health, the run rolled back, open incidents untouched, a reorg
 marker kept), never a projection from a partial sample; no answer at all is an `RpcError` as for every read.
 
-The chain reads `rpc.Chain` lacks (nonce, receipts, headers, fee history, block receipts) go through
-`raw_batch` below: pinned to blocks ≤ `ctx.block`, counted in `ctx.rpc.counts` (CP3 promotion item).
+The other chain reads (nonce, receipts, headers, fee history, block receipts) go through `ctx.rpc.batch` /
+`ctx.rpc.headers` (`rpc.Chain`): pinned to blocks ≤ `ctx.block`, counted in `ctx.rpc.counts`, a short answer an error.
 """
 
 from __future__ import annotations
@@ -80,22 +80,7 @@ ETH = 10**18
 SLOT_S = 12  # post-merge slot: only the first guess of the time-window search; the timestamps decide
 
 
-# ---------------------------------------------------------------- chain reads rpc.Chain does not offer (lane-local)
-
-
-def raw_batch(ctx: Ctx, method: str, params: list[list], blocks: list[int] = ()) -> list:
-    """Batched read-only JSON-RPC `method`, one call per params list. `blocks`: every block number the calls
-    name; each must be at or below the run's pinned block (never read above the checkpoint)."""
-    for b in blocks:
-        if b > ctx.block or b < 0:
-            raise ValueError(f"{method} at block {b} is outside [0, pinned block {ctx.block}]")
-    if not params:
-        return []
-    ctx.rpc.counts[method] += len(params)
-    res = ctx.rpc.rpc.batch([(method, p) for p in params])
-    if not isinstance(res, list) or len(res) != len(params):  # a partial answer is an error, never fewer items
-        raise RpcError(f"{method}: {len(res) if isinstance(res, list) else 'no'} results for {len(params)} calls")
-    return res
+# ---------------------------------------------------------------- chain reads (rpc.Chain.batch / headers)
 
 
 class PartialResult(Exception):
@@ -109,25 +94,18 @@ def _int(value, what: str) -> int:
 
 
 def nonces(ctx: Ctx, addresses: list[str], block: int) -> list[int]:
-    res = raw_batch(ctx, "eth_getTransactionCount", [[a, hex(block)] for a in addresses], [block])
+    res = ctx.rpc.batch("eth_getTransactionCount", [[a, hex(block)] for a in addresses], [block])
     return [_int(r, f"eth_getTransactionCount({a}, {block})") for a, r in zip(addresses, res)]
 
 
 def headers(ctx: Ctx, blocks: list[int], full: bool = False) -> dict[int, dict]:
     """Block headers (or full blocks) at or below the pinned block; a missing block is an RPC error."""
-    blocks = sorted(set(blocks))
-    res = raw_batch(ctx, "eth_getBlockByNumber", [[hex(b), full] for b in blocks], blocks)
-    out = {}
-    for b, r in zip(blocks, res):
-        if not isinstance(r, dict) or not r.get("hash"):
-            raise RpcError(f"eth_getBlockByNumber({b}): no block")
-        out[b] = r
-    return out
+    return ctx.rpc.headers(blocks, full)
 
 
 def balances_at(ctx: Ctx, pairs: list[tuple[str, int]]) -> list[int]:
     """eth_getBalance for (address, block) pairs, one batch; an empty result is an RPC error, never 0."""
-    res = raw_batch(ctx, "eth_getBalance", [[a, hex(b)] for a, b in pairs], [b for _, b in pairs])
+    res = ctx.rpc.batch("eth_getBalance", [[a, hex(b)] for a, b in pairs], [b for _, b in pairs])
     return [_int(r, f"eth_getBalance({a}, {b})") for (a, b), r in zip(pairs, res)]
 
 
@@ -136,7 +114,7 @@ def base_fee(ctx: Ctx, blocks: int) -> int:
     cover exactly the requested range; a partial, truncated or shifted one is an RPC error, never a smaller sample."""
     oldest = max(ctx.block - blocks + 1, 0)
     n = ctx.block - oldest + 1
-    (res,) = raw_batch(ctx, "eth_feeHistory", [[hex(blocks), hex(ctx.block), []]], [ctx.block])
+    (res,) = ctx.rpc.batch("eth_feeHistory", [[hex(blocks), hex(ctx.block), []]], [ctx.block])
     what = f"eth_feeHistory({blocks}, {ctx.block})"
     if not isinstance(res, dict):
         raise RpcError(f"{what}: malformed result {res!r:.200}")
@@ -476,8 +454,8 @@ class M12WalletBurn(Check):
         hashes = list(dict.fromkeys(c["hash"] for c in cands))
         if not hashes:
             return []
-        txs = raw_batch(ctx, "eth_getTransactionByHash", [[h] for h in hashes])
-        rcs = raw_batch(ctx, "eth_getTransactionReceipt", [[h] for h in hashes])
+        txs = ctx.rpc.batch("eth_getTransactionByHash", [[h] for h in hashes])
+        rcs = ctx.rpc.batch("eth_getTransactionReceipt", [[h] for h in hashes])
         good = []
         for h, tx, rc in zip(hashes, txs, rcs):
             if not isinstance(tx, dict) or not isinstance(rc, dict) or not tx.get("blockNumber"):

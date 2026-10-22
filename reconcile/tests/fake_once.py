@@ -59,7 +59,7 @@ def main() -> int:
         "chain_id": 1, "proxy": PROXY, "activation_block": start, "start_block": start, "rpc_url_env": "FAKE_RPC_URL",
         "confirmations": 0, "db_path": f"{tmp}/eb.sqlite",
         "alerts": {"mode": "record", "record_path": f"{tmp}/alerts.jsonl", "label": "fake chain", "digest_interval_s": 0},
-        "inventory": {"api_url": None},
+        "inventory": {"api_url": None}, "backfill": {"enabled": False},
         "checks": {"m5": {"sweep_interval_s": 0, "full_sweep_interval_s": 0}},
     }
     path = f"{tmp}/config.json"

@@ -65,19 +65,23 @@ outbox keys are unchanged.
 
 ## Run
 
+The runbook (start, stop, status, metrics, backfill, RPC failover, secrets, routes, Kubernetes) is
+[`deploy/README.md`](../deploy/README.md#runbook-running-the-service). In short:
+
 ```bash
 cp reconcile/config.example.json reconcile/config.json        # gitignored
-# .env (repo root), names only: MAINNET_RPC_URL; for alerts.mode "live" also
-#                   TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, DISCORD_WEBHOOK_INFO (or point the config at TEST_*)
-docker compose -f docker-compose.local.yaml -f docker-compose.reconcile.yaml up -d --build
-docker compose -f docker-compose.local.yaml -f docker-compose.reconcile.yaml logs -f eb-reconcile
+# .env (repo root), names only: MAINNET_RPC_URL (optional, replaces the first of rpc_urls); for alerts.mode
+#                   "live" also TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, DISCORD_WEBHOOK_INFO (or point the config at TEST_*)
+docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml up -d --build
+docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml logs -f eb-reconcile
 ```
 
 Start with `"alerts": {"mode": "record"}`: alerts are written as JSON lines and kept in the outbox.
 Switch to `"live"` after the record-only soak. The first start backfills from `start_block` (the
-v2.0.0 activation, 24,920,727): about 1.2M blocks, a few minutes on an RPC that accepts 50k-block
-`eth_getLogs` windows. State lives in `reconcile/data/` (override with `EB_RECONCILE_DATA_DIR`); on
-Linux, make that directory writable by uid 10001. A database written by the pre-framework worker is
+v2.0.0 activation, 24,920,727) **silently** (D17, `backfill`): about 1.3M blocks in 5,000-block `eth_getLogs`
+windows, then one silent evaluation of the history by every check at the caught-up checkpoint; each check alerts
+from its first run at a later block, whatever the others do (one failing its silent run does not hold them back). State
+lives in the named volume `watch-data` (D18). A database written by the pre-framework worker is
 migrated in place on start (its open M5 incidents keep their ids and are not re-sent; messages it
 queued but had not sent keep their keys, take the framework severity names and are delivered on their
 severity's route).
@@ -86,11 +90,14 @@ Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --con
 
 - `run`: the loop (default container command); serves `/metrics` when `metrics.enabled`
 - `once`: one step with every check forced, then exit (`--serve-metrics --hold N` keeps `/metrics` up N s)
-- `status`: checkpoint, per-check last run, open incidents, undelivered alerts
+- `status`: phase (`backfill` with progress, or `live`), checkpoint, per-check last run, open incidents,
+  undelivered alerts (read-only: answers while a check runs)
+- `export`: every incident and outbox message as JSON (soak evidence)
 - `audit`: M5 event-only history of every root window with post-S additions and matched removals
 - `verify-layout`: implementation, module addresses and codehashes against the pin
 
-Metrics: `ssv_watch_checkpoint_block`, `ssv_watch_lag_blocks`, `ssv_watch_open_incidents{check,severity}`,
+Metrics: `ssv_watch_checkpoint_block`, `ssv_watch_lag_blocks`, `ssv_watch_backfill`,
+`ssv_watch_backfill_remaining_blocks`, `ssv_watch_open_incidents{check,severity}`,
 `ssv_watch_outbox_undelivered`, `ssv_watch_outbox_failing`, `ssv_watch_check_last_run_seconds{check}`,
 `ssv_watch_check_last_run_block{check}`, `ssv_watch_check_errors_total{check}`,
 `ssv_watch_rpc_consecutive_failures`, `ssv_watch_inbox_entries{state}`,
@@ -108,9 +115,11 @@ tuples validated against storage) and `.venv/bin/python params.py --probe --rpc 
 - `checks.m5.layout`: pinned from `ssv-network-triage/contracts.lock.json`. Any drift suspends M5
   with a health alert. After an upgrade, revalidate `eb_storage.py`, then update the pin.
 - `confirmations`: blocks behind head (default 12). A negative value uses the `finalized` tag.
-- RPC: archive state is not needed (storage is read at the checkpoint block), but `eth_getLogs` over
-  history is. Public endpoints differ: `rpc.mevblocker.io` accepted 50k-block windows on 2026-10-05;
-  drpc's free tier and publicnode did not.
+- RPC (D16): `rpc_urls`, tried in order with failover (default `https://mainnet.gateway.tenderly.co`,
+  `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`); entries are URLs or environment
+  variable names; `rpc_url_env` (`MAINNET_RPC_URL`), when set, replaces the first. Archive state is not needed
+  (state is read at the checkpoint block), `eth_getLogs` over history is; `max_log_range` 5,000 (the cap of all
+  three), halved when an endpoint rejects a window.
 
 ## Tests
 
@@ -119,9 +128,13 @@ uv venv reconcile/.venv --python 3.12
 uv pip install --python reconcile/.venv/bin/python -r reconcile/requirements-dev.txt
 reconcile/.venv/bin/python -m pytest -q reconcile/tests          # framework + M5 gates 1-3 on an in-memory chain
 reconcile/.venv/bin/ruff check reconcile
-FORK_RPC_URL=<mainnet RPC> reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py              # gate 1 on an anvil fork
-FORK_RPC_URL=<mainnet RPC> reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py --telegram   # + gate 5 to TEST_*
+export PATH=$HOME/.foundry/bin:$PATH FORK_RPC_URL=https://mainnet.gateway.tenderly.co
+reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py --scenario m5      # gate 1 (#94775 PoC) on an anvil fork
+reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py --scenario m3      # liquidation zone: info, warn, page, zero, resolve
+reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py --scenario m9      # oracle dissent streak, failed round
+reconcile/.venv/bin/python reconcile/scripts/fork_e2e.py --scenario m12     # oracle wallet below 0.15 ETH
 ```
 
-`fork_e2e.py` replays the triage PoC (63 empty-shares dummy keys, a 2,048 ETH root, removal) on a
-local fork with impersonated live oracles, and checks the worker after every step. Nothing is sent to mainnet.
+`fork_e2e.py` drives each scenario on a local fork at the RPC's head with impersonated accounts and checks the
+worker after every step (`--telegram` sends to `TEST_*`, `--port` runs scenarios side by side). M3 mines ~50k
+empty blocks (about 35 min on anvil). Nothing is sent to mainnet.
