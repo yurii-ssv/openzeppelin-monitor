@@ -34,10 +34,10 @@ def findings_out(w):
     return outbox(w, "severity!='health' AND kind NOT IN ('digest', 'realert')")  # re-alerts: framework cadence
 
 
-def world(tmp_path, m7=None, proxy=BALANCED, cssv=STAKED, **kw):
+def world(tmp_path, m7=None, proxy=BALANCED, cssv=STAKED, count=2, **kw):
     lw = LegacyWorld(tmp_path, only=("m7",), **kw)
     lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed, **(m7 or {})}}
-    a = lw.legacy(owner(1), count=2)
+    a = lw.legacy(owner(1), count=count)
     lw.views(a, balance=CLUSTER)
     lw.ledger(proxy_ssv=proxy, cssv_supply=cssv, network=NETWORK, operators=OPS)
     lw.chain.mine()
@@ -498,6 +498,92 @@ def test_m7_restart_on_a_lost_database_with_an_empty_api_is_unknown(tmp_path):
     assert incidents(lw.w) == {} and "inventory incomplete" in _health(lw.w)[0]
 
 
+# ---------------------------------------------------------------- QA cp2e-2 F1: an empty listing is never complete
+
+
+def _inert_world(tmp_path, proxy):
+    """Only an inert legacy cluster (no validators: daoValidatorCount 0) holding CLUSTER: no validator count
+    reveals it, only the listing does."""
+    lw = LegacyWorld(tmp_path, only=("m7",))
+    lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed}}
+    a = lw.legacy(owner(1), count=0)
+    lw.views(a, balance=CLUSTER)
+    lw.ledger(proxy_ssv=proxy, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.start()
+    return lw, a
+
+
+def test_m7_q10_consistent_empty_api_with_inert_legacy_balance(tmp_path):
+    """QA cp2e-2 F1 (Q10): the proxy is 50 SSV short of an inert 100 SSV legacy balance (true surplus -49 SSV) and
+    the API answers a self-consistent empty page (`clusters: []`, total 0). daoValidatorCount 0 agrees with it:
+    an empty listing is still never complete (UNKNOWN, no baseline of 51 SSV)."""
+    lw, _ = _inert_world(tmp_path, BALANCED - 50 * SSV)
+    lw.api_fault, lw.api_total = "empty", 0
+    advance(lw.w)
+    assert incidents(lw.w) == {}
+    health = _health(lw.w)
+    assert len(health) == 1 and "UNKNOWN" in health[0] and "listed no clusters" in health[0]
+    lw.api_fault, lw.api_total = None, None  # the API recovers: the true surplus pages; one baseline
+    day(lw)
+    inc = incidents(lw.w)
+    assert "surplus-floor" in inc and inc["surplus"]["revision"] == str(-49 * SSV)
+    assert sorted(_opened(lw.w)) == [("info", "open"), ("page", "open")]
+
+
+@pytest.mark.parametrize("total", [0, 1, None])
+@pytest.mark.parametrize("point", ["first", "lost_database", "after_baseline", "reorg"])
+def test_m7_empty_api_listing_is_unknown_whatever_its_total(tmp_path, total, point):
+    """The empty-input class at every point a run can meet it, in the inert-only world (daoValidatorCount 0):
+    the total the API reports (0, the true 1, none) never makes an empty page complete. No resolve, no new
+    baseline, no changed revision; health says UNKNOWN."""
+    lw, _ = _inert_world(tmp_path, BALANCED)
+    if point != "first":
+        advance(lw.w)
+        assert incidents(lw.w)["surplus"]["revision"] == str(SSV)
+    if point == "lost_database":
+        lw.tmp_path = tmp_path / "lost"
+        lw.tmp_path.mkdir()
+        lw.start()
+    elif point == "reorg":
+        fork = lw.chain.number
+        lw.chain.mine(2)
+        advance(lw.w)
+        lw.fork(fork)
+    if total is None:  # an empty page without a total
+        lw.rows, lw.api_fault = [], "no_total"
+    else:
+        lw.api_fault, lw.api_total = "empty", total
+    n = len(findings_out(lw.w))
+    day(lw)
+    assert findings_out(lw.w)[n:] == []
+    inc = incidents(lw.w)
+    assert (inc == {}) if point in ("first", "lost_database") else (inc["surplus"]["revision"] == str(SSV))
+    assert any("UNKNOWN" in h for h in _health(lw.w))  # the gap, or (after a baseline) the m7_legacy id check
+
+
+def test_m7_empty_api_next_to_a_cluster_from_the_logs_is_unknown(tmp_path):
+    """The API lists nothing (total 0) while the scanned logs hold one legacy cluster (its last validator
+    removed after the start block): the listing is not empty, but an API that lists none of the clusters the
+    chain shows is the same degenerate answer — the other inert legacy balance (7 SSV) is missing."""
+    lw = LegacyWorld(tmp_path, only=("m7",))
+    lw.checks = {"m7": {"cssv": CSSV, "unstake_history_from": lw.chain.sealed}}
+    a, b = lw.legacy(owner(1), count=1), lw.legacy(owner(2), count=0)
+    lw.views(b, balance=7 * SSV, burn=0)
+    # true surplus 1 + 2 - 7 = -4 SSV; without b's claim it would read 3 SSV, a clean baseline
+    lw.ledger(proxy_ssv=BALANCED + 2 * SSV, cssv_supply=STAKED, network=NETWORK, operators=OPS)
+    lw.chain.mine()
+    lw.start()
+    lw.ssv.remove(a.owner, a.ops, [b"\x02" * 48])  # in the scanned logs; daoValidatorCount -> 0
+    lw.views(a, balance=CLUSTER)
+    lw.chain.mine()
+    lw.api_fault, lw.api_total = "empty", 0
+    advance(lw.w)
+    assert incidents(lw.w) == {}
+    health = _health(lw.w)
+    assert len(health) == 1 and "listed no clusters" in health[0]
+
+
 def test_m7_unstake_prefix_read_failure_is_retried_not_zero(tmp_path):
     """The range before start_block is read once with eth_getLogs; an error there fails the run (nothing
     persisted, retried at the next step), never 'no unstakes'."""
@@ -573,7 +659,7 @@ def test_m7_reorg_orphaning_the_repair_that_resolved_the_page_reopens_it(tmp_pat
 # ---------------------------------------------------------------- seeded adversarial sweep (qa/DEFECT-CLASSES.md)
 
 SWEEP_STORIES = ("leak_orphaned", "leak_survives", "repair_orphaned", "unstake_orphaned")
-SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert", "op_revert")
+SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert", "op_revert", "empty_total0")
 OP_SEL = "0x" + keccak(b"getOperatorEarningsSSV(uint64)")[:4].hex()
 
 
@@ -588,8 +674,8 @@ def _sweep_cases(seed=20261022):
 class _M7Sweep:
     """The M7 ledger with `truth` = the canonical surplus; every step checks the sweep invariants."""
 
-    def __init__(self, tmp_path, conf):
-        self.lw, self.a = world(tmp_path, confirmations=conf)
+    def __init__(self, tmp_path, conf, count=2):
+        self.lw, self.a = world(tmp_path, confirmations=conf, count=count)
         self.conf, self.proxy, self.cssv = conf, BALANCED, STAKED
         self.truth = SSV
 
@@ -648,7 +734,8 @@ class _M7Sweep:
 
 @pytest.mark.parametrize("story,fault,conf,depth,restart", list(_sweep_cases()))
 def test_m7_adversarial_sweep(tmp_path, story, fault, conf, depth, restart):
-    sw = _M7Sweep(tmp_path, conf)
+    # a self-consistent empty page (total 0) meets an inert legacy cluster: daoValidatorCount 0 agrees with it
+    sw = _M7Sweep(tmp_path, conf, count=0 if fault == "empty_total0" else 2)
     lw = sw.lw
     lw.chain.mine(conf)
     sw.step(seconds=0, blocks=0)  # the first run: the 1 SSV baseline

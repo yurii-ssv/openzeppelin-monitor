@@ -69,7 +69,7 @@ class LegacyWorld:
         self.clock = clock or FakeClock()
         self.rows: list[dict] = []
         self.api_total: int | None = None  # pagination.total the fake API reports (None: the rows it serves)
-        self.api_fault: str | None = None  # None | "empty" | "short" | "error" | "no_total" (see http_get)
+        self.api_fault: str | None = None  # None | "empty" | "empty_total0" | "short" | "error" | "no_total"
         self.refs: list[Ref] = []
         self.only, self.checks, self.over = list(only), checks or {}, over
         stub_params(self.chain, **{"liquidation_threshold_period_ssv": PERIOD_SSV,
@@ -92,13 +92,14 @@ class LegacyWorld:
 
     def http_get(self, url):
         """The fake SSV API v4: every row on one page with its `pagination.total`; `api_fault` serves an empty
-        listing, a listing short of its first row (both with the true total), an error, or no total."""
+        listing, a listing short of its first row (both with the true total), a self-consistent empty listing
+        (total 0), an error, or no total."""
         rows = [r for r in self.rows if r is not None]
         total = len(rows) if self.api_total is None else self.api_total
         if self.api_fault == "error":
             raise OSError("SSV API unreachable")
-        if self.api_fault == "empty":
-            rows = []
+        if self.api_fault in ("empty", "empty_total0"):
+            rows, total = [], 0 if self.api_fault == "empty_total0" else total
         elif self.api_fault == "short":
             rows = rows[1:]
         pagination = {"pages": 1} if self.api_fault == "no_total" else {"pages": 1, "total": total}

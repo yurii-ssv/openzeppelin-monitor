@@ -664,6 +664,25 @@ def test_m6_digest_of_an_incomplete_inventory_says_unknown_not_zero(tmp_path):
     assert "0 active" in line and "UNKNOWN: the legacy inventory is incomplete" in line
 
 
+def test_m6_consistent_empty_api_with_only_inert_legacy_clusters_is_unknown(tmp_path):
+    """QA cp2e-2 F1 (the M6 side of Q10): only an inert legacy cluster (daoValidatorCount 0) and the API answers
+    a self-consistent empty page (total 0): the summary and the weekly digest must not say '0 active' as a
+    complete count."""
+    lw = world(tmp_path, alerts={"mode": "record", "label": "test", "digest_interval_s": 86_400})
+    a = lw.legacy(owner(1), count=0)
+    lw.views(a, balance=100 * SSV, burn=0)
+    lw.chain.mine()
+    w = lw.start()
+    lw.api_fault, lw.api_total = "empty", 0
+    advance(w)
+    health = _health(w)
+    assert len(health) == 1 and "UNKNOWN" in health[0] and "listed no clusters" in health[0]
+    assert w.db.meta("check:m6:summary")["inventory_gap"]
+    line = outbox(w, "kind='digest'")[0]["text"]
+    assert "UNKNOWN: the legacy inventory is incomplete" in line
+    assert pages(w) == []
+
+
 # ---------------------------------------------------------------- QA cp2e-1 F3: reorg enumeration, resolved keys
 
 
@@ -780,7 +799,7 @@ def test_m6_reorg_orphaning_a_liquidation_restores_the_observed_start(tmp_path):
 # ---------------------------------------------------------------- seeded adversarial sweep (qa/DEFECT-CLASSES.md)
 
 SWEEP_STORIES = ("page_orphaned", "page_survives", "resolution_orphaned", "clear_orphaned")
-SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert")
+SWEEP_FAULTS = (None, "empty", "short", "error", "no_total", "view_revert", "empty_total0")
 BLINDING = {"empty", "short", "error", "view_revert"}  # faults that hide the cluster under attack from the run
 
 

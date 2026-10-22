@@ -1,0 +1,6 @@
+FAILED reconcile/tests/test_m6.py::test_m6_consistent_empty_api_with_only_inert_legacy_clusters_is_unknown
+FAILED reconcile/tests/test_m7.py::test_m7_q10_consistent_empty_api_with_inert_legacy_balance
+FAILED reconcile/tests/test_m7.py::test_m7_empty_api_listing_is_unknown_whatever_its_total[first-0]
+FAILED reconcile/tests/test_m7.py::test_m7_empty_api_listing_is_unknown_whatever_its_total[lost_database-0]
+FAILED reconcile/tests/test_m7.py::test_m7_empty_api_next_to_a_cluster_from_the_logs_is_unknown
+5 failed, 210 passed in 1.51s
