@@ -10,12 +10,15 @@ triggers (`FeesSynced(0)`, the seed holder's `UnstakeRequested`, `ZeroCSSVSupply
 Every run evaluates the key (a warn finding or `resolve=True`). State: the floor measurement
 (`ctx.set_state("floor")`, with its block). A measurement taken above a reorg's ancestor came from a deleted
 block and is re-taken at the new checkpoint in the run with reason `reorg` (README §6.2); restart re-measures
-(D3 "at worker start"). An empty `eth_call` result (no code, wrong address) raises: never "supply fine".
+(D3 "at worker start"): the measurement carries this process's random token, so a floor persisted by an earlier
+process — or one whose run rolled back after the measurement (repair 2, QA attempt 2 F3) — is never used. An empty
+`eth_call` result (no code, wrong address) raises: never "supply fine".
 """
 
 from __future__ import annotations
 
 import re
+import secrets
 
 from checks.base import Check, Ctx, Every, Finding
 from checks.registry import register
@@ -54,21 +57,20 @@ class M8SupplyFloor(Check):
             raise SystemExit(f"checks.m8.floor_multiplier must be a positive integer, got {m!r}")
         self.cssv, self.holder = self.config["cssv"].lower(), self.config["seed_holder"].lower()
         self.schedule = Every(self.config["interval_s"])
-        self.measured = False  # in this process (D3: measured at worker start)
+        self.process = secrets.token_hex(8)  # D3 "measured at worker start": a floor of this process only
         self.last: dict | None = None
 
     def floor(self, ctx: Ctx, block: int) -> dict:
         st = ctx.state("floor")
-        stale = (st is None or not self.measured or ctx.clock() - st["at"] >= self.config["remeasure_s"]
+        stale = (st is None or st.get("process") != self.process or ctx.clock() - st["at"] >= self.config["remeasure_s"]
                  or (ctx.reorg_ancestor is not None and st["block"] > ctx.reorg_ancestor))
         if not stale:
             return st
         data = BALANCE_OF + bytes(12) + bytes.fromhex(self.holder[2:])
         seed = _word(ctx.rpc.call(self.cssv, data), f"cSSV.balanceOf({self.holder})")
         st = {"seed": str(seed), "floor": str(seed * self.config["floor_multiplier"]), "block": block,
-              "at": ctx.clock()}
-        ctx.set_state("floor", st)
-        self.measured = True
+              "at": ctx.clock(), "process": self.process}
+        ctx.set_state("floor", st)  # rolled back with the run: the next run of this process measures again
         return st
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:

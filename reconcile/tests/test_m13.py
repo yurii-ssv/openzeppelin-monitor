@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
@@ -22,6 +23,7 @@ pytestmark = pytest.mark.m13
 
 ATTACKER = "0xaee058cca5eed5470b4b48c159045b7c25ddb80f"
 REORG_TEXT = "Resolved because its evidence left the canonical chain"
+PENDING_TEXT = "the new chain has not reached it yet"
 
 
 def setup(tmp_path, checks=None, **worker):
@@ -552,6 +554,10 @@ def test_m13_reorg_below_the_baseline_reads_the_new_chain_from_the_ancestor(tmp_
 # for a key the canonical chain does not have); no page for orphaned evidence after the reorg (re-alerts
 # included); no window anchored on stale data (m13_watch at the checkpoint with its canonical balance); no event
 # lost between sweeps (m13_topup rows = the oracle's top-ups, with their balances); nothing pending, healthy.
+# Repair 2 (QA attempt 2 F1): the replacement chain then regrows past the deleted blocks (restarts drawn while keys
+# are pending); at most one page per canonical top-up unless its value-left resolution came from a deleted block
+# and the value sat on the address past it; orphaned evidence paged at most once (before the reorg); a 6 h
+# reminder of a still-pending key must say so; no orphan left unsettled.
 
 
 class M13Sweep:
@@ -621,7 +627,8 @@ class M13Sweep:
             chain.mine()
         chain.mine(self.c)
         self.wstep()
-        self.depth = self.w.checkpoint()["block"] - fork + 1
+        self.fork, self.old_cp = fork, self.w.checkpoint()["block"]
+        self.depth = self.old_cp - fork + 1
         pre = self.w.db.conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM outbox").fetchone()[0]
         # the replacement chain: shorter or longer, some deleted transfers re-included, new ones
         chain.reorg(fork)
@@ -646,6 +653,12 @@ class M13Sweep:
             chain.mine()
             self.clock.advance(rng.choice((12, 6 * 3600 + 1)))
             self.wstep()
+        while self.w.checkpoint()["block"] < self.old_cp:  # repair 2: the new chain regrows past every deleted block
+            chain.mine()
+            self.clock.advance(12)
+            if rng.random() < 0.2:
+                self.w = self.worker()  # restart while orphaned keys are pending
+            self.wstep()
         self.clock.advance(6 * 3600 + 1)  # every open incident re-alerts: none may be an orphan
         chain.mine()
         self.wstep()
@@ -668,7 +681,7 @@ class M13Sweep:
 
 
 @pytest.mark.parametrize("confirmations", [0, 2])
-@pytest.mark.parametrize("seed", range(20))
+@pytest.mark.parametrize("seed", range(100))  # repair 2: 20 -> 100 (QA attempt 2 found F1(b) on seeds 20..203)
 def test_m13_adversarial_reorg_sweep(tmp_path, seed, confirmations):
     s = M13Sweep(tmp_path, seed, confirmations)
     pre = s.run()
@@ -686,11 +699,510 @@ def test_m13_adversarial_reorg_sweep(tmp_path, seed, confirmations):
             assert k not in keys, f"evidence-left resolution of a canonical top-up {k}"
         elif r["kind"] == "resolved":
             assert k in keys and keys[k][2] is not None, f"value-left resolution without a canonical drain: {k}"
+        elif r["kind"] == "realert" and PENDING_TEXT in r["text"]:
+            pass  # the 6 h reminder of a key whose replaced block the new chain had not reached yet (says so)
         else:
             assert k in keys, f"{r['kind']} for orphaned evidence {k}"
+    # repair 2 (QA attempt 2 F1): at most one page per canonical top-up, unless the drain it was resolved by left the
+    # canonical chain and the value then sat on the address past that block; orphaned evidence paged at most once
+    incs: dict[str, list] = {}
+    for k, state, ev in w.db.conn.execute("SELECT key, state, evidence FROM incidents ORDER BY rowid"):
+        incs.setdefault(k, []).append((state, json.loads(ev)))
+    for k, chain_of in incs.items():
+        if k not in keys:
+            assert len(chain_of) == 1, f"orphaned evidence {k} paged {len(chain_of)} times"
+            continue
+        assert len(chain_of) <= 2, f"canonical top-up {k} paged {len(chain_of)} times"
+        if len(chain_of) == 2:
+            (state, ev), res = chain_of[0], keys[k][2]
+            old = ev.get("resolved_block")
+            assert state == "resolved" and old is not None and old >= s.fork and (res is None or res > old), \
+                f"second page for identical evidence {k}: first {state} {old}, canonical drain {res}"
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m13_orphan").fetchone()[0] == 0
     rows = {f"{r[0]}:{r[1]}": (int(r[2]), int(r[3]), r[4])
             for r in w.db.conn.execute("SELECT address, block, before, after, resolved_block FROM m13_topup")}
     assert rows == keys
     for a, b, bal in w.db.conn.execute("SELECT address, block, balance FROM m13_watch"):
         assert b == cp and int(bal) == s.chain._balance(a, cp)
     assert w.degraded() == [] and w.db.meta("reorg:m13") is None
+
+
+# ---------------------------------------------------------------- repair 2: QA attempt 2 scenarios (Appendix C1, ported verbatim
+# except the module prefix; expected outcomes from the spec, D3/D4/D10 and README §6.2)
+
+def test_qa2_m13_reorg_reincluding_a_resolved_top_up_and_its_drain_does_not_page_again(tmp_path):
+    """Class 2/10: top-up at T and drain at R, both above the ancestor A, both paged/resolved. A deep reorg
+    re-includes the SAME two transfers at the SAME blocks (the usual outcome of a reorg). The canonical evidence is
+    identical to what was already paged and resolved: no second page, no second resolution."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    chain.mine()
+    drain(chain)
+    step(w, chain, blocks=4)
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"]
+    chain.reorg(fork)
+    top_up(chain)  # the same top-up, re-included at the same block (new tx hash)
+    chain.mine()
+    drain(chain)  # the same drain, at the same block
+    step(w, chain, blocks=4)
+    assert w.db.meta("reorg:m13") is None
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"], sent(w)
+
+
+def test_qa2_m13_reorg_reincluding_only_the_drain_of_an_older_top_up_does_not_resolve_twice(tmp_path):
+    """Class 2: top-up at T <= A survives; drain at R > A re-included at R. One resolution in total."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)  # baseline taken (checkpoint reached start_block)
+    top_up(chain)
+    step(w, chain, blocks=4)
+    step(w, chain, blocks=2)
+    fork = chain.number
+    drain(chain)
+    step(w, chain, blocks=4)
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"]
+    chain.reorg(fork)
+    drain(chain)
+    step(w, chain, blocks=4)
+    assert [k for _, k, _ in sent(w)] == ["open", "resolved"], sent(w)
+    assert open_keys(w) == []
+
+
+@pytest.mark.parametrize("out_value,expected", [(eth(0.2), "+0.29997"), (eth(0.6), None)])
+def test_qa2_m13_same_block_top_up_and_spend(tmp_path, out_value, expected):
+    """Class 3: a top-up and a spend by the leaked key in ONE block. Net +0.3 pages with the net delta; net -0.1
+    is silent — D10 accepted gap (within-block transfers are only seen by their net)."""
+    chain, w = setup(tmp_path)
+    chain.set_balance(RETIRED_SLOT4, eth(1))  # value present before (baseline is 0.01: make a new baseline)
+    step(w, chain)
+    base = len(sent(w))
+    top_up(chain, value=eth(0.5))
+    drain(chain, value=out_value)
+    step(w, chain)
+    msgs = outbox(w, "kind='open'")[base:]
+    if expected is None:
+        assert msgs == []
+    else:
+        assert len(msgs) == 1 and expected in msgs[0]["text"]
+
+
+def test_qa2_m13_long_restart_gap_bounded_reads_and_page(tmp_path):
+    """Class 6: a 10,000-block restart gap with a top-up in the middle (kept): one page with the sampled-gap wording,
+    an m13-gap health message, eth_getBalance per address bounded by the cap."""
+    chain, w = setup(tmp_path)
+    chain.mine(4_000)
+    top_up(chain, RETIRED_LIQUIDATOR, eth(0.3))
+    chain.mine(6_000)
+    _, w2 = wallet_worker(tmp_path, ["m13"], chain=chain, start_block=w.cfg.start_block,
+                          activation_block=w.cfg.activation_block, clock=w.clock)
+    advance(w2)
+    pages = outbox(w2, "kind='open'")
+    assert len(pages) == 1 and "sampled" in pages[0]["text"] and "+0.300000 ETH" in pages[0]["text"]
+    assert any(": m13-gap" in r["text"] for r in outbox(w2, "kind='health'"))
+    run = w2.db.meta("run:m13")
+    assert run["rpc_calls"].get("eth_getBalance", 0) <= 2 * 256, run
+
+
+def test_qa2_m13_long_gap_top_up_then_drain_inside_the_gap_is_the_sampled_d10_gap(tmp_path):
+    """Class 6 beyond the cap: a top-up and its drain between two sampled blocks is not seen (documented: the
+    page/health says netting could not be excluded; accepted gap D10)."""
+    chain, w = setup(tmp_path)
+    chain.mine(4_000)
+    top_up(chain, RETIRED_SLOT4, eth(0.3))
+    chain.mine(2)
+    drain(chain, RETIRED_SLOT4, eth(0.3))
+    chain.mine(6_000)
+    _, w2 = wallet_worker(tmp_path, ["m13"], chain=chain, start_block=w.cfg.start_block,
+                          activation_block=w.cfg.activation_block, clock=w.clock)
+    advance(w2)
+    assert outbox(w2, "kind='open'") == []
+    gap = [r for r in outbox(w2, "kind='health'") if ": m13-gap" in r["text"]]
+    assert gap and "could not be excluded" in gap[0]["text"]
+
+
+def test_qa2_m13_malformed_receipt_entry_must_not_block_the_page(tmp_path):
+    """Best-effort attribution must never block the page: an eth_getBlockReceipts list with a null entry."""
+    chain, w = setup(tmp_path)
+    orig = chain._handle
+
+    def handle(m, p):
+        r = orig(m, p)
+        if m == "eth_getBlockReceipts" and isinstance(r, list):
+            return [None, *r]
+        return r
+
+    chain._handle = handle
+    top_up(chain)
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open"], [r["text"][:200] for r in outbox(w)]
+
+
+def test_qa2_m13_internal_transfer_from_helper_on_both_keys_in_one_block(tmp_path):
+    chain, w = setup(tmp_path)
+    chain.internal_transfer(RETIRED_SLOT4, eth(0.1))
+    chain.internal_transfer(RETIRED_LIQUIDATOR, eth(0.2))
+    b = chain.number
+    step(w, chain)
+    assert sorted(k for _, _, k in sent(w)) == sorted([f"{RETIRED_SLOT4}:{b}", f"{RETIRED_LIQUIDATOR}:{b}"])
+    assert all(HELPER[2:] in r["text"] or "log of" in r["text"] for r in outbox(w, "kind='open'"))
+
+
+def test_qa2_m13_empty_reorg_result_on_shorter_chain_never_clean(tmp_path):
+    """Class 1 in a reorg run: eth_getBalance null at the ancestor re-read → raise, marker kept, page kept."""
+    chain, w, fork = _top_up_then(tmp_path)
+    step(w, chain)
+    chain.reorg(fork)
+    chain.empty_methods.add("eth_getBalance")
+    w.step()
+    assert w.db.meta("reorg:m13") is not None and open_keys(w) == [f"{RETIRED_SLOT4}:{fork}"]
+    chain.empty_methods.discard("eth_getBalance")
+    chain.mine()
+    advance(w)
+    assert w.db.meta("reorg:m13") is None and open_keys(w) == []
+
+
+# ---------------------------------------------------------------- repair 2: orphaned keys (QA attempt 2 F1)
+
+
+def _restart(tmp_path, w, chain, checks=None):
+    _, w2 = wallet_worker(tmp_path, ["m13"], chain=chain, checks={"m13": checks or {}}, start_block=w.cfg.start_block,
+                          activation_block=w.cfg.activation_block, clock=w.clock)
+    return w2
+
+
+def orphans(w):
+    return [tuple(r) for r in w.db.conn.execute("SELECT address, block, closed_block FROM m13_orphan ORDER BY block")]
+
+
+def test_m13_qa2_f1a_reorg_reincluding_a_resolved_top_up_and_its_drain_is_silent(tmp_path):
+    """QA attempt 2 F1(a), Appendix A1: top-up at T and drain at T+1, both above the ancestor, paged and resolved;
+    the reorg re-includes both at the same blocks (new hashes): no new message (same canonical evidence)."""
+    chain, w = setup(tmp_path)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    chain.mine()
+    drain(chain)
+    step(w, chain)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    assert sent(w) == [("page", "open", key), ("info", "resolved", key)]
+    chain.reorg(fork)
+    top_up(chain)
+    chain.mine()
+    drain(chain)
+    step(w, chain)
+    assert sent(w) == [("page", "open", key), ("info", "resolved", key)]
+    assert w.db.meta("reorg:m13") is None and orphans(w) == [] and open_keys(w) == []
+
+
+def test_m13_qa2_f1b_reorg_run_below_the_top_up_block_keeps_the_key_open_and_pages_once(tmp_path):
+    """QA attempt 2 F1(b), Appendix A2: the shorter new chain puts the reorg run's checkpoint below the top-up's
+    block. No proof the top-up left: the key stays open (re-reported, says it is pending), nothing is sent; once the
+    checkpoint passes the re-included top-up, it is the same incident (one page in total)."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    step(w, chain, blocks=5)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    assert sent(w) == [("page", "open", key)]
+    chain.reorg(fork)  # 4 blocks deep, beyond the 2-block confirmation window
+    top_up(chain)  # the same top-up re-included at the same block
+    step(w, chain, blocks=1)  # the reorg run: checkpoint fork - 2
+    assert w.checkpoint()["block"] < fork and w.db.meta("reorg:m13") is None
+    assert sent(w) == [("page", "open", key)] and open_keys(w) == [key]
+    assert orphans(w) == [(RETIRED_SLOT4, fork, None)]
+    (ev,) = w.db.conn.execute("SELECT evidence FROM incidents WHERE key=?", (key,)).fetchone()
+    assert json.loads(ev)["pending_reorg_recheck"]["block"] == fork
+    step(w, chain, blocks=3)
+    assert w.checkpoint()["block"] >= fork
+    assert sent(w) == [("page", "open", key)] and open_keys(w) == [key] and orphans(w) == []
+    assert outbox(w, f"kind='resolved' AND text LIKE '%{REORG_TEXT}%'") == []
+
+
+def test_m13_shorter_chain_without_the_top_up_resolves_only_once_the_checkpoint_passed_its_block(tmp_path):
+    """No re-inclusion: the key is kept while the checkpoint is below its block, then resolved as "evidence left
+    the canonical chain" (the check's own text, outside the reorg run) and never re-paged."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    step(w, chain, blocks=5)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    chain.reorg(fork)
+    step(w, chain, blocks=1)
+    assert w.checkpoint()["block"] < fork and open_keys(w) == [key] and sent(w) == [("page", "open", key)]
+    step(w, chain, blocks=1)
+    assert w.checkpoint()["block"] < fork and open_keys(w) == [key]
+    step(w, chain, blocks=2)
+    assert w.checkpoint()["block"] >= fork
+    assert sent(w) == [("page", "open", key), ("info", "resolved", key)] and open_keys(w) == []
+    res = outbox(w, "kind='resolved'")[0]["text"]
+    assert REORG_TEXT in res and "Value LEFT" not in res
+    step(w, chain, blocks=5, seconds=86_400)
+    assert len(sent(w)) == 2 and orphans(w) == []
+
+
+@pytest.mark.parametrize("reincluded", [True, False])
+def test_m13_shorter_chain_orphaning_only_the_drain_waits_for_the_drain_block(tmp_path, reincluded):
+    """Top-up at or below the ancestor, its drain (resolution sent) above it, the new chain shorter than the drain's
+    block: nothing is reported until the checkpoint passes that block; a re-included drain stays silent (one page,
+    one resolution); without it the value sits on the canonical chain: paged again, once."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)  # baseline taken (the checkpoint reached start_block)
+    top_up(chain)
+    t = chain.number
+    step(w, chain, blocks=3)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    drain(chain)
+    step(w, chain, blocks=5)
+    key = f"{RETIRED_SLOT4}:{t}"
+    assert sent(w) == [("page", "open", key), ("info", "resolved", key)]
+    chain.reorg(fork)
+    if reincluded:
+        drain(chain)
+    step(w, chain, blocks=1)
+    assert w.checkpoint()["block"] < fork and len(sent(w)) == 2 and open_keys(w) == []
+    assert orphans(w) == [(RETIRED_SLOT4, t, fork)]
+    step(w, chain, blocks=4)
+    assert w.checkpoint()["block"] >= fork and orphans(w) == []
+    if reincluded:
+        assert len(sent(w)) == 2 and open_keys(w) == []
+    else:
+        assert sent(w)[2:] == [("page", "open", key)] and open_keys(w) == [key]
+    step(w, chain, blocks=3)
+    assert len(sent(w)) == (2 if reincluded else 3)
+
+
+def test_m13_reorg_reincluding_a_resolved_top_up_without_its_drain_pages_again_once(tmp_path):
+    """Top-up and drain both above the ancestor; the new chain has the top-up (same block) but not the drain: the
+    value is at risk on the canonical chain, so it is paged again (a new incident), once."""
+    chain, w = setup(tmp_path)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    chain.mine()
+    drain(chain)
+    step(w, chain)
+    chain.reorg(fork)
+    top_up(chain)
+    step(w, chain, blocks=2)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    assert sent(w) == [("page", "open", key), ("info", "resolved", key), ("page", "open", key)]
+    assert open_keys(w) == [key] and orphans(w) == []
+    step(w, chain, blocks=3)
+    assert len(sent(w)) == 3
+
+
+def test_m13_pending_orphan_survives_a_restart(tmp_path):
+    """(d) restart between the reorg run (key pending) and its settlement: the orphan is durable; the new process
+    settles it once the checkpoint passes its block (here: evidence left; never re-paged)."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    step(w, chain, blocks=5)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    chain.reorg(fork)
+    step(w, chain, blocks=1)
+    assert orphans(w) == [(RETIRED_SLOT4, fork, None)]
+    w2 = _restart(tmp_path, w, chain)
+    step(w2, chain, blocks=4)
+    assert sent(w2) == [("page", "open", key), ("info", "resolved", key)] and open_keys(w2) == []
+    assert REORG_TEXT in outbox(w2, "kind='resolved'")[0]["text"] and orphans(w2) == []
+
+
+def test_m13_second_reorg_while_an_orphan_is_pending_keeps_what_the_operator_was_told(tmp_path):
+    """Two reorgs before the key is settled: the first orphan entry (operator told "value arrived") wins; the final
+    chain re-includes the top-up at the same block: one page in total, still open."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    step(w, chain, blocks=5)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    chain.reorg(fork)
+    step(w, chain, blocks=1)
+    assert orphans(w) == [(RETIRED_SLOT4, fork, None)]
+    chain.reorg(fork - 1)
+    chain.mine()
+    top_up(chain)
+    step(w, chain, blocks=1)
+    step(w, chain, blocks=4)
+    assert w.checkpoint()["block"] >= fork
+    assert sent(w) == [("page", "open", key)] and open_keys(w) == [key] and orphans(w) == []
+
+
+def test_m13_pending_orphan_6h_reminder_says_it_is_pending(tmp_path):
+    """Accepted behaviour (documented): if the new chain does not reach the replaced block for 6 h, the open
+    incident's 6 h reminder carries the "not reached yet" statement (the incident is kept, nothing new is claimed)."""
+    chain, w = setup(tmp_path, confirmations=2)
+    step(w, chain, blocks=3)
+    fork = chain.number
+    top_up(chain)
+    step(w, chain, blocks=5)
+    chain.reorg(fork)
+    step(w, chain, blocks=1)
+    step(w, chain, blocks=0, seconds=6 * 3600 + 1)
+    (re,) = outbox(w, "kind='realert'")
+    assert PENDING_TEXT in re["text"]
+
+
+# ---------------------------------------------------------------- repair 2: best-effort attribution (QA attempt 2 F4)
+
+
+@pytest.mark.parametrize("mangle", ["null_receipt", "junk_receipt", "null_log", "junk_logs", "junk_block_txs"])
+def test_m13_malformed_attribution_input_never_blocks_the_page(tmp_path, mangle):
+    """Attribution is best effort: any malformed provider answer (the QA case: a null entry in the receipts list)
+    is noted in the page, which is sent at the first run."""
+    chain, w = setup(tmp_path)
+    orig = chain._handle
+
+    def handle(m, p):
+        r = orig(m, p)
+        if m == "eth_getBlockReceipts" and isinstance(r, list):
+            r = {"null_receipt": [None, *r], "junk_receipt": ["0x", *r],
+                 "null_log": [dict(rc, logs=[None]) for rc in r], "junk_logs": [dict(rc, logs=7) for rc in r]
+                 }.get(mangle, r)
+        if m == "eth_getBlockByNumber" and p[1] and isinstance(r, dict) and mangle == "junk_block_txs":
+            r = dict(r, transactions=5)
+        return r
+
+    chain._handle = handle
+    top_up(chain)
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open"]
+    assert "lookup failed" in outbox(w, "kind='open'")[0]["text"]
+    assert not [r for r in outbox(w, "kind='health'") if "check-error" in r["text"]]
+
+
+# ---------------------------------------------------------------- repair 2: non-archive RPC (QA attempt 2 F2)
+
+
+def _pruned_gap(tmp_path, gap=300, window=100, top_up_at=None, **checks):
+    """A restart after a `gap`-block outage on a node that serves state only `window` blocks deep (publicnode
+    serves about 100, LIVE in QA attempt 2); a top-up `top_up_at` blocks into the gap (None: none)."""
+    chain, w = setup(tmp_path, checks=checks or None)
+    t = None
+    if top_up_at is not None:
+        chain.mine(top_up_at)
+        top_up(chain, RETIRED_LIQUIDATOR, eth(0.3))
+        t = chain.number
+    chain.mine(gap - (top_up_at or 0))
+    chain.state_window = window
+    return chain, _restart(tmp_path, w, chain, checks), t
+
+
+def test_m13_qa2_f2_pruned_rpc_restart_gap_recovers_after_bounded_failures_and_says_so(tmp_path):
+    """QA attempt 2 F2: the first `state_fallback_after` - 1 runs raise (an RPC failure, retried: maybe transient);
+    the next one reads the newest `state_window_blocks`, compares them with the last read balance (the top-up in
+    the unread range still pages, located there), says archive state is needed (`m13-state`) and advances."""
+    chain, w, t = _pruned_gap(tmp_path, top_up_at=50)
+    last = {r[0]: r[1] for r in w.db.conn.execute("SELECT address, block FROM m13_watch")}[RETIRED_LIQUIDATOR]
+    for _ in range(2):
+        with pytest.raises(RpcError, match="Archive requests"):
+            step(w, chain)
+    step(w, chain)
+    cp = w.checkpoint()["block"]
+    lo = cp - 64
+    assert [r[1] for r in w.db.conn.execute("SELECT address, block FROM m13_watch")] == [cp, cp]
+    (page,) = outbox(w, "kind='open'")
+    assert "+0.300000 ETH" in page["text"] and f"blocks {last + 1}..{lo + 1}" in page["text"]
+    assert "did not serve the state" in page["text"] and "archive state needed" in page["text"]
+    assert open_keys(w) == [f"{RETIRED_LIQUIDATOR}:{lo + 1}"] and last < t <= lo
+    states = [r for r in outbox(w, "kind='health'") if ": m13-state" in r["text"]]
+    assert len(states) == 2 and all(f"{last + 1}..{lo}" in r["text"] and "Archive state is needed" in r["text"]
+                                    for r in states)
+    # bounded: the refused full read (cap 256 per address) plus the window read (64 per address)
+    assert w.db.meta("run:m13")["rpc_calls"].get("eth_getBalance", 0) <= 2 * 256 + 2 * 64
+    step(w, chain, blocks=3)  # back to normal: every block read, no new health message
+    assert len([r for r in outbox(w, "kind='health'") if ": m13-state" in r["text"]]) == 2
+
+
+def test_m13_pruned_rpc_gap_without_increase_is_a_health_notice_only(tmp_path):
+    chain, w, _ = _pruned_gap(tmp_path)
+    for _ in range(2):
+        with pytest.raises(RpcError):
+            step(w, chain)
+    step(w, chain)
+    assert sent(w) == [] and len([r for r in outbox(w, "kind='health'") if ": m13-state" in r["text"]]) == 2
+
+
+def test_m13_pruned_rpc_state_window_config_moves_the_fallback(tmp_path):
+    """`state_fallback_after` 1 falls back in the first run; a 200-block configured window the node cannot serve
+    is narrowed (÷4) to one it can."""
+    chain, w, t = _pruned_gap(tmp_path, top_up_at=250, state_fallback_after=1, state_window_blocks=200)
+    step(w, chain)
+    cp = w.checkpoint()["block"]
+    assert open_keys(w) == [f"{RETIRED_LIQUIDATOR}:{cp - 50 + 1}"] and t <= cp - 50
+
+
+def test_m13_archive_rpc_long_gap_never_uses_the_state_fallback(tmp_path):
+    chain, w, t = _pruned_gap(tmp_path, top_up_at=50, window=None)
+    step(w, chain)
+    assert [k for _, _, k in sent(w)] == [f"{RETIRED_LIQUIDATOR}:{t}"]
+    assert not [r for r in outbox(w, "kind='health'") if ": m13-state" in r["text"]]
+
+
+def test_m13_rpc_down_never_uses_the_state_fallback(tmp_path):
+    """An RPC that serves no state at all keeps raising (RPC failure, retried), the watch does not move."""
+    chain, w = setup(tmp_path)
+    top_up(chain)
+    before = {r[0] for r in w.db.conn.execute("SELECT block FROM m13_watch")}
+    chain.fail_methods.add("eth_getBalance")
+    for _ in range(5):
+        with pytest.raises(RpcError):
+            step(w, chain)
+    assert sent(w) == [] and {r[0] for r in w.db.conn.execute("SELECT block FROM m13_watch")} == before
+    chain.fail_methods.clear()
+    step(w, chain)
+    assert [k for _, k, _ in sent(w)] == ["open"]
+    assert not [r for r in outbox(w, "kind='health'") if ": m13-state" in r["text"]]
+
+
+def test_m13_transient_read_errors_below_the_threshold_lose_no_block(tmp_path):
+    """Fewer consecutive failures than `state_fallback_after` (and a success resets the count): every block is read,
+    so a top-up swept two blocks later is still seen (no fallback, no m13-state)."""
+    chain, w = setup(tmp_path)
+    for _ in range(3):
+        top_up(chain)
+        b = chain.number
+        chain.mine()
+        drain(chain)
+        chain.fail_methods.add("eth_getBalance")
+        for _ in range(2):
+            with pytest.raises(RpcError):
+                step(w, chain, blocks=40)
+        chain.fail_methods.clear()
+        step(w, chain)
+        assert sent(w)[-2:] == [("page", "open", f"{RETIRED_SLOT4}:{b}"), ("info", "resolved", f"{RETIRED_SLOT4}:{b}")]
+    assert not [r for r in outbox(w, "kind='health'") if ": m13-state" in r["text"]]
+
+
+def test_m13_reorg_deeper_than_a_pruned_rpc_state_raises_a_check_error_naming_archive(tmp_path):
+    """A reorg run that cannot re-read the ancestor's state: RPC failures first (maybe transient), then a
+    `check-error` that names the archive requirement (re-sent every 6 h); marker, rows and incident kept, nothing
+    resolved; an archive RPC settles it."""
+    chain, w, fork = _top_up_then(tmp_path)
+    step(w, chain, blocks=10)
+    key = f"{RETIRED_SLOT4}:{fork}"
+    chain.reorg(fork)
+    chain.state_window = 4
+    for _ in range(2):
+        with pytest.raises(RpcError):
+            step(w, chain, blocks=12)
+    step(w, chain, blocks=12)  # a RuntimeError: the framework records it as check-error (does not surface)
+    err = [r for r in outbox(w, "kind='health'") if "check-error" in r["text"] or "raised" in r["text"]]
+    assert err and "configure an archive RPC" in err[-1]["text"]
+    assert w.db.meta("reorg:m13") is not None and open_keys(w) == [key] and sent(w) == [("page", "open", key)]
+    chain.state_window = None
+    step(w, chain)
+    assert sent(w) == [("page", "open", key), ("info", "resolved", key)] and w.db.meta("reorg:m13") is None
+
+
+def test_m13_state_settings_are_validated_at_construction(tmp_path):
+    for k in ("state_window_blocks", "state_fallback_after"):
+        with pytest.raises(SystemExit, match=k):
+            setup(tmp_path / k, checks={k: 0})

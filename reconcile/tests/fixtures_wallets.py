@@ -64,6 +64,8 @@ class WalletChain(FakeChain):
         self.wtxs: dict[str, dict] = {}  # tx hash -> tx + receipt fields
         self.fail_methods: set[str] = set()  # JSON-RPC methods answered with an error
         self.empty_methods: set[str] = set()  # JSON-RPC methods answered with a null result
+        # a pruned (non-archive) node: eth_getBalance more than this many blocks below the head is refused
+        self.state_window: int | None = None
 
     # ---- scenario builders (effective from the pending block, like stub_call/set_balance)
 
@@ -136,6 +138,8 @@ class WalletChain(FakeChain):
             raise ValueError(f"{m} failed (test)")
         if m in self.empty_methods:
             return None
+        if m == "eth_getBalance" and self.state_window is not None and self._blk(p[1]) < self.sealed - self.state_window:
+            raise ValueError("Archive requests require a personal token (test: pruned node)")  # publicnode, LIVE
         if m == "eth_getBlockByNumber":
             n = self._blk(p[0])
             if n > self.sealed:

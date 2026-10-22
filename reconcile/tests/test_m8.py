@@ -437,3 +437,65 @@ def test_m8_adversarial_reorg_sweep(tmp_path, seed, confirmations):
             assert float(seed_eth) * 1e18 == s.seed(int(fb))
             assert int(sup) < 2 * s.seed(int(fb)) or int(sup) == 0
     assert w.degraded() == [] and w.db.meta("reorg:m8") is None
+
+
+# ---------------------------------------------------------------- repair 2: QA attempt 2 scenarios (Appendix C1, ported verbatim
+# except the module prefix; expected outcomes from the spec, D3/D4/D10 and README §6.2)
+
+def test_qa2_m8_restart_whose_first_run_fails_after_the_seed_read_still_measures_at_start(tmp_path):
+    """D3 'measured at worker start' + class 10: restart; the Safe's cSSV moved while the worker was down; the
+    first run reads balanceOf, then totalSupply fails (rolled back). The next run must use a floor measured in
+    THIS process, not the previous process's floor."""
+    chain, w = setup(tmp_path, supply=3 * SEED)
+    advance(w)
+    assert state(w)["seed"] == str(SEED)
+    stub_cssv(chain, 3 * SEED, 2 * SEED)  # Safe staked more while down: floor 4 x SEED > supply
+    chain.mine()
+    _, w2 = wallet_worker(tmp_path, ["m8"], chain=chain, start_block=w.cfg.start_block,
+                          activation_block=w.cfg.activation_block, clock=w.clock)
+    orig = chain._handle
+    fail = {"n": 1}
+
+    def handle(m, p):
+        if m == "eth_call" and p[0].get("data", p[0].get("input", "")).startswith("0x18160ddd") and fail["n"]:
+            fail["n"] -= 1
+            raise ValueError("totalSupply transport error (test)")
+        return orig(m, p)
+
+    chain._handle = handle
+    w2.step()  # balanceOf ok, totalSupply fails: rolled back
+    assert fail["n"] == 0 and w2.db.meta("run:m8")["errors"] >= 1
+    chain.mine()
+    w2.clock.advance(301)
+    w2.step()
+    assert state(w2)["seed"] == str(2 * SEED), state(w2)
+    assert alerts(w2)[-1:] == [("warn", "open")], alerts(w2)
+
+
+def test_qa2_m8_daily_remeasure_on_a_deleted_block_then_reorg_with_a_different_safe_balance(tmp_path):
+    chain, w = setup(tmp_path, supply=3 * SEED, confirmations=2)
+    advance(w)
+    tick(w, chain, blocks=3)
+    fork = chain.number
+    stub_cssv(chain, 3 * SEED, SEED // 2)  # deleted chain: Safe sold half
+    tick(w, chain, blocks=5, seconds=86_400)  # daily re-measure on the deleted chain
+    assert state(w)["seed"] == str(SEED // 2)
+    chain.reorg(fork)
+    stub_cssv(chain, 3 * SEED, 2 * SEED)  # new chain: Safe staked more → floor 4 x SEED > supply
+    tick(w, chain, blocks=6)
+    assert state(w)["seed"] == str(2 * SEED) and state(w)["block"] > fork
+    assert [a for a in alerts(w)] == [("warn", "open")]
+
+
+def test_qa2_m8_resolved_key_reorg_where_the_new_chain_still_recovers_is_silent(tmp_path):
+    chain, w = setup(tmp_path, supply=SEED, confirmations=2)
+    advance(w)
+    tick(w, chain, blocks=3)
+    fork = chain.number
+    stub_cssv(chain, 3 * SEED, SEED)
+    tick(w, chain, blocks=5)
+    assert alerts(w) == [("warn", "open"), ("info", "resolved")]
+    chain.reorg(fork)
+    stub_cssv(chain, 3 * SEED, SEED)  # the recovery re-included
+    tick(w, chain, blocks=6)
+    assert alerts(w) == [("warn", "open"), ("info", "resolved")] and w.db.meta("reorg:m8") is None

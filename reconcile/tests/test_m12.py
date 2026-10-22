@@ -12,6 +12,7 @@ import random
 import pytest
 from fixtures_wallets import (
     DAY,
+    FUNDER,
     LIQUIDATOR,
     ORACLE,
     PROXY,
@@ -1054,3 +1055,132 @@ def test_m12_adversarial_reorg_sweep(tmp_path, seed, confirmations):
     for r in outbox(w, f"rowid > {pre} AND kind IN ('realert', 'escalate')"):
         assert keys[r["incident_id"]] in open_now or r["kind"] == "escalate"
     assert w.degraded() == []
+
+
+# ---------------------------------------------------------------- repair 2: QA attempt 2 scenarios (Appendix C1, ported verbatim
+# except the module prefix; expected outcomes from the spec, D3/D4/D10 and README §6.2)
+
+def _m12_reorg(tmp_path, page_mutator):
+    chain, w, _ = setup(tmp_path, balance=eth(10))
+    advance(w)
+    tick(w, chain, blocks=5)
+    fork = chain.number
+    chain.send(ORACLE, PROXY, gas_used=1_000_000, gas_price=gwei(40))  # 0.04 ETH daily spend → warn
+    tick(w, chain)
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+    chain.reorg(fork)
+    chain.send(ORACLE, PROXY, gas_used=150_000)  # the new chain: a cheap transaction instead
+    real = w.bs
+
+    def bs(url):
+        return page_mutator(real(url))
+
+    w.checks["m12"].http_get = bs
+    tick(w, chain)
+    return chain, w, real
+
+
+def test_qa2_m12_reorg_run_with_an_empty_blockscout_page_raises(tmp_path):
+    chain, w, real = _m12_reorg(tmp_path, lambda page: {"items": [], "next_page_params": None})
+    assert w.db.meta("reorg:m12") is not None
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+    w.checks["m12"].http_get = real
+    tick(w, chain)
+    assert w.db.meta("reorg:m12") is None and open_incidents(w) == {}
+
+
+def test_qa2_m12_reorg_run_with_a_partial_page_raises(tmp_path):
+    chain, w, real = _m12_reorg(tmp_path, lambda page: dict(page, items=page["items"][1:]))
+    assert w.db.meta("reorg:m12") is not None
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+
+
+def test_qa2_m12_reorg_run_with_duplicated_items_commits_and_counts_once(tmp_path):
+    chain, w, real = _m12_reorg(tmp_path, lambda page: dict(page, items=page["items"] * 2))
+    assert w.db.meta("reorg:m12") is None and open_incidents(w) == {}
+    rows = w.db.conn.execute("SELECT COUNT(*), COUNT(DISTINCT nonce) FROM m12_tx").fetchone()
+    assert rows[0] == rows[1]
+
+
+def test_qa2_m12_reorg_run_with_a_stale_orphan_item_only_raises(tmp_path):
+    """Blockscout still lists the orphaned costly tx (stale index) and not the new chain's tx: the orphan fails
+    on-chain verification, the nonce is missing → raise, never 'clean'."""
+    chain, w, _ = setup(tmp_path, balance=eth(10))
+    advance(w)
+    tick(w, chain, blocks=5)
+    fork = chain.number
+    orphan = chain.send(ORACLE, PROXY, gas_used=1_000_000, gas_price=gwei(40))
+    tick(w, chain)
+    orphan_item = w.bs.item(chain.wtxs[orphan])
+    chain.reorg(fork)
+    new = chain.send(ORACLE, PROXY, gas_used=150_000)
+    w.bs.hide.add(new)
+    w.bs.forged.append(orphan_item)
+    tick(w, chain)
+    assert w.db.meta("reorg:m12") is not None
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+
+
+def test_qa2_m12_same_block_top_up_and_spend_balance_is_end_of_block(tmp_path):
+    chain, w, _ = setup(tmp_path, balance=eth(0.149), gas_per_day=1_000_000)
+    advance(w)
+    assert open_incidents(w).get(f"{ORACLE}:balance") == "page"
+    chain.send(FUNDER, ORACLE, gas_used=21_000, value=0)  # noise
+    chain.credit(ORACLE, eth(0.5))  # funding and a spend in one block
+    chain.send(ORACLE, PROXY, gas_used=150_000)
+    tick(w, chain)
+    assert f"{ORACLE}:balance" not in open_incidents(w)
+
+
+def test_qa2_m12_liquidator_page_while_a_reorg_run_waits_on_blockscout(tmp_path):
+    """Observation (documented accepted consequence): during a pending M12 reorg run with Blockscout down, balance
+    pages are not evaluated; the operator sees check-error health on Telegram and healthy: false."""
+    chain, w, real = _m12_reorg(tmp_path, lambda page: (_ for _ in ()).throw(OSError("down")))
+    chain.set_balance(LIQUIDATOR, eth(0.01))
+    tick(w, chain)
+    assert f"{LIQUIDATOR}:balance" not in open_incidents(w)
+    hs = [r for r in outbox(w, "kind='health'") if "Check m12 raised" in r["text"]]
+    assert hs and hs[0]["delivery"] == "telegram"
+    assert w.degraded()
+    w.checks["m12"].http_get = real
+    tick(w, chain)
+    assert open_incidents(w).get(f"{LIQUIDATOR}:balance") == "page"
+
+
+def test_qa2_m12_none_tip_is_never_louder_than_observed(tmp_path):
+    """RUNWAY DECISION: for the same chain, 'none' gives a runway >= 'observed'."""
+    out = {}
+    for mode in ("observed", "none"):
+        d = tmp_path / mode
+        d.mkdir()
+        chain, w, _ = setup(d, balance=eth(0.3), checks={"projection_tip": mode}, gas_price=gwei(1.5))
+        advance(w)
+        m = w.checks["m12"].last[ORACLE]
+        out[mode] = (m["runway_trailing_days"], m["runway_base_fee_days"], m["tip_source"])
+    assert out["none"][1] >= out["observed"][1] and out["none"][0] == out["observed"][0]
+    assert out["none"][2].startswith("none") and out["observed"][2].startswith("observed")
+
+
+def test_qa2_m12_runway_evidence_carries_both_runways_and_inputs(tmp_path):
+    chain, w, _ = setup(tmp_path, balance=eth(0.17825))
+    advance(w)
+    inc = w.db.conn.execute("SELECT evidence FROM incidents WHERE key=?", (f"{ORACLE}:runway",)).fetchone()
+    ev = json.loads(inc[0])
+    for k in ("runway_trailing_days", "runway_base_fee_days", "avg_daily_spend_wei", "base_fee_wei",
+              "avg_priority_fee_wei", "tip_source", "avg_daily_gas", "balance_wei", "window_txs"):
+        assert k in ev, k
+
+
+def test_qa2_m12_transaction_from_a_non_canonical_block_is_not_counted(tmp_path):
+    """Untrusted-input rule 'canonical block hash': a node (e.g. a load-balanced backend on another fork) answers
+    the tx AND its receipt with a block hash that is not the canonical one at that height → not verified → the
+    nonce is missing → UNKNOWN, never counted."""
+    chain, w, _ = setup(tmp_path)
+    tx_obj, receipt = chain._tx_obj, chain._receipt
+    victim = sorted(chain.wtxs.values(), key=lambda t: t["block"])[-1]["hash"]
+    fork_hash = "0x" + "fa" * 32
+    chain._tx_obj = lambda t: dict(tx_obj(t), blockHash=fork_hash) if t["hash"] == victim else tx_obj(t)
+    chain._receipt = lambda t: dict(receipt(t), blockHash=fork_hash) if t["hash"] == victim else receipt(t)
+    advance(w)
+    assert "UNKNOWN" in w.checks["m12"].last[ORACLE].get("spend", ""), w.checks["m12"].last[ORACLE]
+    assert w.db.conn.execute("SELECT COUNT(*) FROM m12_tx WHERE tx_hash=?", (victim,)).fetchone()[0] == 0
