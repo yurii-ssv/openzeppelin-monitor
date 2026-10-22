@@ -151,3 +151,36 @@ Other rows: thresholds_from_chain `test_m9::test_thresholds_from_chain_active_sl
 
 - NOT RUN: archive re-fetch of the outage/current-round dumps (QA attempt 2 re-fetched them and matched them byte for byte; the saved dumps were replayed); the anvil-fork M9 scenario (CP3, V3.8); N1/N2 (NOTEs, not in the repair brief).
 - Next action: records commit, worker_done; fresh QA (Claude Opus 5.5, capped round policy).
+
+## Attempt 6 — repair 3 (QA attempt 3 FAIL, QA3-F1, QA3-F2)
+
+- Observed UTC: 2026-10-22T07:50Z – 2026-10-22T08:45Z
+- Task / Dispatch: `task_91e058ddc685` / `ctx_7ddd5de19cbc` (run `run_96be3e0c7302`), worker `term_b115d9be-1319-45d0-a369-589e4c8f4151`
+- Frozen start head: `8bd225e52e168894aeced7c4523d10f127dab85c` (porcelain 0; code = `3fc0c7b`); code/evidence commits `7edec33` … `a17872d`, then the records commit (= lane head in worker_done)
+- Action and concrete outcome: fixes, generalisation findings G1–G8, state table, sweep in [plan.md § Repair 3](plan.md#repair-3-qa-attempt-3-fail--fresh-implementer). QA Appendix A on the start head: exit 1, 4 failed / 7 passed (= the report). One `ask` to the coordinator (horizon semantics): ruling **A**.
+- `git merge --no-edit plan/monitoring-service`: not done (allowed, not required).
+
+| Verification ID | Exact command | Exit / result / counts / skips | Environment | Evidence |
+|---|---|---|---|---|
+| V2x.1 M9 / M10 / M11 | `bash plans/monitoring-service/workers/cp2b/evidence/verify.sh` (each row its own pytest; run at `a17872d`) | exit 0: 88 / 24 / 87 passed, 0 skipped | local | `evidence/verification.repair3.log` |
+| V2x.2 thresholds_from_chain | same | exit 0: 2 / 1 / 1 | local | same |
+| V2x.3 restart | same | exit 0: 3 / 2 / 6 | local | same |
+| V2x.4 rpc_budget | same | exit 0: 1 / 1 / 1 (M9: one uncached probe of the block after the checkpoint per run, G8) | local | same |
+| V2b.7 | same, `-k from_the_clock` | exit 0, 2 passed (confirmations 0: unchanged) | local | same |
+| qa1 / qa2 regressions | same, `-k qa1` / `-k qa2` | exit 0: 8 / 1 / 7 and 8 / 12 | local | same |
+| qa3 regressions | same, `-k qa3` (M9, M11) | exit 0: 7 / 7 | local | same |
+| repair-3 rows | same, `-k r3_` | exit 0: 14 / 1 / 8 | local | same |
+| adversarial sweep | `… reconcile/tests/test_m9_m10_m11_sweep.py` | exit 0, 109 passed | local | same |
+| QA attempt-1 / attempt-2 Appendix A as published | extracted by the script | exit 1, 23 / 2 (unchanged) and 15 / 1 (N1 only) | local | same |
+| QA attempt-3 Appendix A as published | extracted by the script | exit 1, **10 passed / 1 failed**: `test_m9_cadence_page_resolved_by_a_reorg_that_adds_the_commit_is_not_reopened` (clock-only halt with an unconfirmed tail: the accepted limitation of ruling A; ported ADAPTED as `test_r3_qa3_control_…`, green); QA3-F1/F2 reproducers pass | local | same |
+| V2x.6 | `… reconcile/tests`; `reconcile/.venv/bin/ruff check reconcile` | exit 0, **548 passed**; ruff exit 0 | local | same |
+| RED on frozen / GREEN now | frozen code (`git archive 8bd225e reconcile`) + repair-3 tests | frozen: 102 failed / 206 passed in the lane files; of the 35 tests new in repair 3, **28 RED**, 7 GREEN (1 benign twin, 6 state-table rows already correct); 73 of 109 sweep cases RED; head: all pass | local | `evidence/red_green_repair3.txt` |
+| V2x.5 falsifiers (repair 3) | `bash …/evidence/falsify_repair3.sh` | 18 mutations (R3-F1-lead, -walk, R3-F2-both, -self, -slots, R3-RR-zero, -lead, SWEEP3-m11-F1, SWEEP3-m9-F2, SWEEP3-m11-RR, R3-RR-attr, -evidence, R3-dissent-evidence, R3-failed-revision, R3-book-regrown, R3-horizon-cap, SWEEP3-m9-horizon, R3-F8-clock): every mutated exit 1, restored exit 0, porcelain `''` after each pair. The lone-voter rule has two sufficient guards (no one-slot reference; no self-referential agreement): each alone is an equivalent mutant, so R3-F2-both mutates both | local | `evidence/falsifiers_repair3.log` |
+| V2x.5 falsifiers (repair 2, re-run) | `bash …/evidence/falsify_repair2.sh` | 18 / 18 red/green, porcelain `''` (R2-F1-own re-guarded by one added assertion; SWEEP2-m11-definite by seeds 109/152/319) | local | `evidence/falsifiers_repair2.rerun-repair3.log` |
+| V2x.5 falsifiers (repair 1, re-run) | `bash …/evidence/falsify_repair1.sh` | 12 red/green; F1-proof survives and S-superseded anchor error (both as recorded in repair 2, re-guarded); **F8-clock: anchor error** (its line was rewritten by the horizon cap G8; re-guarded by R3-F8-clock, red/green) | local | `evidence/falsifiers_repair1.rerun-repair3.log` |
+| LIVE M9 record / current rounds (saved dumps) | `reconcile/.venv/bin/python …/evidence/live_replay.py …/evidence/outage_2026_08_logs.json 400` and `… live_recent_logs.json 400` | exit 0 both; incidents, messages (89 / 0) and health identical to repair 2; only `eth_getBlockByNumber` 1 → 2 per run (the G8 probe) | local | `evidence/outage_2026_08_replay.repair3.out.json`, `evidence/live_recent_replay.repair3.out.json` |
+| Wider sweep exploration (scratch, once) | 700 M9 seeds × confirmations {0, 3}, 1200 M11 seeds (the committed sweep classes, more seeds) | found G3, G5–G8 and three harness gaps; on code `5da3e9c` (no check file changed after it): 0 failures | local | plan.md § Repair 3 |
+
+- NOT RUN: the LIVE M11 weekly comparison (273 s, network; `compare_leaves` is unchanged in repair 3); archive re-fetch of the dumps; the anvil-fork M9 scenario (CP3, V3.8); N1–N3 (NOTEs, not required).
+- Next action: records commit, worker_done; fresh QA (Claude Opus 5.5, capped round policy).
+

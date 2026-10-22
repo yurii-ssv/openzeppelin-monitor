@@ -1,6 +1,6 @@
 RED on the frozen head (repair 3): code of 8bd225e (= 6191a36 code, the QA attempt-3 frozen head; git archive) + the final repair-3 lane test files and fixtures
 command: (cd frozen && reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests/test_m9.py reconcile/tests/test_m10.py reconcile/tests/test_m11.py reconcile/tests/test_m9_m10_m11_sweep.py -rfp)
-result: 99 failed, 205 passed in 11.06s
+result: 102 failed, 206 passed in 9.27s
 
 ## per new test (repair 3)
 GREEN test_r3_reorg_removing_the_rotation_that_healed_a_duplicate_reopens_it (state-table row: untested before, behaviour already correct)
@@ -46,14 +46,16 @@ RED   test_rpc_budget_no_eth_call_per_sweep_with_350_clusters
 GREEN test_qa2_f1_reorg_removing_the_superseding_commit_reopens_the_failed_round
 GREEN test_a_round_superseded_within_its_30_minutes_still_fails_at_its_deadline (assertion added: c is its own incident; re-guards R2-F1-own)
 
-## sweep cases RED on the frozen code (70 of 106; updated independent model + new invariants + exploration seeds)
+## sweep cases RED on the frozen code (73 of 109; updated independent model + new invariants + exploration seeds)
 test_sweep_m11[0]
 test_sweep_m11[106]
+test_sweep_m11[109]
 test_sweep_m11[10]
 test_sweep_m11[11]
 test_sweep_m11[13]
 test_sweep_m11[146]
 test_sweep_m11[14]
+test_sweep_m11[152]
 test_sweep_m11[16]
 test_sweep_m11[17]
 test_sweep_m11[18]
@@ -69,6 +71,7 @@ test_sweep_m11[27]
 test_sweep_m11[287]
 test_sweep_m11[28]
 test_sweep_m11[29]
+test_sweep_m11[319]
 test_sweep_m11[31]
 test_sweep_m11[34]
 test_sweep_m11[35]
@@ -214,7 +217,10 @@ FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[55] - Asserti...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[57] - Asserti...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[59] - Asserti...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[106] - Assert...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[109] - Assert...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[146] - Assert...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[152] - Assert...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[249] - Assert...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[287] - Assert...
+FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[319] - Assert...
 FAILED reconcile/tests/test_m9_m10_m11_sweep.py::test_sweep_m11[684] - Assert...
