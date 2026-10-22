@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import random
+from fractions import Fraction
 
 import pytest
 from fixtures_wallets import (
@@ -850,7 +851,7 @@ def test_m12_duplicated_listing_items_are_counted_once(tmp_path):
 def test_m12_reorg_below_the_backfill_start_re_backfills_the_whole_window(tmp_path):
     """(c) the rewind branch for a wallet whose history starts above the ancestor (only reachable with a window
     shorter than the reorg): its rows and sync state are dropped and the window is backfilled on the new chain."""
-    chain, w, _ = setup(tmp_path, balance=eth(10), checks={"window_blocks": 6, "day_blocks": 3})
+    chain, w, _ = setup(tmp_path, balance=eth(10), checks={"window_s": 72, "day_s": 36})
     advance(w)
     tick(w, chain, blocks=10)  # synced below the window's start: a fresh backfill, history_from = checkpoint - 6
     cp = chain.sealed
@@ -880,8 +881,62 @@ def test_m12_reorg_below_the_backfill_start_re_backfills_the_whole_window(tmp_pa
 # §6.2 absence rule never fires: every key is evaluated or the run raises); no window anchored on stale data (the
 # measurement equals the oracle's: window, last 24 h, base fee, tip, both runways); no event lost between sweeps
 # (m12_tx = the canonical transactions of the window, m12_sync at the checkpoint with its nonce); healthy.
+# Repair 3 (QA attempt 2 (Codex) F1/F2): each case draws a block-timestamp profile (12 s slots, a missed slot every
+# 7 or 50 blocks, or a burst of 50-3,000 missed slots somewhere in the history) and some runs (also the reorg run)
+# get a partial eth_feeHistory answer (short, shifted, short gas ratios, a missing field, a junk entry). Added
+# invariants: the window and the last 24 h equal an INDEPENDENT computation from the chain's timestamps
+# ((T - 7 d, T] and (T - 24 h, T] of the checkpoint block; no window anchored on stale data or on block counts); a
+# run with a partial fee history raises (errors + 1), sends nothing and changes no incident (no resolve without
+# positive proof), and a reorg run keeps its marker; m12_tx = the canonical transactions of (history_from,
+# checkpoint] with history_from at or below the window's start (no event lost between sweeps).
 
 REORG_TEXT = "Resolved because its evidence left the canonical chain"
+WEEK_S, DAY_S = 604_800, 86_400
+
+
+def slot_profile(genesis_ts, profile, rng=None):
+    """Block timestamps: 12 s slots, a missed slot every k blocks ("every<k>"), or a burst of missed slots
+    ("burst": 50-3,000 slots at a block drawn in the history). Strictly increasing, multiples of 12 s."""
+    if profile == "12s":
+        return lambda n: genesis_ts + 12 * n
+    if profile.startswith("every"):
+        k = int(profile[5:])
+        return lambda n: genesis_ts + 12 * n + 12 * (n // k)
+    at, extra = rng.randint(110_000, 170_000), rng.choice((50, 600, 3_000))
+    return lambda n: genesis_ts + 12 * n + (12 * extra if n >= at else 0)
+
+
+def time_window(chain, cp, seconds, wallet=ORACLE):
+    """Independent: the wallet's canonical transactions whose block timestamp is in (T - seconds, T], T = the
+    checkpoint block's timestamp."""
+    t = chain.timestamp(cp)
+    return {h: x for h, x in chain.wtxs.items()
+            if x["from"] == wallet and x["block"] <= cp and chain.timestamp(x["block"]) > t - seconds}
+
+
+def fees(txs):
+    return sum(x["gas_used"] * x["gas_price"] for x in txs.values())
+
+
+FEE_FAULTS = {  # partial eth_feeHistory answers (QA attempt 2 (Codex) F2 and its generalisation)
+    "short": lambda r: dict(r, baseFeePerGas=r["baseFeePerGas"][-2:]),
+    "shift": lambda r: dict(r, oldestBlock=hex(int(r["oldestBlock"], 16) + 1)),
+    "ratios": lambda r: dict(r, gasUsedRatio=r["gasUsedRatio"][1:]),
+    "missing": lambda r: {"baseFeePerGas": r["baseFeePerGas"]},
+    "junk": lambda r: dict(r, baseFeePerGas=r["baseFeePerGas"][:-1] + [None]),
+    "long": lambda r: dict(r, baseFeePerGas=r["baseFeePerGas"] + r["baseFeePerGas"][-1:]),
+}
+
+
+def fault_fee_history(chain, mode):
+    """Answer eth_feeHistory with FEE_FAULTS[mode] of the real answer (`del chain._handle` restores)."""
+    handle = type(chain)._handle.__get__(chain)
+
+    def faulty(method, params):
+        res = handle(method, params)
+        return FEE_FAULTS[mode](res) if method == "eth_feeHistory" else res
+
+    chain._handle = faulty
 MEASURED = ("avg_daily_spend_wei", "day_spend_wei", "window_txs", "window_fees_wei", "window_gas", "base_fee_wei",
             "avg_priority_fee_wei", "runway_trailing_days", "runway_base_fee_days", "balance_wei")
 
@@ -891,6 +946,8 @@ class M12Sweep:
         rng = self.rng = random.Random(f"cp2c-m12:{seed}:{confirmations}")
         self.tmp, self.c = tmp_path, confirmations
         chain = self.chain = WalletChain(start_block=100_000)
+        self.profile = rng.choice(("12s", "every7", "every50", "burst", "burst"))
+        chain.timestamp = slot_profile(chain.genesis_ts, self.profile, rng)
         chain.set_balance(ORACLE, eth(5))
         chain.set_balance(LIQUIDATOR, eth(rng.choice((0.04, 0.1, 0.3))))
         chain.mine()
@@ -930,16 +987,33 @@ class M12Sweep:
                 chain.set_base_fee(gwei(rng.choice((0.3, 1.15, 5))))
 
     def wstep(self, seconds=301, knobs=None):
-        """One worker step with Blockscout knobs (down / lag / hide); asserts that no spend resolution comes
-        from a run that did not measure the spend."""
+        """One worker step with Blockscout knobs (down / lag / hide) and a fee-history fault (feehist); asserts
+        that no spend resolution comes from a run that did not measure the spend, and that a run with a partial
+        fee history raises without sending or changing anything."""
         self.knobs = knobs or {}
         bs = self.w.bs
         bs.down = OSError("sweep outage") if self.knobs.get("down") else None
         bs.lag = self.knobs.get("lag", 0)
         bs.hide = set(self.knobs.get("hide", ()))
         before = self.w.db.conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM outbox").fetchone()[0]
+        fault = self.knobs.get("feehist")
+        if fault:
+            seconds = max(seconds, 301)  # the run is due
+            errors = (self.w.db.meta("run:m12") or {}).get("errors", 0)
+            incidents = [tuple(r) for r in self.w.db.conn.execute("SELECT * FROM incidents ORDER BY id")]
+            marker = self.w.db.meta("reorg:m12")
+            fault_fee_history(self.chain, fault)
         self.clock.advance(seconds)
-        self.w.step()
+        try:
+            self.w.step()
+        finally:
+            if fault:
+                del self.chain._handle
+        if fault:
+            assert self.w.db.meta("run:m12")["errors"] == errors + 1, f"partial fee history ({fault}) accepted"
+            assert outbox(self.w, f"rowid > {before} AND kind != 'health'") == [], "a run with a partial input sent"
+            assert [tuple(r) for r in self.w.db.conn.execute("SELECT * FROM incidents ORDER BY id")] == incidents
+            assert self.w.db.meta("reorg:m12") == marker
         keys = {r[0]: r[1] for r in self.w.db.conn.execute("SELECT id, key FROM incidents")}
         for r in outbox(self.w, f"rowid > {before} AND kind = 'resolved'"):
             if keys[r["incident_id"]].split(":")[1] in ("runway", "daily-spend"):
@@ -956,6 +1030,8 @@ class M12Sweep:
         if r < 0.32:
             recent = [h for h, t in self.chain.wtxs.items() if t["from"] == ORACLE][-3:]
             return {"hide": [rng.choice(recent)]}
+        if r < 0.40:
+            return {"feehist": rng.choice(sorted(FEE_FAULTS))}
         return {}
 
     def oracle(self):
@@ -973,6 +1049,13 @@ class M12Sweep:
         assert open_incidents(self.w) == open_incidents(o), "open incidents differ from the canonical chain's"
         mine, theirs = self.w.checks["m12"].last[ORACLE], o.checks["m12"].last[ORACLE]
         assert {k: mine.get(k) for k in MEASURED} == {k: theirs.get(k) for k in MEASURED}
+        # independent of the check: the windows by the chain's timestamps at the checkpoint
+        cp = self.w.checkpoint()["block"]
+        week, day = time_window(self.chain, cp, WEEK_S), time_window(self.chain, cp, DAY_S)
+        assert "spend" not in mine, mine["spend"]
+        assert (mine["window_txs"], mine["window_fees_wei"], mine["day_fees_wei"]) == (len(week), fees(week), fees(day))
+        assert mine["avg_daily_spend_wei"] == Fraction(fees(week) * DAY_S, WEEK_S)
+        assert mine["day_spend_wei"] == fees(day) and mine["window_seconds"] == WEEK_S
         return o
 
     def canonical_txs(self, lo, hi):
@@ -1012,6 +1095,9 @@ class M12Sweep:
         assert ancestor is not None and ancestor < fork
         if rng.random() < 0.3:  # crash between the reorg's detection and the check's run
             self.w = self.worker(self.tmp)
+        if rng.random() < 0.3:  # a partial fee history in the reorg run: raises, marker and incidents kept
+            self.wstep(knobs={"feehist": rng.choice(sorted(FEE_FAULTS))})
+            assert self.w.db.meta("reorg:m12") == ancestor and open_incidents(self.w) == self.before_reorg_open
         if rng.random() < 0.5:  # Blockscout down in the reorg run
             self.wstep(knobs={"down": True})
             cp = self.w.checkpoint()["block"]
@@ -1035,7 +1121,7 @@ class M12Sweep:
 
 
 @pytest.mark.parametrize("confirmations", [0, 2])
-@pytest.mark.parametrize("seed", range(20))
+@pytest.mark.parametrize("seed", range(100))
 def test_m12_adversarial_reorg_sweep(tmp_path, seed, confirmations):
     s = M12Sweep(tmp_path, seed, confirmations)
     pre = s.run()
@@ -1043,13 +1129,17 @@ def test_m12_adversarial_reorg_sweep(tmp_path, seed, confirmations):
     assert s.depth >= 1
     o = s.assert_agrees()
     assert not [r for r in outbox(w, "kind='resolved'") if REORG_TEXT in r["text"]], "a key was resolved by absence"
-    canon = s.canonical_txs(cp - WINDOW, cp)
+    sync = w.db.conn.execute("SELECT synced_block, next_nonce, history_from FROM m12_sync WHERE wallet=?",
+                             (ORACLE,)).fetchone()
+    assert tuple(sync)[:2] == (cp, sum(1 for t in s.chain.wtxs.values() if t["from"] == ORACLE and t["block"] <= cp))
+    window_start = w.checks["m12"].last[ORACLE]["window_from_block"]
+    assert sync[2] < window_start  # the stored set covers the window
+    canon = s.canonical_txs(sync[2], cp)
+    assert set(time_window(s.chain, cp, WEEK_S)) <= set(canon)
     rows = {r[0]: (r[1], r[2], int(r[3]), int(r[4])) for r in
             w.db.conn.execute("SELECT tx_hash, block, block_hash, gas_used, gas_price FROM m12_tx WHERE wallet=?",
                               (ORACLE,))}
     assert rows == {h: (t["block"], s.chain.hash(t["block"]), t["gas_used"], t["gas_price"]) for h, t in canon.items()}
-    sync = w.db.conn.execute("SELECT synced_block, next_nonce FROM m12_sync WHERE wallet=?", (ORACLE,)).fetchone()
-    assert tuple(sync) == (cp, sum(1 for t in s.chain.wtxs.values() if t["from"] == ORACLE and t["block"] <= cp))
     open_now = set(open_incidents(o))
     keys = {r[0]: r[1] for r in w.db.conn.execute("SELECT id, key FROM incidents")}
     for r in outbox(w, f"rowid > {pre} AND kind IN ('realert', 'escalate')"):
@@ -1184,3 +1274,346 @@ def test_qa2_m12_transaction_from_a_non_canonical_block_is_not_counted(tmp_path)
     advance(w)
     assert "UNKNOWN" in w.checks["m12"].last[ORACLE].get("spend", ""), w.checks["m12"].last[ORACLE]
     assert w.db.conn.execute("SELECT COUNT(*) FROM m12_tx WHERE tx_hash=?", (victim,)).fetchone()[0] == 0
+
+
+# ---------------------------------------------------------------- repair 3: QA attempt 2 (Codex) Appendix A, M12 part
+# (ported verbatim except the module prefix; F1 = the first, fourth and fifth, F2 = the others; RED on f779b45)
+
+
+def test_qa2c_m12_daily_is_actual_24h_not_7200_blocks(tmp_path):
+    c = WalletChain(start_block=100000)
+    c.timestamp = lambda n: c.genesis_ts + 24 * n  # one missed slot between consecutive canonical blocks
+    c.set_balance(ORACLE, eth(10))
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.send(ORACLE, PROXY, gas_used=60_000_000, gas_price=gwei(1))  # .06 ETH spent now
+    c.mine()
+    c, w = wallet_worker(tmp_path, ['m12'], chain=c)
+    advance(w)
+    assert open_incidents(w).get(f'{ORACLE}:daily-spend') == 'warn'
+
+
+def test_qa2c_m12_partial_feehistory_is_error_never_clean(tmp_path):
+    c, w, _ = setup(tmp_path, balance=eth(.333), checks={'projection_tip': 'none'})
+    c.set_base_fee(gwei(10))
+    c.mine()
+    handle = c._handle
+    c._handle = lambda method, p: ({'baseFeePerGas': [hex(gwei(.01)), hex(gwei(.01))]} if method == 'eth_feeHistory'
+                                   else handle(method, p))
+    advance(w)
+    assert w.db.meta('run:m12')['errors'] > 0, 'partial requested fee sample was accepted'
+
+
+def test_qa2c_m12_daily_single_missed_slot_at_boundary(tmp_path):
+    c = WalletChain(start_block=100000)
+    c.timestamp = lambda n: c.genesis_ts + 12 * n + (12 if n >= 99999 else 0)
+    c.set_balance(ORACLE, eth(10))
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.send(ORACLE, PROXY, gas_used=40_005_000, gas_price=gwei(1))
+    c.mine()
+    c, w = wallet_worker(tmp_path, ['m12'], chain=c)
+    advance(w)
+    assert open_incidents(w).get(f'{ORACLE}:daily-spend') == 'warn'
+
+
+def test_qa2c_m12_partial_history_clears_real_page(tmp_path):
+    c, w, _ = setup(tmp_path, balance=eth(.333), checks={'projection_tip': 'none'})
+    advance(w)
+    assert open_incidents(w) == {}
+    c.set_base_fee(gwei(10))
+    tick(w, c, blocks=300)
+    assert open_incidents(w).get(f'{ORACLE}:runway') == 'page'
+    handle = c._handle
+    c._handle = lambda method, p: ({'baseFeePerGas': [hex(gwei(.01)), hex(gwei(.01))]} if method == 'eth_feeHistory'
+                                   else handle(method, p))
+    tick(w, c)
+    assert open_incidents(w).get(f'{ORACLE}:runway') == 'page', 'partial input resolved a supported runway page'
+
+
+def test_qa2c_m12_trailing_window_excludes_transactions_older_than_seven_days(tmp_path):
+    c = WalletChain(start_block=60000)
+    c.timestamp = lambda n: c.genesis_ts + 24 * n
+    c.set_balance(ORACLE, eth(2))
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.send(ORACLE, PROXY, gas_used=1_000_000_000, gas_price=gwei(1))
+    c.mine(40000)
+    c.set_balance(ORACLE, eth(.2))
+    c.mine()
+    c, w = wallet_worker(tmp_path, ['m12'], chain=c)
+    advance(w)
+    assert w.checks['m12'].last[ORACLE]['window_txs'] == 0
+    assert f'{ORACLE}:runway' not in open_incidents(w)
+
+
+def test_qa2c_m12_partial_history_reorg_keeps_retry_marker(tmp_path):
+    c, w, _ = setup(tmp_path, balance=eth(.333), checks={'projection_tip': 'none'})
+    advance(w)
+    c.set_base_fee(gwei(10))
+    tick(w, c, blocks=300)
+    assert open_incidents(w).get(f'{ORACLE}:runway') == 'page'
+    fork = c.number
+    c.mine(3)
+    advance(w)
+    c.reorg(fork)
+    c.mine(3)
+    w.check_reorg()
+    assert w.db.meta('reorg:m12') is not None
+    handle = c._handle
+
+    def short(method, p):
+        result = handle(method, p)
+        if method == 'eth_feeHistory':
+            result['baseFeePerGas'] = [hex(gwei(.01)), hex(gwei(.01))]
+        return result
+
+    c._handle = short
+    advance(w)
+    assert w.db.meta('reorg:m12') is not None, 'partial fee history committed and cleared the reorg obligation'
+
+
+@pytest.mark.parametrize('mode', ['empty', 'partial', 'duplicate', 'orphan'])
+def test_qa2c_m12_reorg_listing_variants(tmp_path, mode):
+    c, w, _ = setup(tmp_path, balance=eth(10))
+    advance(w)
+    c.mine(3)
+    advance(w)
+    fork = c.number
+    c.send(ORACLE, PROXY, gas_used=100)
+    tick(w, c)
+    c.reorg(fork)
+    h1 = c.send(ORACLE, PROXY, gas_used=200)
+    h2 = c.send(ORACLE, PROXY, gas_used=300)
+    get = w.bs
+    if mode == 'partial':
+        w.bs.hide.add(h2)
+    if mode == 'empty':
+        w.checks['m12'].http_get = lambda url: {'items': [], 'next_page_params': None}
+    if mode == 'duplicate':
+        def dup(url):
+            d = get(url)
+            d['items'] *= 2
+            return d
+        w.checks['m12'].http_get = dup
+    if mode == 'orphan':
+        rc = c._receipt
+        c._receipt = lambda t: dict(rc(t), blockHash='0x' + 'ab' * 32) if t['hash'] == h2 else rc(t)
+    tick(w, c)
+    if mode != 'duplicate':
+        assert w.db.meta('reorg:m12') is not None
+        assert w.db.meta('run:m12')['errors'] > 0
+    else:
+        assert w.db.meta('reorg:m12') is None
+        rows = w.db.conn.execute('SELECT gas_used FROM m12_tx WHERE tx_hash IN (?,?)', (h1, h2)).fetchall()
+        assert sorted(int(r[0]) for r in rows) == [200, 300]
+
+
+# ---------------------------------------------------------------- repair 3: generalised regressions (time windows by
+# chain timestamps, the stored set's lower bound, partial fee history). "RED" = fails on f779b45.
+
+
+def _missed_slot_chain(profile="every1", start_block=100_000, oracle=eth(10)):
+    """A chain whose block timestamps skip slots ("every1": 24 s per block, half the slots missed)."""
+    c = WalletChain(start_block=start_block)
+    c.timestamp = slot_profile(c.genesis_ts, profile)
+    c.set_balance(ORACLE, oracle)
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.mine()
+    return c
+
+
+def test_m12_r3_daily_spend_excludes_a_transaction_older_than_24h_inside_7200_blocks(tmp_path):
+    """RED. 4,500 blocks of 24 s = 30 h: the 0.1 ETH spend is not in the last 24 h (block counting kept it and
+    warned at 0.05 ETH/day)."""
+    c = _missed_slot_chain()
+    c.send(ORACLE, PROXY, gas_used=100_000_000, gas_price=gwei(1))
+    c.mine(4_500)
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c)
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert m["day_spend_wei"] == 0 and m["window_txs"] == 1
+    assert f"{ORACLE}:daily-spend" not in open_incidents(w)
+
+
+def test_m12_r3_missed_slots_never_dilute_the_trailing_average(tmp_path):
+    """RED. 0.14 ETH over the last 3 days of a chain with 24 s blocks: 0.02 ETH/day over 7 days of chain time →
+    0.2 ETH lasts 10 days → warn (block counting spread it over 14 days: 20 days, silent)."""
+    c = _missed_slot_chain()
+    c.mine(60_000)
+    for _ in range(7):
+        c.send(ORACLE, PROXY, gas_used=20_000_000, gas_price=gwei(1))
+        c.mine(1_000)
+    c.set_balance(ORACLE, eth(0.2))
+    c.mine()
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c, checks={"m12": {"projection_tip": "none"}})
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert m["avg_daily_spend_wei"] == Fraction(7 * 20_000_000 * gwei(1), 7) and m["window_seconds"] == WEEK_S
+    assert m["runway_trailing_days"] == 10
+    assert open_incidents(w)[f"{ORACLE}:runway"] == "warn"
+
+
+def test_m12_r3_daily_spend_resolves_exactly_when_the_spend_is_24h_old_by_chain_time(tmp_path):
+    """RED. Anchored at the checkpoint block's timestamp: the warn holds while the spend's block is within the
+    last 86,400 s and resolves at the first checkpoint 86,400 s after it (a missed slot every 7 blocks: ≈ 6,300
+    blocks, where block counting waited for 7,200)."""
+    c = _missed_slot_chain("every7")
+    c.send(ORACLE, PROXY, gas_used=50_000_000, gas_price=gwei(1))
+    spent = c.number
+    c.mine()
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c)
+    advance(w)
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+    last = next(n for n in range(spent, spent + DAY) if c.timestamp(n + 1) - c.timestamp(spent) >= DAY_S)
+    assert last - spent < 6_400
+    tick(w, c, blocks=last - c.sealed)
+    assert c.sealed == last and open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+    tick(w, c)
+    assert open_incidents(w) == {} and alerts(w)[-1] == ("info", f"{ORACLE}:daily-spend", "resolved")
+
+
+def test_m12_r3_window_search_is_exact_and_bounded_under_a_burst_of_missed_slots(tmp_path):
+    """A 3,000-slot outage inside the window (10 h): both windows equal the timestamps' and the header search
+    stays a few dozen reads."""
+    c = WalletChain(start_block=100_000)
+    c.timestamp = lambda n: c.genesis_ts + 12 * n + (36_000 if n >= 140_000 else 0)
+    c.set_balance(ORACLE, eth(5))
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.mine()
+    spend_history(c)
+    c.mine()
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c)
+    advance(w)
+    m, cp = w.checks["m12"].last[ORACLE], c.sealed
+    week, day = time_window(c, cp, WEEK_S), time_window(c, cp, DAY_S)
+    assert (m["window_txs"], m["window_fees_wei"], m["day_fees_wei"]) == (len(week), fees(week), fees(day))
+    assert c.timestamp(m["window_from_block"] - 1) <= c.timestamp(cp) - WEEK_S < c.timestamp(m["window_from_block"])
+    assert c.timestamp(m["day_from_block"] - 1) <= c.timestamp(cp) - DAY_S < c.timestamp(m["day_from_block"])
+    reads = w.db.meta("run:m12")["rpc_calls"]["eth_getBlockByNumber"]
+    assert reads <= m["window_txs"] + 2 + 40, reads  # verification headers + the two searches
+
+
+def test_m12_r3_non_increasing_timestamps_in_a_normal_run_are_unknown_and_keep_the_warn(tmp_path):
+    chain, w, _ = setup(tmp_path, balance=eth(10), gas_per_day=40_000_000)
+    advance(w)
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"}
+    ts = chain.timestamp
+    chain.timestamp = lambda n: ts(min(n, 100_000))  # no time passes after block 100,000
+    tick(w, chain, blocks=DAY)
+    assert "non-increasing block timestamps" in w.checks["m12"].last[ORACLE]["spend"]
+    assert open_incidents(w) == {f"{ORACLE}:daily-spend": "warn"} and health(w)
+
+
+def _edge_of_the_window(tmp_path, checks=None):
+    """A 1 ETH spend at block E; the worker runs from E + 10 to C1 = E + 50,402 (12 s slots), where E has left
+    the 7-day window; then a reorg from C1 - 2 leaves a shorter chain whose window (to C1 - 3) includes E again."""
+    c = WalletChain(start_block=100_000)
+    c.set_balance(ORACLE, eth(5))
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.mine()
+    edge = c.number
+    c.send(ORACLE, PROXY, gas_used=1_000_000_000, gas_price=gwei(1))
+    c.mine(10)
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c, checks={"m12": checks or {}})
+    advance(w)
+    assert w.checks["m12"].last[ORACLE]["window_txs"] == 1
+    for _ in range(4):
+        tick(w, c, blocks=12_600)
+    tick(w, c, blocks=edge + WINDOW + 2 - c.sealed)
+    assert w.checks["m12"].last[ORACLE]["window_txs"] == 0  # E is 7 days and 24 s old
+    fork = c.sealed - 2
+    c.reorg(fork)  # the new chain's checkpoint: fork - 1 = E + 50,399, T - ts(E) = 604,788 s
+    assert c.sealed == edge + WINDOW - 1
+    return c, w, edge
+
+
+def test_m12_r3_shorter_chain_moving_the_window_back_still_counts_the_edge_transaction(tmp_path):
+    """RED. The margin kept below the window holds E: the reorg run counts it, with no Blockscout listing (the
+    pruned set undercounted it before)."""
+    c, w, edge = _edge_of_the_window(tmp_path)
+    calls = len(w.bs.calls)
+    w.clock.advance(301)
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert w.db.meta("reorg:m12") is None and m["window_txs"] == 1 and m["window_fees_wei"] == eth(1)
+    assert len(w.bs.calls) == calls
+
+
+def test_m12_r3_restart_between_the_shorter_chain_reorg_and_its_run_still_counts_the_edge_transaction(tmp_path):
+    """RED. (d) a crash after the reorg's detection: the new process's reorg run counts E from the kept margin."""
+    c, w, edge = _edge_of_the_window(tmp_path)
+    w.check_reorg()
+    assert w.db.meta("reorg:m12") is not None
+    clock, start, activation = w.clock, w.cfg.start_block, w.cfg.activation_block
+    w.db.conn.close()
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c, clock=clock, start_block=start, activation_block=activation)
+    clock.advance(301)
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert w.db.meta("reorg:m12") is None and m["window_txs"] == 1 and m["window_fees_wei"] == eth(1)
+    week = time_window(c, c.sealed, WEEK_S)
+    assert set(week) == {h for h, x in c.wtxs.items() if x["block"] == edge}
+
+
+def test_m12_r3_window_below_the_stored_set_is_backfilled_never_undercounted(tmp_path):
+    """Without the margin (prune_margin_blocks 0), the shorter chain's window starts below history_from: the
+    reorg run backfills; with Blockscout down it raises and keeps the marker, then counts E."""
+    c, w, edge = _edge_of_the_window(tmp_path, {"prune_margin_blocks": 0})
+    real = w.bs
+    w.checks["m12"].http_get = lambda url: (_ for _ in ()).throw(OSError("down"))
+    w.clock.advance(301)
+    advance(w)
+    assert w.db.meta("reorg:m12") is not None
+    w.checks["m12"].http_get = real
+    w.clock.advance(301)
+    advance(w)
+    m = w.checks["m12"].last[ORACLE]
+    assert w.db.meta("reorg:m12") is None and m["window_txs"] == 1 and m["window_fees_wei"] == eth(1)
+
+
+@pytest.mark.parametrize("fault", sorted(FEE_FAULTS))
+@pytest.mark.parametrize("reorg", [False, True])
+def test_m12_r3_every_partial_fee_history_raises_and_keeps_the_page(tmp_path, fault, reorg):
+    """RED, all six: five were accepted; junk raised an RpcError out of the step. The run fails (check-error health,
+    errors + 1), the runway page stays, nothing is sent; in a reorg run the marker stays; the full answer then
+    resolves."""
+    c, w, _ = setup(tmp_path, balance=eth(.333), checks={"projection_tip": "none"})
+    advance(w)
+    c.set_base_fee(gwei(10))
+    tick(w, c, blocks=300)
+    assert open_incidents(w) == {f"{ORACLE}:runway": "page"}
+    if reorg:
+        fork = c.number
+        c.mine(3)
+        advance(w)
+        c.reorg(fork)
+    c.set_base_fee(gwei(1.15))  # the fee falls: a complete answer resolves the page
+    c.mine(300)
+    w.check_reorg()
+    marker, errors, n = w.db.meta("reorg:m12"), w.db.meta("run:m12")["errors"], len(outbox(w))
+    assert (marker is not None) == reorg
+    fault_fee_history(c, fault)
+    w.clock.advance(301)
+    advance(w)
+    del c._handle
+    assert w.db.meta("run:m12")["errors"] == errors + 1 and w.db.meta("reorg:m12") == marker
+    assert open_incidents(w) == {f"{ORACLE}:runway": "page"}
+    assert [r for r in outbox(w)[n:] if r["kind"] != "health"] == []
+    assert "eth_feeHistory" in health(w, "check-error")[-1]["text"]
+    tick(w, c)
+    assert w.db.meta("reorg:m12") is None and open_incidents(w) == {}
+
+
+def test_m12_r3_fee_history_of_a_chain_younger_than_the_sample_is_complete(tmp_path):
+    """Control: at block 100 the 300-block sample is blocks 0..100 (oldestBlock 0, 101 entries): accepted."""
+    c = WalletChain(start_block=100)
+    c.set_balance(ORACLE, eth(10))
+    c.set_balance(LIQUIDATOR, eth(1))
+    c.mine()
+    c, w = wallet_worker(tmp_path, ["m12"], chain=c)
+    advance(w)
+    assert w.db.meta("run:m12")["errors"] == 0 and w.checks["m12"].last[ORACLE]["base_fee_wei"] == gwei(1.15)
+
+
+def test_m12_r3_time_window_settings_are_validated(tmp_path):
+    for bad in ({"window_blocks": 50_400}, {"day_s": 2 * WEEK_S}, {"window_s": 0}, {"prune_margin_blocks": -1}):
+        with pytest.raises(SystemExit):
+            wallet_worker(tmp_path / str(len(str(bad))), ["m12"], checks={"m12": bad})

@@ -6,7 +6,7 @@ MUT = [
  ("F12b", "reconcile/checks/m12_wallet_burn.py", "        if missing or extra:\n", "        if False:\n",
   "reconcile/tests/test_m12.py::test_m12_indexer_gap_is_unknown_not_clean"),
  ("F12c", "reconcile/checks/m12_wallet_burn.py", "avg_spend = Fraction(fees_w * 86_400, span_w)",
-  "avg_spend = Fraction(fees_w * 86_400, c['window_blocks'])",
+  "avg_spend = Fraction(fees_w * 86_400, block - lo_w)",
   "reconcile/tests/test_m12.py::test_m12_runway_trailing_spend_drives_when_the_base_fee_fell"),
  ("F12d", "reconcile/checks/m12_wallet_burn.py", "runway = min((r for r", "runway = max((r for r",
   "reconcile/tests/test_m12.py::test_m12_runway_from_trailing_spend_and_from_current_base_fee"),
@@ -58,6 +58,24 @@ MUT = [
   "reconcile/tests/test_m8.py::test_qa2_m8_restart_whose_first_run_fails_after_the_seed_read_still_measures_at_start"),
  ("F12h", "reconcile/checks/m12_wallet_burn.py", 'if hdr["hash"].lower() == t["block_hash"]:', "if True:",
   "reconcile/tests/test_m12.py::test_qa2_m12_transaction_from_a_non_canonical_block_is_not_counted"),
+ # repair 3 (QA attempt 2 (Codex) F1/F2 and the generalised rows)
+ ("F12i", "reconcile/checks/m12_wallet_burn.py", "            lo = self._boundary(ctx, ts, block, t - seconds)\n",
+  "            lo = max(block - seconds // SLOT_S, 0)\n            self._ts(ctx, ts, lo)\n",
+  "reconcile/tests/test_m12.py::test_m12_r3_daily_spend_excludes_a_transaction_older_than_24h_inside_7200_blocks"),
+ ("F12i-sweep", "reconcile/checks/m12_wallet_burn.py", "            lo = self._boundary(ctx, ts, block, t - seconds)\n",
+  "            lo = max(block - seconds // SLOT_S, 0)\n            self._ts(ctx, ts, lo)\n",
+  "reconcile/tests/test_m12.py::test_m12_adversarial_reorg_sweep"),
+ ("F12j", "reconcile/checks/m12_wallet_burn.py", "    if (got != oldest or not isinstance(fees, list)",
+  "    if False and (got != oldest or not isinstance(fees, list)",
+  "reconcile/tests/test_m12.py::test_qa2c_m12_partial_history_clears_real_page"),
+ ("F12j-sweep", "reconcile/checks/m12_wallet_burn.py", "    if (got != oldest or not isinstance(fees, list)",
+  "    if False and (got != oldest or not isinstance(fees, list)",
+  "reconcile/tests/test_m12.py::test_m12_adversarial_reorg_sweep"),
+ ("F12k", "reconcile/checks/m12_wallet_burn.py", 'keep = max(lo_window - self.config["prune_margin_blocks"], 0)',
+  "keep = lo_window",
+  "reconcile/tests/test_m12.py::test_m12_r3_shorter_chain_moving_the_window_back_still_counts_the_edge_transaction"),
+ ("F12l", "reconcile/checks/m12_wallet_burn.py", " or n_now < row[1] or lo_window < row[2])", " or n_now < row[1])",
+  "reconcile/tests/test_m12.py::test_m12_r3_window_below_the_stored_set_is_backfilled_never_undercounted"),
 ]
 py = f"{ROOT}/reconcile/.venv/bin/python"
 for name, path, old, new, test in MUT:

@@ -4,10 +4,16 @@ Every `interval_s` (5 min) at the checkpoint block:
 
 - balance of the oracle wallet (slot 4 + EB updater) and of the liquidator (`eth_getBalance`);
 - the oracle wallet's spend from the receipts of its own transactions (`gasUsed × effectiveGasPrice`, failed
-  transactions included): trailing `window_blocks` (7 days) and last `day_blocks` (24 h), per day by the
-  blocks' timestamps;
+  transactions included) in two windows selected by **chain time** (repair 3, QA attempt 2 (Codex) F1;
+  DEFECT-CLASSES §4): the trailing `window_s` (7 days) and the last `day_s` (24 h) before the checkpoint block's
+  timestamp T, i.e. the blocks whose timestamp is in (T − window, T]. The window's lower bound is the last block
+  with a timestamp at or before T − window, found by a search over block headers (a 12 s slot is only the first
+  guess). A missed slot never stretches a window over more than its seconds, and an older transaction never stays
+  in it. Per day = the window's spend × 86,400 ÷ its seconds (a window reaching below block 0, on a chain younger
+  than the window, covers (block 0, checkpoint] and is divided by that span: test chains only);
 - runway = balance ÷ trailing 7-day average daily spend, and balance ÷ (average daily gas × current base fee,
-  the mean of the last `base_fee_blocks` blocks' `baseFeePerGas`, plus the wallet's own gas-weighted priority fee
+  the mean of the last `base_fee_blocks` blocks' `baseFeePerGas` (a smoothing sample of blocks, ≈ 1 h; the spec
+  names no time window for it), plus the wallet's own gas-weighted priority fee
   over the window, `effectiveGasPrice − baseFeePerGas` of each verified transaction's block; `projection_tip:
   "none"` drops it); the shorter one drives the alert (V2c.7). Measured 2026-10-21: the oracle wallet pays a fixed
   1 gwei tip over a 0.03–0.36 gwei base fee, so the base fee alone would project a runway 3× too long.
@@ -37,10 +43,19 @@ keys resolved on the deleted blocks all depend on the new chain's transaction se
 the checkpoint equals the nonce re-read at the ancestor.
 
 **State and reorgs** (README §6.1/§6.2). `m12_tx` (verified transactions in the window) and `m12_sync`
-(`synced_block`, `next_nonce`, `history_from`) are derived from blocks: in the run with reason `reorg` (ancestor
-A), rows above A are deleted and a wallet synced above A is rewound to A with its nonce re-read at A; the run then
-re-syncs (A, checkpoint] on the new chain. Restart: both tables are durable; the next run continues from
-`synced_block`.
+(`synced_block`, `next_nonce`, `history_from`) are derived from blocks: `m12_tx` holds exactly the wallet's
+transactions in blocks (`history_from`, `synced_block`]; pruning keeps `prune_margin_blocks` (256) below the
+window's lower bound and raises `history_from` to what it keeps. In the run with reason `reorg` (ancestor A), rows
+above A are deleted and a wallet synced above A is rewound to A with its nonce re-read at A; the run then re-syncs
+(A, checkpoint] on the new chain. A shorter replacement chain moves T, and with it the window's lower bound, back
+by about the reorg's depth: the margin still holds those rows (repair 3); a window starting below `history_from`
+all the same is backfilled again, never counted from the rows that remain. Restart: both tables are durable; the next run continues from `synced_block`.
+
+**Fee history** (repair 3, QA attempt 2 (Codex) F2; DEFECT-CLASSES §1). `eth_feeHistory` must answer the whole
+requested range: `oldestBlock` = checkpoint − `base_fee_blocks` + 1, `baseFeePerGas` one entry per block plus the
+next block's, `gasUsedRatio` one per block. An answer that is shorter, longer, shifted or lacks a field raises
+`PartialResult` (a check error: `check-error` health, the run rolled back, open incidents untouched, a reorg
+marker kept), never a projection from a partial sample; no answer at all is an `RpcError` as for every read.
 
 The chain reads `rpc.Chain` lacks (nonce, receipts, headers, fee history, block receipts) go through
 `raw_batch` below: pinned to blocks ≤ `ctx.block`, counted in `ctx.rpc.counts` (CP3 promotion item).
@@ -62,6 +77,7 @@ from rpc import RpcError
 
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 ETH = 10**18
+SLOT_S = 12  # post-merge slot: only the first guess of the time-window search; the timestamps decide
 
 
 # ---------------------------------------------------------------- chain reads rpc.Chain does not offer (lane-local)
@@ -80,6 +96,10 @@ def raw_batch(ctx: Ctx, method: str, params: list[list], blocks: list[int] = ())
     if not isinstance(res, list) or len(res) != len(params):  # a partial answer is an error, never fewer items
         raise RpcError(f"{method}: {len(res) if isinstance(res, list) else 'no'} results for {len(params)} calls")
     return res
+
+
+class PartialResult(Exception):
+    """An RPC answer that does not cover what was asked (a check error, not an RPC outage)."""
 
 
 def _int(value, what: str) -> int:
@@ -112,13 +132,26 @@ def balances_at(ctx: Ctx, pairs: list[tuple[str, int]]) -> list[int]:
 
 
 def base_fee(ctx: Ctx, blocks: int) -> int:
-    """Mean `baseFeePerGas` of the `blocks` blocks ending at the pinned block (eth_feeHistory)."""
+    """Mean `baseFeePerGas` of the `blocks` blocks ending at the pinned block (eth_feeHistory). The answer must
+    cover exactly the requested range; a partial, truncated or shifted one is an RPC error, never a smaller sample."""
+    oldest = max(ctx.block - blocks + 1, 0)
+    n = ctx.block - oldest + 1
     (res,) = raw_batch(ctx, "eth_feeHistory", [[hex(blocks), hex(ctx.block), []]], [ctx.block])
-    fees = res.get("baseFeePerGas") if isinstance(res, dict) else None
-    if not isinstance(fees, list) or len(fees) < 2:
-        raise RpcError(f"eth_feeHistory({blocks}, {ctx.block}): malformed result {res!r:.200}")
-    fees = [_int(f, "baseFeePerGas") for f in fees[:-1]]  # the last entry is the next block's
-    return sum(fees) // len(fees)
+    what = f"eth_feeHistory({blocks}, {ctx.block})"
+    if not isinstance(res, dict):
+        raise RpcError(f"{what}: malformed result {res!r:.200}")
+    fees, ratios, got = res.get("baseFeePerGas"), res.get("gasUsedRatio"), res.get("oldestBlock")
+    got = int(got, 16) if isinstance(got, str) and re.fullmatch(r"0x[0-9a-fA-F]+", got) else got
+    if (got != oldest or not isinstance(fees, list) or len(fees) != n + 1 or not isinstance(ratios, list)
+            or len(ratios) != n):
+        raise PartialResult(f"{what}: partial result (need oldestBlock {oldest}, {n + 1} base fees and {n} gas ratios; "
+                       f"got oldestBlock {got}, {len(fees) if isinstance(fees, list) else 'no'} base fees, "
+                       f"{len(ratios) if isinstance(ratios, list) else 'no'} gas ratios)")
+    try:
+        fees = [_int(f, "baseFeePerGas") for f in fees]
+    except RpcError as exc:
+        raise PartialResult(f"{what}: {exc}") from None
+    return sum(fees[:-1]) // n  # the last entry is the next block's
 
 
 def http_get_json(url: str, timeout: float) -> dict:
@@ -192,9 +225,10 @@ class M12WalletBurn(Check):
         "liquidator_balance_warn_wei": 200_000_000_000_000_000,
         "liquidator_balance_page_wei": 50_000_000_000_000_000,
         # spend measurement
-        "window_blocks": 50_400,  # trailing average: 7 days of 12 s slots (per day by the blocks' timestamps)
-        "day_blocks": 7_200,  # daily spend: the last 24 h
-        "base_fee_blocks": 300,  # "current base fee": mean over the last hour (eth_feeHistory, at most 1024)
+        "window_s": 604_800,  # trailing average: the last 7 days of chain time (block timestamps)
+        "day_s": 86_400,  # daily spend: the last 24 h of chain time
+        "prune_margin_blocks": 256,  # rows kept below the window: a shorter replacement chain moves it back
+        "base_fee_blocks": 300,  # "current base fee": mean of the last 300 blocks, ≈ 1 h (eth_feeHistory, ≤ 1024)
         "projection_tip": "observed",  # + the window's gas-weighted priority fee ("none": base fee only)
         # Required with "observed": the tip used when the window has no verified transaction (dated value in
         # config.example.json; never 0)
@@ -212,11 +246,13 @@ class M12WalletBurn(Check):
         for k in ("oracle_wallet", "liquidator_wallet"):
             if not isinstance(c[k], str) or not ADDRESS.match(c[k]):
                 raise SystemExit(f"checks.m12.{k} is required (an 0x address; spec §3 M12), got {c[k]!r}")
-        for k in ("window_blocks", "day_blocks", "base_fee_blocks", "max_pages", "interval_s"):
+        for k in ("window_s", "day_s", "base_fee_blocks", "max_pages", "interval_s"):
             if not isinstance(c[k], int) or c[k] <= 0:
                 raise SystemExit(f"checks.m12.{k} must be a positive integer, got {c[k]!r}")
-        if c["day_blocks"] > c["window_blocks"] or c["base_fee_blocks"] > 1024:
-            raise SystemExit("checks.m12: need day_blocks <= window_blocks and base_fee_blocks <= 1024")
+        if not isinstance(c["prune_margin_blocks"], int) or c["prune_margin_blocks"] < 0:
+            raise SystemExit(f"checks.m12.prune_margin_blocks must be an integer >= 0, got {c['prune_margin_blocks']!r}")
+        if c["day_s"] > c["window_s"] or c["base_fee_blocks"] > 1024:
+            raise SystemExit("checks.m12: need day_s <= window_s and base_fee_blocks <= 1024")
         if c["projection_tip"] not in ("observed", "none"):
             raise SystemExit(f"checks.m12.projection_tip must be 'observed' or 'none', got {c['projection_tip']!r}")
         if c["projection_tip"] == "observed" and (not isinstance(c["fallback_tip_wei"], int)
@@ -233,10 +269,12 @@ class M12WalletBurn(Check):
         self.schedule = Every(c["interval_s"])
         self.http_get = lambda url: http_get_json(url, c["http_timeout_s"])
         self.last: dict[str, dict] = {}  # digest input: the last evaluation per wallet
+        self._windows: dict | None = None  # this run's time windows (one header search per run)
 
     # ---- run
 
     def run(self, ctx: Ctx, block: int) -> list[Finding]:
+        self._windows = None
         if ctx.reorg_ancestor is not None:
             self.rewind(ctx, ctx.reorg_ancestor)
         bals = dict(zip((w.address for w in self.wallets),
@@ -334,17 +372,18 @@ class M12WalletBurn(Check):
                                subject=subject, evidence=evidence))
         if w.spend_warn is not None:
             key = f"{w.address}:daily-spend"
+            span = (f"the last {m['day_seconds'] / 3600:g} h of chain time (blocks {m['day_from_block']}.."
+                    f"{block})")
             if m["day_spend_wei"] > w.spend_warn:
                 out.append(Finding(check=self.id, key=key, severity="warn",
                                    title=f"{w.label} daily spend {_eth(m['day_spend_wei'])} > {_eth(w.spend_warn)}",
-                                   body=f"{w.label} {w.address} spent {_eth(m['day_spend_wei'])} per day over the "
-                                        f"last {m['day_blocks']} blocks (to block {block}), above "
-                                        f"{_eth(w.spend_warn)}; {text}.", subject=subject, evidence=evidence))
+                                   body=f"{w.label} {w.address} spent {_eth(m['day_spend_wei'])} per day over "
+                                        f"{span}, above {_eth(w.spend_warn)}; {text}.", subject=subject,
+                                   evidence=evidence))
             else:
                 out.append(Finding(check=self.id, key=key, severity="info", title=f"{w.label} daily spend normal",
-                                   body=f"{w.label} {w.address} spent {_eth(m['day_spend_wei'])} per day over the "
-                                        f"last {m['day_blocks']} blocks (to block {block}).", subject=subject,
-                                   evidence=evidence, resolve=True))
+                                   body=f"{w.label} {w.address} spent {_eth(m['day_spend_wei'])} per day over "
+                                        f"{span}.", subject=subject, evidence=evidence, resolve=True))
         return out
 
     # ---- spend: transaction set, proven complete
@@ -355,11 +394,13 @@ class M12WalletBurn(Check):
         (n_now,) = nonces(ctx, [wallet], block)
         row = conn.execute("SELECT synced_block, next_nonce, history_from FROM m12_sync WHERE wallet=?",
                            (wallet,)).fetchone()
-        lo_window = max(block - self.config["window_blocks"], 0)
-        backfill = (row is None or row[0] < lo_window or row[0] > block or n_now < row[1])
+        lo_window = self.windows(ctx, block)["lo_w"]
+        # the stored set covers (history_from, synced_block]: a window starting below it (a shorter replacement
+        # chain) or above the synced block needs a fresh backfill
+        backfill = (row is None or row[0] < lo_window or row[0] > block or n_now < row[1] or lo_window < row[2])
         if not backfill and n_now == row[1]:
             conn.execute("UPDATE m12_sync SET synced_block=? WHERE wallet=?", (block, wallet))
-            self.prune(ctx, wallet, block)
+            self.prune(ctx, wallet, lo_window)
             return
         lo = lo_window if backfill else row[0]
         first = None if backfill else row[1]
@@ -390,11 +431,14 @@ class M12WalletBurn(Check):
                      "ON CONFLICT(wallet) DO UPDATE SET synced_block=excluded.synced_block, "
                      "next_nonce=excluded.next_nonce, history_from=CASE WHEN ? THEN excluded.history_from "
                      "ELSE history_from END", (wallet, block, n_now, lo, int(backfill)))
-        self.prune(ctx, wallet, block)
+        self.prune(ctx, wallet, lo_window)
 
-    def prune(self, ctx: Ctx, wallet: str, block: int) -> None:
-        ctx.db.conn.execute("DELETE FROM m12_tx WHERE wallet=? AND block <= ?",
-                            (wallet, block - self.config["window_blocks"]))
+    def prune(self, ctx: Ctx, wallet: str, lo_window: int) -> None:
+        """Rows more than `prune_margin_blocks` below the window's lower bound leave; `history_from` records what
+        is kept (the set is complete only above it)."""
+        keep = max(lo_window - self.config["prune_margin_blocks"], 0)
+        ctx.db.conn.execute("DELETE FROM m12_tx WHERE wallet=? AND block <= ?", (wallet, keep))
+        ctx.db.conn.execute("UPDATE m12_sync SET history_from=MAX(history_from, ?) WHERE wallet=?", (keep, wallet))
 
     def candidates(self, wallet: str, lo: int, block: int) -> list[dict]:
         """Blockscout items sent by `wallet`, newest first, down to the first page reaching block <= lo.
@@ -455,14 +499,77 @@ class M12WalletBurn(Check):
                 out.append({**t, "base_fee": _int(hdr.get("baseFeePerGas"), f"baseFeePerGas of block {t['block']}")})
         return out
 
+    # ---- time windows (chain timestamps, anchored at the run's block)
+
+    def windows(self, ctx: Ctx, block: int) -> dict:
+        """The trailing `window_s` and `day_s` windows ending at `block`'s timestamp T: for each, the last block
+        whose timestamp is <= T − seconds (`lo_w`, `lo_d`; the window is the blocks above it) and its covered
+        seconds. Non-increasing timestamps on the searched path: SpendUnknown."""
+        if self._windows is not None and self._windows["block"] == block:
+            return self._windows
+        ts: dict[int, int] = {}
+        t = self._ts(ctx, ts, block)
+        out = {"block": block, "t": t}
+        for name, seconds in (("w", self.config["window_s"]), ("d", self.config["day_s"])):
+            lo = self._boundary(ctx, ts, block, t - seconds)
+            span = min(seconds, t - ts[lo])  # below block 0 (a chain younger than the window): its real span
+            if span <= 0:
+                raise SpendUnknown(f"non-increasing block timestamps ({lo}: {ts[lo]}, {block}: {t})")
+            out[f"lo_{name}"], out[f"span_{name}"] = lo, span
+        self._windows = out
+        return out
+
+    @staticmethod
+    def _ts(ctx: Ctx, ts: dict[int, int], b: int) -> int:
+        if b not in ts:
+            hdr = headers(ctx, [b])[b]
+            ts[b] = _int(hdr.get("timestamp"), f"timestamp of block {b}")
+        return ts[b]
+
+    def _boundary(self, ctx: Ctx, ts: dict[int, int], block: int, target: int) -> int:
+        """The last block <= `block` with a timestamp <= `target` (block 0 when even block 0 is younger).
+        Gallop down from a 12 s-slot guess, then alternate interpolation and bisection between a block at or
+        before `target` (lo) and one after it (hi); every probe must lie strictly between its neighbours'
+        timestamps."""
+        def at(b: int) -> int:
+            return self._ts(ctx, ts, b)
+
+        hi = block
+        if at(hi) <= target:
+            return hi
+        step = max((at(hi) - target) // SLOT_S, 1)
+        lo = max(block - step, 0)
+        while at(lo) > target:
+            if at(lo) >= at(hi):
+                raise SpendUnknown(f"non-increasing block timestamps ({lo}: {at(lo)}, {hi}: {at(hi)})")
+            if lo == 0:
+                return 0
+            hi, step = lo, step * 2
+            lo = max(lo - step, 0)
+        interpolate = True
+        while hi - lo > 1:
+            if at(lo) >= at(hi):
+                raise SpendUnknown(f"non-increasing block timestamps ({lo}: {at(lo)}, {hi}: {at(hi)})")
+            if interpolate:
+                g = lo + (hi - lo) * (target - at(lo)) // (at(hi) - at(lo))
+            else:
+                g = (lo + hi) // 2
+            g = min(max(g, lo + 1), hi - 1)
+            interpolate = not interpolate
+            if not at(lo) < at(g) < at(hi):
+                raise SpendUnknown(f"non-increasing block timestamps ({lo}: {at(lo)}, {g}: {at(g)}, {hi}: {at(hi)})")
+            if at(g) <= target:
+                lo = g
+            else:
+                hi = g
+        return lo
+
+    # ---- metrics
+
     def metrics(self, ctx: Ctx, wallet: str, bal: int, block: int) -> dict:
         c = self.config
-        lo_w, lo_d = max(block - c["window_blocks"], 0), max(block - c["day_blocks"], 0)
-        hdr = headers(ctx, [block, lo_w, lo_d])
-        ts = {b: _int(h.get("timestamp"), f"timestamp of block {b}") for b, h in hdr.items()}
-        span_w, span_d = ts[block] - ts[lo_w], ts[block] - ts[lo_d]
-        if span_w <= 0 or span_d <= 0:
-            raise SpendUnknown(f"non-increasing block timestamps ({lo_w}: {ts[lo_w]}, {block}: {ts[block]})")
+        win = self.windows(ctx, block)
+        lo_w, lo_d, span_w, span_d = win["lo_w"], win["lo_d"], win["span_w"], win["span_d"]
         rows = ctx.db.conn.execute("SELECT block, gas_used, fee, base_fee FROM m12_tx WHERE wallet=? AND block > ? "
                                    "AND block <= ?", (wallet, lo_w, block)).fetchall()
         fees_w = sum(int(r[2]) for r in rows)
@@ -483,8 +590,9 @@ class M12WalletBurn(Check):
         avg_gas = Fraction(gas_w * 86_400, span_w)
         projected = avg_gas * (fee_now + tip)
         return {
-            "balance_wei": bal, "window_blocks": c["window_blocks"], "day_blocks": c["day_blocks"],
+            "balance_wei": bal, "window_from_block": lo_w + 1, "day_from_block": lo_d + 1,
             "window_txs": len(rows), "window_fees_wei": fees_w, "window_gas": gas_w, "window_seconds": span_w,
+            "day_fees_wei": fees_d, "day_seconds": span_d,
             "avg_daily_spend_wei": avg_spend, "avg_daily_gas": avg_gas, "day_spend_wei": Fraction(fees_d * 86_400, span_d),
             "base_fee_wei": fee_now, "base_fee_blocks": c["base_fee_blocks"], "avg_priority_fee_wei": tip,
             "tip_source": tip_source, "projected_daily_spend_wei": projected,

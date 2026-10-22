@@ -499,3 +499,32 @@ def test_qa2_m8_resolved_key_reorg_where_the_new_chain_still_recovers_is_silent(
     stub_cssv(chain, 3 * SEED, SEED)  # the recovery re-included
     tick(w, chain, blocks=6)
     assert alerts(w) == [("warn", "open"), ("info", "resolved")] and w.db.meta("reorg:m8") is None
+
+
+# ---------------------------------------------------------------- repair 3: QA attempt 2 (Codex) Appendix A, M8 part
+# (ported verbatim except the module prefix; green on f779b45 and after)
+
+
+@pytest.mark.parametrize('restart', [False, True])
+def test_qa2c_m8_daily_floor_reorg_resolved_key(tmp_path, restart):
+    c, w = setup(tmp_path, supply=3 * SEED)
+    advance(w)
+    stub_cssv(c, 3 * SEED, 2 * SEED)
+    tick(w, c, seconds=86401)
+    assert len(open_incidents(w)) == 1
+    fork = c.number
+    stub_cssv(c, 3 * SEED, SEED)
+    tick(w, c, seconds=86401)
+    assert not open_incidents(w)
+    c.reorg(fork)
+    c.mine()
+    w.check_reorg()
+    if restart:
+        clock = w.clock
+        start = w.cfg.start_block
+        activation = w.cfg.activation_block
+        w.db.conn.close()
+        c, w = wallet_worker(tmp_path, ['m8'], chain=c, clock=clock, start_block=start, activation_block=activation)
+    advance(w)
+    assert len(open_incidents(w)) == 1
+    assert state(w)['seed'] == str(2 * SEED)

@@ -102,3 +102,14 @@ LIVE smoke (extra evidence, not a V row; record mode, `alerts.mode: "record"`, t
 - Test-side corrections during the attempt (not findings): the first draft of the drain-wait test topped up before the baseline (confirmations 2: no baseline yet); the F2 call-count bound counted only the window read (the run also counts the refused full read: bound 2 × 256 + 2 × 64); the RPC-down test compared the watch with `sealed − 6` instead of the stored block.
 - Resulting head: code `1752b33`, falsifiers `6ab3441` (+ the docs commit of this attempt)
 - Next action: fresh QA (Claude Opus 5.5), round policy: correctness/safety findings block, others are notes.
+
+<a id="attempt-6"></a>
+## Attempt 6 — repair 3 (late Codex QA attempt 2 F1–F2), fresh implementer
+
+- Observed UTC: 2026-10-22 (start not timestamped) → LIVE 08:29:56Z → docs
+- Task / Dispatch: `task_d8441a07b246` / `ctx_30d9cb9479da`
+- Frozen start head: `f779b459bfb4faffd028c9c1b320aa5f1720372a` (status clean; `reconcile/.venv` working; baseline 686 passed; Codex reproducer 6 failed / 11 passed)
+- Action and concrete outcome: M12 windows selected by chain timestamps through a header search (`window_s`/`day_s` replace `window_blocks`/`day_blocks`); `eth_feeHistory` validated against the requested range (`PartialResult` check error); generalising found a shorter-chain window-edge undercount (rows pruned exactly at the window) → prune margin + `history_from` bound + backfill below it. Ported all 17 Codex Appendix A tests (6 RED → GREEN), 22 own regression cases (20 RED), M12 sweep 40 → 200 cases with timestamp profiles, fee faults and an independent window oracle (184/200 red on `f779b45`). 6 new falsifiers (27/27). LIVE: three public RPCs accept the stricter fee-history check; mainnet showed 159 missed slots in the last 7 days.
+- Test-side corrections during the attempt (not findings): `eth(0.14)` float rounding in an expected value (used the exact wei sum); the fee-fault test first lowered the base fee before the reorg (the reorg removed it); the missed-slot runway test also (correctly) opened a daily-spend warn; the scratch frozen-head sweep comparison first used a block-count window start.
+- Resulting head: code `e15e341`, falsifiers `ab84934`, tests `8e5cbc9`, `b1b1486` (+ the docs commit of this attempt)
+- Next action: fresh QA (Claude Opus 5.5), round-capped: correctness/safety findings block, others are notes.
