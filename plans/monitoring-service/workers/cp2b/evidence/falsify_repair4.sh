@@ -86,3 +86,9 @@ one R4-D14-resolve-once $C/m9_oracle_common.py '            out.append(e)
         return out' '        return out' \
   $T/test_m9.py::test_r4_dissent_disabled_with_an_open_incident_resolves_it_once \
   $T/test_m11.py::test_r4_revert_rate_disabled_with_an_open_incident_resolves_it_once
+# re-guards of repair-3 falsifiers whose anchors repair 4 rewrote (R3-RR-lead, R3-RR-attr), same tests
+one R3-RR-lead-r4 $M11 '        start = self.revert_lead(ctx, commits, first)' '        start = first' \
+  $T/test_m11.py::test_r3_revert_rate_open_while_it_slides_out_of_history_is_kept
+one R3-RR-attr-r4 $M11 '        if ref is not None and ref in by_ref:' '        if False:' \
+  $T/test_m11.py::test_r3_a_revert_counts_only_in_the_round_of_its_blocknum_when_windows_overlap \
+  $T/test_m11.py::test_r3_a_late_revert_for_the_older_root_counts_in_the_older_round_only
