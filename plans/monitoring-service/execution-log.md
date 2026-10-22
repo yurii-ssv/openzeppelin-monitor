@@ -629,3 +629,8 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 
 - QA 3 (`ctx_5995635f687c`, QA branch `mtabasco/ms-qa-cp2c-4`, commit `0b79c85`) on `945fd4d`: PASS WITH NOTES, no BLOCKING finding; F1-F5 confirmed fixed, new regressions red on `80e174b`, LIVE F2 recovers. QA diff touched only its report, the CP2c Status line and its log event. Notes N1-N5 in qa/cp2c-attempt-3.md (N1 M13 pruned-RPC fallback trades coverage for liveness, owner Marco OG2; N2 M8 floor follows the Safe's re-measured balance, spec amendment at closure; N3 `fallback_tip_wei` dated only in docs; rest in the report) go to plan §8 at closure.
 - Merged into `plan/monitoring-service` (conflicts in config.example.json and execution-log.md resolved keeping both sides; m6/m7/m8/m12/m13 keys all present). Integration suite after merge: 743 passed. Released `ctx_5995635f687c`.
+
+## Event 0059 — CP2b QA 3 (capped): FAIL, 2 BLOCKING; repair 3
+
+- QA 3 (Opus, `ctx_e51adc5a9a75`, QA commit `8bd225e`) on `6191a36`: FAIL. Repair 2 fixes confirmed (QA2-F1..F4); two pre-existing BLOCKING defects found by new scenarios: QA3-F1 resolved M11 zero-update outage re-reported (3 false pages + 1 warn) as it slides out of `history_rounds`; QA3-F2 a lone dissenting voter's round counts as agreement and heals the dissent page. Notes N1-N3 (N3: weekly proof comparison 273 s on mainnet, CP3).
+- Failed rounds for CP2b: 3. Lane fast-forwarded to `8bd225e`; repair 3 dispatched `task_91e058ddc685`/`ctx_7ddd5de19cbc` (opus/high effective). Next QA (4th) stays capped. Released `ctx_e51adc5a9a75`.
