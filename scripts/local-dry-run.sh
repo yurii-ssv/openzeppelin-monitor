@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 # Run the SSV monitors locally WITHOUT posting to the real Discord/Telegram channels.
 #
-# Copies ./config into ./.local-dry/config, points every monitor at a single
-# log-only script trigger, and runs the native binary from ./.local-dry.
-# Every match is appended to ./.local-dry/data/matches.jsonl (one JSON object per line).
+# Renders the tracked templates (deploy/config, via deploy/render.sh) into ./.local-dry/config,
+# swaps every notification trigger for a TEST_* channel or drops it, adds a log-only script
+# trigger, and runs the native binary from ./.local-dry. Production secrets are never read:
+# the only secret names this script lets the Monitor resolve are the TEST_* ones below.
+# Every match is appended to ./.local-dry/data/matches.jsonl (one JSON object per line); the
+# failed-tx inbox bridge writes ./.local-dry/data/inbox/failed-tx.jsonl.
 #
-# Optional test channels: set these (in the environment or in ./.env) to send the
-# real alert templates to your own Discord webhook / Telegram chat instead of the
-# production ones.
+# Optional test channels: set these (in the environment or in ./.env):
 #   TEST_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
-#   TEST_TELEGRAM_TOKEN=123456:ABC...   TEST_TELEGRAM_CHAT_ID=123456789
+#   TEST_TELEGRAM_TOKEN=123456789:ABC...   TEST_TELEGRAM_CHAT_ID=123456789
 #   TEST_RPC_URL=https://ethereum-rpc.publicnode.com   (replaces the network RPC endpoints)
+# Without TEST_RPC_URL the rendered network reads MAINNET_RPC_URL (and MAINNET_RPC_URL_2).
+#
+# Fail-closed (CP1A repair 4): every rewrite below goes through rewrite(), which aborts the script when jq
+# fails (`jq ... && mv ...` does not trip `set -e`, so a failed rewrite used to leave the production
+# trigger or RPC reference in place); every trigger of a file is rewritten or dropped, not just the first;
+# and after the rewrites the script refuses to run unless no trigger refers to an environment variable
+# outside TEST_* (the "production secrets are never read" promise, checked rather than assumed).
 #
 # Usage (any openzeppelin-monitor flag is passed through):
 #   scripts/local-dry-run.sh --prepare   # only generate ./.local-dry (for docker-compose.local.yaml)
@@ -37,20 +45,50 @@ if [ -f "$ROOT/.env" ]; then
 fi
 
 $PREPARE_ONLY || [ -x "$BIN" ] || { echo "Build first: cargo build --release --locked" >&2; exit 1; }
-command -v jq >/dev/null || { echo "jq is required (brew install jq)" >&2; exit 1; }
+{ command -v jq >/dev/null && [ "$(jq -n '1 + 1' 2>/dev/null)" = 2 ]; } || { echo "jq is required (brew install jq; not on PATH, or not working)" >&2; exit 1; }
 
-rm -rf "$DRY/config"
-mkdir -p "$DRY/config/triggers/scripts" "$DRY/data" "$DRY/logs"
-cp -R "$ROOT/config/networks" "$ROOT/config/monitors" "$ROOT/config/filters" "$DRY/config/"
+rewrite() { # rewrite <file> <jq args...>: in-place jq edit; a failing jq aborts the script
+  local f=$1; shift
+  if ! jq "$@" "$f" > "$f.tmp"; then rm -f "$f.tmp"; echo "local-dry-run: jq failed rewriting ${f#"$DRY"/}" >&2; exit 1; fi
+  mv "$f.tmp" "$f"
+}
+
+mkdir -p "$DRY/data" "$DRY/logs"
+# Render without --check: the production secret names are not set here and the triggers using
+# them are replaced below; `--check` against the final dry config is `scripts/local-dry-run.sh --check`.
+"$ROOT/deploy/render.sh" --out "$DRY/config" --no-check >/dev/null
 
 # Optional TEST_RPC_URL replaces the networks' RPC endpoints (e.g. when the production node is down).
 if [ -n "${TEST_RPC_URL:-}" ]; then
   for f in "$DRY"/config/networks/*.json; do
-    jq --arg url "$TEST_RPC_URL" \
-      '.rpc_urls = [{"type_": "rpc", "url": {"type": "plain", "value": $url}, "weight": 100}]' \
-      "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    rewrite "$f" --arg url "$TEST_RPC_URL" \
+      '.rpc_urls = [{"type_": "rpc", "url": {"type": "plain", "value": $url}, "weight": 100}]'
   done
 fi
+
+# Keep only trigger definitions that are safe locally; the rendered ones refer to production
+# secret names, so they are rewritten to TEST_* or removed. Decided per trigger (a file may hold
+# several), by this one filter:
+#   discord  -> TEST_DISCORD_WEBHOOK (if set), else dropped
+#   telegram -> TEST_TELEGRAM_TOKEN + TEST_TELEGRAM_CHAT_ID (if both set), else dropped
+#   script   -> kept only for the local inbox bridge (inbox_append.sh); other scripts dropped
+#   anything else (or a malformed entry) -> dropped
+# A file left with no trigger is deleted.
+for f in "$DRY"/config/triggers/*.json; do
+  rewrite "$f" --arg dh "${TEST_DISCORD_WEBHOOK:+yes}" --arg tt "${TEST_TELEGRAM_TOKEN:+yes}" --arg chat "${TEST_TELEGRAM_CHAT_ID:-}" '
+    if type != "object" then error("a trigger file must be an object, got \(type)") else . end
+    | with_entries(
+        select(.value | type == "object" and (.config | type) == "object")
+        | .value as $t
+        | if $t.trigger_type == "discord" then
+            if $dh == "yes" then .value.config.discord_url = {"type": "environment", "value": "TEST_DISCORD_WEBHOOK"} else empty end
+          elif $t.trigger_type == "telegram" then
+            if $tt == "yes" and $chat != "" then .value.config.token = {"type": "environment", "value": "TEST_TELEGRAM_TOKEN"} | .value.config.chat_id = $chat else empty end
+          elif $t.trigger_type == "script" then
+            if ($t.config.script_path | type == "string" and endswith("/inbox_append.sh")) then . else empty end
+          else empty end)'
+  [ "$(jq 'length' "$f")" != 0 ] || rm -f "$f"
+done
 
 cat > "$DRY/config/triggers/local_log.json" <<'EOF'
 {
@@ -73,27 +111,18 @@ echo "$input" | jq -c '.monitor_match' >> ./data/matches.jsonl
 EOF
 chmod +x "$DRY/config/triggers/scripts/log_match.sh"
 
-# Copy production triggers with their secrets swapped for the TEST_* env vars.
-# Only trigger types with test credentials set are copied; the rest are dropped.
-for f in "$ROOT"/config/triggers/*.json; do
-  type=$(jq -r 'to_entries[0].value.trigger_type' "$f")
-  if [ "$type" = discord ] && [ -n "${TEST_DISCORD_WEBHOOK:-}" ]; then
-    jq 'map_values(.config.discord_url = {"type": "environment", "value": "TEST_DISCORD_WEBHOOK"})' \
-      "$f" > "$DRY/config/triggers/$(basename "$f")"
-  elif [ "$type" = telegram ] && [ -n "${TEST_TELEGRAM_TOKEN:-}" ] && [ -n "${TEST_TELEGRAM_CHAT_ID:-}" ]; then
-    jq --arg chat "$TEST_TELEGRAM_CHAT_ID" \
-      'map_values(.config.token = {"type": "environment", "value": "TEST_TELEGRAM_TOKEN"} | .config.chat_id = $chat)' \
-      "$f" > "$DRY/config/triggers/$(basename "$f")"
-  fi
+# Keep each monitor's triggers that were kept above, and always log locally.
+available=$(jq -s -c 'map(keys[])' "$DRY"/config/triggers/*.json) \
+  || { echo "local-dry-run: jq failed listing the kept triggers" >&2; exit 1; }
+for f in "$DRY"/config/monitors/*.json; do
+  rewrite "$f" --argjson avail "$available" \
+    '.triggers = ([.triggers[] | select(. as $t | $avail | index($t))] + ["local_log"])'
 done
 
-# Keep each monitor's triggers that were copied above, and always log locally.
-available=$(jq -s -c 'map(keys[]) ' "$DRY"/config/triggers/*.json)
-for f in "$DRY"/config/monitors/*.json; do
-  jq --argjson avail "$available" \
-    '.triggers = ([.triggers[] | select(. as $t | $avail | index($t))] + ["local_log"])' \
-    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-done
+# Post-condition: no trigger may still read a production secret.
+foreign=$(jq -r '.. | objects | select(.type? == "environment") | .value | select(startswith("TEST_") | not)' "$DRY"/config/triggers/*.json) \
+  || { echo "local-dry-run: jq failed auditing the rewritten triggers" >&2; exit 1; }
+[ -z "$foreign" ] || { echo "local-dry-run: refusing to run: rewritten triggers still reference non-TEST variables: $(printf '%s\n' "$foreign" | sort -u | tr '\n' ' ')" >&2; exit 1; }
 
 $PREPARE_ONLY && { echo "Prepared $DRY/config"; exit 0; }
 

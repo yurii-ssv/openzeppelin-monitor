@@ -5,7 +5,7 @@
     "config": {
       "discord_url": {
         "type": "environment",
-        "value": "DISCORD_WEBHOOK_VALIDATOR_SUCCESS"
+        "value": "DISCORD_WEBHOOK_INFO"
       },
       "message": {
         "title": "Validator Action",

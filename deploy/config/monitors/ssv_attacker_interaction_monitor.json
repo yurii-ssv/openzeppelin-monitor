@@ -1,0 +1,50 @@
+{
+  "name": "SSV Attacker Interaction Monitor",
+  "paused": false,
+  "networks": [
+    "evm_ethereum_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "0xDD9BC35aE942eF0cFa76930954a156B3fF30a4E1"
+    },
+    {
+      "address": "0xafE830B6Ee262ba11cce5F32fDCd760FFE6a66e4"
+    },
+    {
+      "address": "0x9D65fF81a3c488d585bBfb0Bfe3c7707c7917f54"
+    },
+    {
+      "address": "0xe018D31F120A637828F46aFD6c64EC099d960546"
+    },
+    {
+      "address": "0xb35096b074fdb9bBac63E3AdaE0Bbde512B2E6b6"
+    },
+    {
+      "address": "0x16A503C901615E6e21AA78cFcaFf11822fc2b617"
+    },
+    {
+      "address": "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0"
+    },
+    {
+      "address": "0xaeE058cCA5EED5470b4b48c159045b7C25ddb80f"
+    },
+    {
+      "address": "0x0144aE2456FbCF38Ba11e4ECF25F03A80A69F134"
+    }
+  ],
+  "match_conditions": {
+    "transactions": [
+      {
+        "status": "Any",
+        "expression": "((from == 0xaeE058cCA5EED5470b4b48c159045b7C25ddb80f OR from == 0x0144aE2456FbCF38Ba11e4ECF25F03A80A69F134) AND (to == 0xDD9BC35aE942eF0cFa76930954a156B3fF30a4E1 OR to == 0xafE830B6Ee262ba11cce5F32fDCd760FFE6a66e4 OR to == 0x9D65fF81a3c488d585bBfb0Bfe3c7707c7917f54 OR to == 0xe018D31F120A637828F46aFD6c64EC099d960546 OR to == 0xb35096b074fdb9bBac63E3AdaE0Bbde512B2E6b6 OR to == 0x16A503C901615E6e21AA78cFcaFf11822fc2b617 OR to == 0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0)) OR ((to == 0xaeE058cCA5EED5470b4b48c159045b7C25ddb80f OR to == 0x0144aE2456FbCF38Ba11e4ECF25F03A80A69F134) AND (from == 0x16A503C901615E6e21AA78cFcaFf11822fc2b617 OR from == 0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0))"
+      }
+    ],
+    "functions": [],
+    "events": []
+  },
+  "trigger_conditions": [],
+  "triggers": [
+    "telegram_attacker_interaction"
+  ]
+}

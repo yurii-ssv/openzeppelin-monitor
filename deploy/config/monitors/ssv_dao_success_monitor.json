@@ -3300,10 +3300,6 @@
         "expression": null
       },
       {
-        "signature": "Upgraded(address)",
-        "expression": null
-      },
-      {
         "signature": "AdminChanged(address,address)",
         "expression": null
       },
@@ -3317,70 +3313,6 @@
       },
       {
         "signature": "SSVNetworkUpgradeBlock(string,uint256)",
-        "expression": null
-      },
-      {
-        "signature": "ModuleUpgraded(uint8,address)",
-        "expression": null
-      },
-      {
-        "signature": "NetworkFeeUpdated(uint256,uint256)",
-        "expression": null
-      },
-      {
-        "signature": "NetworkFeeUpdatedSSV(uint256,uint256)",
-        "expression": null
-      },
-      {
-        "signature": "OperatorMaximumFeeUpdated(uint256)",
-        "expression": null
-      },
-      {
-        "signature": "MinimumOperatorEthFeeUpdated(uint256)",
-        "expression": null
-      },
-      {
-        "signature": "OperatorFeeIncreaseLimitUpdated(uint64)",
-        "expression": null
-      },
-      {
-        "signature": "DeclareOperatorFeePeriodUpdated(uint64)",
-        "expression": null
-      },
-      {
-        "signature": "ExecuteOperatorFeePeriodUpdated(uint64)",
-        "expression": null
-      },
-      {
-        "signature": "LiquidationThresholdPeriodUpdated(uint64)",
-        "expression": null
-      },
-      {
-        "signature": "LiquidationThresholdPeriodSSVUpdated(uint64)",
-        "expression": null
-      },
-      {
-        "signature": "MinimumLiquidationCollateralUpdated(uint256)",
-        "expression": null
-      },
-      {
-        "signature": "MinimumLiquidationCollateralSSVUpdated(uint256)",
-        "expression": null
-      },
-      {
-        "signature": "MinBlocksBetweenUpdatesUpdated(uint32)",
-        "expression": null
-      },
-      {
-        "signature": "QuorumUpdated(uint16)",
-        "expression": null
-      },
-      {
-        "signature": "CooldownDurationUpdated(uint64)",
-        "expression": null
-      },
-      {
-        "signature": "OracleReplaced(uint32,address,address)",
         "expression": null
       },
       {
@@ -3406,64 +3338,10 @@
         "signature": "renounceOwnership()"
       },
       {
-        "signature": "replaceOracle(uint32,address)"
-      },
-      {
         "signature": "rescueERC20(address,address,uint256)"
       },
       {
         "signature": "transferOwnership(address)"
-      },
-      {
-        "signature": "updateDeclareOperatorFeePeriod(uint64)"
-      },
-      {
-        "signature": "updateExecuteOperatorFeePeriod(uint64)"
-      },
-      {
-        "signature": "updateLiquidationThresholdPeriod(uint64)"
-      },
-      {
-        "signature": "updateLiquidationThresholdPeriodSSV(uint64)"
-      },
-      {
-        "signature": "updateMaximumOperatorFee(uint256)"
-      },
-      {
-        "signature": "updateMinBlocksBetweenUpdates(uint32)"
-      },
-      {
-        "signature": "updateMinimumLiquidationCollateral(uint256)"
-      },
-      {
-        "signature": "updateMinimumLiquidationCollateralSSV(uint256)"
-      },
-      {
-        "signature": "updateMinimumOperatorEthFee(uint256)"
-      },
-      {
-        "signature": "updateModule(uint8,address)"
-      },
-      {
-        "signature": "updateNetworkFee(uint256)"
-      },
-      {
-        "signature": "updateNetworkFeeSSV(uint256)"
-      },
-      {
-        "signature": "updateOperatorFeeIncreaseLimit(uint64)"
-      },
-      {
-        "signature": "updateQuorumBps(uint16)"
-      },
-      {
-        "signature": "updateUnstakeCooldownDuration(uint64)"
-      },
-      {
-        "signature": "upgradeTo(address)"
-      },
-      {
-        "signature": "upgradeToAndCall(address,bytes)"
       },
       {
         "signature": "withdrawNetworkSSVEarnings(uint256)"

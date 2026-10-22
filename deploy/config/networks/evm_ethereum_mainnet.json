@@ -10,11 +10,28 @@
         "value": "MAINNET_RPC_URL"
       },
       "weight": 100
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "MAINNET_RPC_URL_2"
+      },
+      "weight": 50
     }
   ],
   "chain_id": 1,
   "block_time_ms": 12000,
   "confirmation_blocks": 2,
   "cron_schedule": "*/2 * * * * *",
-  "store_blocks": true
+  "max_past_blocks": 3600,
+  "store_blocks": true,
+  "recovery_config": {
+    "enabled": true,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 100,
+    "max_block_age": 7200,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  }
 }

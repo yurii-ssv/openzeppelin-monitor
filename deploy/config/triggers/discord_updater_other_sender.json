@@ -1,0 +1,16 @@
+{
+  "discord_updater_other_sender": {
+    "name": "Discord Updater Other Sender Alert",
+    "trigger_type": "discord",
+    "config": {
+      "discord_url": {
+        "type": "environment",
+        "value": "DISCORD_WEBHOOK_INFO"
+      },
+      "message": {
+        "title": "EB Updater: other sender",
+        "body": "M11 info: updateClusterBalance from a sender other than the SSV updater (0x16A5...).\nCalled by: ${transaction.from}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}

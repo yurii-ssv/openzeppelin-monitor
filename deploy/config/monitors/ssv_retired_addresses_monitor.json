@@ -1,0 +1,29 @@
+{
+  "name": "SSV Retired Addresses Monitor",
+  "paused": false,
+  "networks": [
+    "evm_ethereum_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "0x3A98EE5f80268Ed91F8A5880d93468b76a9F3bB4"
+    },
+    {
+      "address": "0x4BC656B34De23896fa6069C9862F355b740401aF"
+    }
+  ],
+  "match_conditions": {
+    "transactions": [
+      {
+        "status": "Any",
+        "expression": "(to == 0x3A98EE5f80268Ed91F8A5880d93468b76a9F3bB4 OR to == 0x4BC656B34De23896fa6069C9862F355b740401aF) AND value > 0"
+      }
+    ],
+    "functions": [],
+    "events": []
+  },
+  "trigger_conditions": [],
+  "triggers": [
+    "telegram_retired_addresses"
+  ]
+}
