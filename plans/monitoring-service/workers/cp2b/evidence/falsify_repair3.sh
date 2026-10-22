@@ -94,3 +94,8 @@ one R3-horizon-cap $C/m9_oracle_common.py '            h = min(h, max(at, int(nx
   $T/test_m9.py::test_r3_seed_295_late_confirmed_votes_do_not_retract_an_attribution
 one SWEEP3-m9-horizon $C/m9_oracle_common.py '            h = min(h, max(at, int(nxt["timestamp"], 16) - 1))' '            h = h' \
   $T/test_m9_m10_m11_sweep.py -k sweep_m9_m10
+# re-guard of repair 1's F8-clock (its anchor line was rewritten by the horizon cap)
+one R3-F8-clock $C/m9_oracle_common.py 'h = max(at, self.ctx.clock() - lag)' 'h = at' \
+  $T/test_m9.py::test_qa1_f8_30_minute_timeout_fires_without_a_new_block \
+  $T/test_m11.py::test_qa1_f8_60_minute_window_closes_without_a_new_block \
+  $T/test_m9.py::test_no_root_committed_for_9h_pages_from_the_clock_without_any_event

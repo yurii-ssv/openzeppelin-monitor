@@ -905,6 +905,7 @@ def test_a_round_superseded_within_its_30_minutes_still_fails_at_its_deadline(tm
     tick(w, oc, 200)  # past c's deadline: c pages as its own incident, already resolved by d
     texts = [r["text"] for r in sent(w, "m9") if r["ikey"] == "failed-round"][4:]
     assert len(texts) == 2 and f"Oracle round {c} not committed" in texts[0] and f"blockNum {d}" in texts[0]
+    assert "in a row" not in texts[0].splitlines()[0]  # its own incident, not b's run grown by c (repair 3)
     assert "can no longer commit" in texts[1] and open_keys(w, "m9") == {}
     tick(w, oc, 5)
     assert len([r for r in sent(w, "m9") if r["ikey"] == "failed-round"]) == 6  # no duplicate

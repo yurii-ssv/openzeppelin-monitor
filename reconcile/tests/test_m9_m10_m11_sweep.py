@@ -663,7 +663,8 @@ class UpdaterSweep:
                 assert str(r["ref"]) in text, self.trace(f"zero round {r['ref']} never sent")
 
 
-# seeds 0-59, plus the seeds of a 1200-seed exploration (repair 3) that found a defect or a model gap
-@pytest.mark.parametrize("seed", [*range(60), 106, 146, 153, 249, 281, 285, 287, 684])
+# seeds 0-59, plus the seeds of a 1200-seed exploration (repair 3) that found a defect or a model gap, and the
+# seeds that keep the repair-2 falsifier SWEEP2-m11-definite red (109, 152, 319)
+@pytest.mark.parametrize("seed", [*range(60), 106, 109, 146, 152, 153, 249, 281, 285, 287, 319, 684])
 def test_sweep_m11(tmp_path, seed):
     UpdaterSweep(tmp_path, seed).run(16)
