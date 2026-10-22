@@ -1106,3 +1106,22 @@ def test_a_reported_zero_run_that_grew_and_healed_while_a_new_one_began_is_sent(
     msgs = [(r["severity"], r["text"]) for r in sent(w, "m11")][1:]
     assert len(msgs) == 2 and msgs[0][0] == "page" and f"{a}, {b}" in msgs[0][1], msgs
     assert msgs[1][0] == "warn" and str(d) in msgs[1][1] and open_keys(w, "m11") == {"liveness": "warn"}
+
+
+def test_qa2_f4_a_failing_run_after_downtime_does_not_advance_the_evaluated_mark(tmp_path):
+    """(b) error input for `check:m11:evaluated_upto`: the first run after the downtime fails (a sender the RPC
+    cannot return); the mark stays (rolled back with the run), so the next run still evaluates the old zero round."""
+    u = UpdaterWorld(tmp_path)
+    tick(u.w)
+    mark = u.w.db.meta("check:m11:evaluated_upto")
+    downtime_rounds(u, 7)
+    tx = max(u.c.senders)
+    saved = u.c.senders.pop(tx)  # eth_getTransactionByHash -> null for the newest update
+    w = u.restart()
+    tick(w, u.oc, 2)
+    assert w.db.meta("run:m11")["errors"] >= 1 and w.db.meta("check:m11:evaluated_upto") == mark
+    assert sent(w, "m11") == []
+    u.c.senders[tx] = saved
+    tick(w, u.oc, 1, seconds=300)
+    kinds = [(r["ikey"], r["kind"]) for r in sent(w, "m11")]
+    assert kinds == [("liveness", "open"), ("liveness", "resolved")], kinds

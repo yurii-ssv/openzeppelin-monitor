@@ -975,6 +975,77 @@ def test_qa2_f1_superseded_round_failed_before_the_first_sweep_is_history(tmp_pa
     assert pages_warns(w) == []
 
 
+def stray_then_commit(oc, same_block=False):
+    """Slot 3 proposes blockNum X-1; slots 1, 2, 4 propose X and commit it (optionally all in one block)."""
+    oc.c.mine(2)
+    x = oc.c.number - 1
+    oc.vote(x - 1, 3, mine=not same_block)
+    for s in (1, 2, 4):
+        oc.vote(x, s, mine=not same_block)
+    if same_block:
+        oc.c.mine()
+    assert oc.committed(x)
+    return x
+
+
+def test_qa2_f1_same_block_stray_vote_and_superseding_commit_pages_at_the_deadline(tmp_path):
+    """(f) same-block ordering: the stray vote and the commit of X in one block (the stray vote first: after the
+    commit it would revert StaleBlockNumber). Still a failed round at X-1's deadline."""
+    oc, w = oracle_worker(tmp_path, start_block=1000, activation_block=1000)
+    tick(w)
+    x = stray_then_commit(oc, same_block=True)
+    tick(w, oc, TIMEOUT_BLOCKS - 5)
+    assert pages_warns(w) == []
+    tick(w, oc, 10)
+    assert pages_warns(w) == [("failed-round", "page", "open")] and str(x - 1) in sent(w, "m9")[0]["text"]
+
+
+def test_qa2_f1_superseded_round_fails_from_the_clock_when_blocks_stop(tmp_path):
+    """(g) anchoring: no block after the commit; the clock passes X-1's deadline: the failure is established at the
+    checkpoint (no later block exists) and reported."""
+    oc, w = oracle_worker(tmp_path, start_block=1000, activation_block=1000)
+    tick(w)
+    stray_then_commit(oc)
+    tick(w, oc, 1)
+    tick(w, seconds=29 * 60)
+    assert pages_warns(w) == []
+    tick(w, seconds=3 * 60)
+    assert pages_warns(w) == [("failed-round", "page", "open")]
+
+
+def test_qa2_f1_reorg_removing_the_stray_vote_of_a_resolved_failed_round_is_silent(tmp_path):
+    """(c) reorg removing the evidence of an ALREADY RESOLVED key: the stray round was paged and resolved; a reorg
+    beyond the confirmation window replaces the block of the stray vote (the new chain has X's votes only): the
+    episode vanishes, nothing is re-sent, nothing is opened."""
+    oc, w = oracle_worker(tmp_path, confirmations=2, start_block=1000, activation_block=1000)
+    tick(w, oc, 4)
+    fork = oc.c.number
+    x = stray_then_commit(oc)
+    tick(w, oc, TIMEOUT_BLOCKS + 10)
+    n = len(sent(w, "m9"))
+    assert n == 2 and open_keys(w, "m9") == {}
+    oc.reorg(fork, latest=0, refs={x - 1, x})
+    oc.c.mine(2)
+    oc.round(ref=x, voters=(1, 2, 4))
+    tick(w, oc, TIMEOUT_BLOCKS + 10)
+    assert len(sent(w, "m9")) == n and open_keys(w, "m9") == {}
+
+
+def test_qa2_f1_reorg_removing_the_superseding_commit_reopens_the_failed_round(tmp_path):
+    """(c) a reorg removes X's commit (the stray round's closure) after the stray round was resolved: on the new chain
+    neither X-1 nor X commits: a failed-round page opens again (surviving evidence is never dropped)."""
+    oc, w = oracle_worker(tmp_path, confirmations=2, start_block=1000, activation_block=1000)
+    tick(w, oc, 4)
+    x = stray_then_commit(oc)
+    tick(w, oc, TIMEOUT_BLOCKS + 10)
+    assert open_keys(w, "m9") == {}
+    commit_block = next(e.block for e in w.db.events_after((-1, 0), w.checkpoint()["block"], frozenset({"RootCommitted"})))
+    oc.reorg(commit_block, latest=0, refs={x})
+    oc.c.mine(5)
+    tick(w, oc, 5)
+    assert open_keys(w, "m9") == {"failed-round": "page"}
+
+
 def test_a_failed_round_added_and_healed_between_two_sweeps_is_still_sent(tmp_path):
     """Found by the adversarial sweep (class 5): the open failed-round incident gains a second failed round and the
     whole run heals before the next sweep: the grown incident is sent (update) before its resolution."""
