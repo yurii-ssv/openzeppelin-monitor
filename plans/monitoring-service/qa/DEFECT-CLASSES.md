@@ -30,3 +30,7 @@ Attack classes 1-6 and 10 on every persisted key before reading the implementer'
 ## Round policy (owner decision, 2026-10-21)
 
 After **two failed QA rounds** on a lane, a later QA classifies each new or open finding as BLOCKING or NOTE. BLOCKING = correctness or safety: a missed, false, duplicated or dropped alert or page; a false "clean"; wrong routing or severity of a page; data loss; fail-open gate; a secret leak; an unsafe action. NOTE = everything else (style, documentation, performance within budget, an edge limited to an accepted or deferred item, maintainability, extra coverage). NOTE findings are recorded in the report and in plan §8 "Recorded notes" with owner and do not block VERIFIED (PASS WITH NOTES). The classification is the QA's, with the reason; the coordinator may overrule only toward BLOCKING.
+
+## Owner decision D15 (2026-10-22): stricter BLOCKING
+
+Supersedes the BLOCKING list above for every lane and round: BLOCKING = missed or lost page, false clean, false page, unsafe action, data loss, fail-open gate, secret leak. A false or duplicated warn, a changed message text, a transient self-resolving alert, a downgraded warn or a performance observation is a NOTE (one line, reason, recorded in plan §8). No mutation testing or other time-consuming checks (QA-CONTRACT scope note).
