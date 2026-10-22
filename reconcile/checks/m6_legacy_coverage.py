@@ -23,13 +23,22 @@ hard-coded.
 
 "Liquidatable since" (persisted in `m6_clusters`): the first block the check observed the cluster
 liquidatable. When there is no observation of the cluster being clear before it (worker start, or it crossed
-between two sweeps), the start is back-dated from chain values: the live balance is
-`ceil((threshold - balance) / burn)` blocks of burn below the liquidation threshold
-`max(minimum_liquidation_collateral_ssv, liquidation_threshold_period_ssv * burn)`, never earlier than the
-block after the last sweep that saw the cluster clear, never later than the observation.
+between two sweeps), the start is back-dated from chain values: the live balance is D = threshold - balance
+below the liquidation threshold `max(minimum_liquidation_collateral_ssv, liquidation_threshold_period_ssv *
+burn)`, one block back adds one block of burn, and the contract's rule is strict (`balance < threshold`,
+ClusterLib.isLiquidatable), so the first liquidatable block is `block - (ceil(D / burn) - 1)`; never earlier
+than the block after the last sweep that saw the cluster clear, never later than the observation.
 
 A cluster the check cannot evaluate (no storage-validated tuple, a reverting or empty view) is UNKNOWN, never
 clean: a health message names it and its open incident is re-reported unchanged.
+
+Completeness (QA cp2e-1 F1): absence from the SSV API is not evidence, and at a first sweep (or on a new
+database) nothing persisted would reveal a short listing. Every full sweep therefore checks the inventory
+against two counts (`inventory_gap`): the chain's SSV-side `daoValidatorCount` must equal the validators of the
+active, storage-validated legacy clusters (it covers every cluster M6 can warn or page on: both need
+validators), and the listing (API rows and scanned logs) must hold the API's own `pagination.total`. A gap is
+the same UNKNOWN health message and the summary (weekly digest) says the counts are a lower bound; the listed
+clusters are still evaluated and open incidents leave only on positive proof, as above.
 
 Reorg rule (checks/README.md §6.2): a run with `ctx.reorg_ancestor` = A first rewinds `m6_clusters` (a
 `last_clear_block` above A is forgotten; a liquidatable start first observed above A is dropped, and
@@ -44,13 +53,18 @@ import json
 
 from checks.base import Check, Ctx, Every, Finding, OnEvents
 from checks.registry import register
-from eb_storage import eth_cluster_slot, keccak, ssv_cluster_slot, u256
+from eb_storage import eth_cluster_slot, keccak, namespace, ssv_cluster_slot, u256
+from inventory import API_DEFAULT
 from rpc import RpcError
 
 CLUSTER_T = "(uint32,uint64,uint64,bool,uint256)"
 GET_BALANCE_SSV = keccak(f"getBalanceSSV(address,uint64[],{CLUSTER_T})".encode())[:4]
 IS_LIQUIDATABLE_SSV = keccak(f"isLiquidatableSSV(address,uint64[],{CLUSTER_T})".encode())[:4]
 GET_BURN_RATE_SSV = keccak(f"getBurnRateSSV(address,uint64[],{CLUSTER_T})".encode())[:4]
+
+# StorageProtocol word 0 (SSVStorageProtocol.sol at the pin): uint32 networkFeeIndexBlockNumber | uint32
+# daoValidatorCount (SSV side: ProtocolLib.updateDAOSSV on every legacy validator removal, liquidation, migration)
+PROTOCOL_BASE = namespace("ssv.network.storage.protocol")
 
 EVENT_KINDS = {"ValidatorAdded", "ValidatorRemoved", "ClusterLiquidated", "ClusterReactivated", "ClusterMigratedToETH"}
 
@@ -141,6 +155,50 @@ def legacy_balances(ctx: Ctx, views: str, clusters: list, with_risk: bool) -> tu
     return values, failed
 
 
+def api_total(ctx: Ctx) -> tuple[int | None, str | None]:
+    """The SSV API's own `pagination.total` (one page of one row), through the same API base and transport as the
+    worker's inventory (its InventoryCache); (None, why) when it cannot be read."""
+    cache = getattr(ctx._inventory, "__self__", None)
+    get = getattr(cache, "http_get", None)
+    if get is None:
+        return None, "no inventory API to read pagination.total from"
+    base = getattr(cache, "api_base", None) or API_DEFAULT
+    try:
+        body = get(f"{base.rstrip('/')}/clusters?perPage=1&page=1")
+        total = body["pagination"]["total"] if "total" in body.get("pagination", {}) else None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return None, f"SSV API pagination.total unavailable ({type(exc).__name__}: {exc})"
+    if total is None:
+        return None, "the SSV API answer has no pagination.total"
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        return None, f"SSV API pagination.total is not a count: {total!r}"
+    return total, None
+
+
+def inventory_gap(ctx: Ctx, inv) -> str | None:
+    """None when the inventory's legacy set can be taken as complete at its block; otherwise why not (UNKNOWN).
+
+    Chain: the validators of the active, storage-validated legacy clusters must add up to the SSV-side
+    `daoValidatorCount` (a cluster missing from the API and the logs, or an unvalidated tuple, breaks it).
+    API: the listing (API rows and scanned logs) must hold at least the API's own `pagination.total` (an empty or
+    short page; it also covers the legacy clusters without validators, whose balance is still an M7 claim)."""
+    gaps = []
+    listed_vc = sum(c.cluster.validator_count for c in inv.clusters.values()
+                    if c.version == "SSV" and c.valid and c.cluster.active)
+    (word0,) = ctx.rpc.storage(ctx.settings["proxy"], [PROTOCOL_BASE])
+    dao = (word0 >> 32) & 0xFFFF_FFFF
+    if listed_vc != dao:
+        gaps.append(f"its active legacy clusters hold {listed_vc} validators, daoValidatorCount is {dao}")
+    total, why = api_total(ctx)
+    from_api = sum(1 for c in inv.clusters.values() if "api" in c.sources)
+    if total is None:
+        gaps.append(f"{why}: the listing of {from_api} API rows cannot be confirmed complete")
+    elif len(inv.clusters) < total:
+        gaps.append(f"the SSV API listed {from_api} clusters ({len(inv.clusters)} with the scanned logs) of its "
+                    f"pagination.total {total}")
+    return "; ".join(gaps) or None
+
+
 def require_views(settings: dict, check_id: str) -> str:
     views = settings.get("views")
     if not views:
@@ -205,13 +263,14 @@ class M6LegacyCoverage(Check):
         values, failed = legacy_balances(ctx, self.views, active, with_risk=True)
         unknown = {cid: "no candidate tuple validates against storage" for cid, c in legacy.items() if not c.valid}
         unknown.update(failed)
+        gap = inventory_gap(ctx, inv) if scope is None else None  # event runs look at their clusters only
 
         rows = {r["cluster_id"]: dict(r) for r in db.execute("SELECT * FROM m6_clusters") if in_scope(r["cluster_id"])}
         opened = {k: r for k, r in open_incidents(ctx).items() if in_scope(k)}
         findings: dict[str, Finding] = {}
         summary = {"block": block, "active": 0, "validators": 0, "burn_per_block": 0, "liquidatable": 0,
                    "warn": 0, "zero": 0, "inert": 0, "inert_zero": 0, "inert_zero_ids": [], "unknown": len(unknown),
-                   "inactive": 0}
+                   "inactive": 0, "inventory_gap": gap}
 
         for c in active:
             v = values.get(c.cluster_id)
@@ -285,12 +344,15 @@ class M6LegacyCoverage(Check):
         if scope is None:
             ctx.set_state("summary", summary)
 
-        if unknown:
+        if unknown or gap:
             names = ", ".join(sorted(unknown)[:10])
-            ctx.health("m6-unknown", f"M6 cannot evaluate {len(unknown)} legacy SSV cluster(s) at block {block} "
-                       f"(UNKNOWN, not clean): {names}{' …' if len(unknown) > 10 else ''}. "
-                       f"First reason: {unknown[sorted(unknown)[0]]}",
-                       dedup=f"m6-unknown:{','.join(sorted(unknown))}", realert=True)
+            text = (f"M6 cannot evaluate {len(unknown)} legacy SSV cluster(s) at block {block} (UNKNOWN, not clean): "
+                    f"{names}{' …' if len(unknown) > 10 else ''}. First reason: {unknown[sorted(unknown)[0]]}"
+                    if unknown else f"M6 cannot take the legacy SSV inventory as complete at block {block} "
+                                    f"(UNKNOWN, not clean).")
+            if gap:
+                text += f" Legacy inventory incomplete: {gap}; unlisted clusters are not evaluated."
+            ctx.health("m6-unknown", text, dedup=f"m6-unknown:{','.join(sorted(unknown))}:{gap}", realert=True)
         return list(findings.values())
 
     def _back_date(self, block: int, v: dict, period: int, min_coll: int, last_clear: int | None) -> tuple[int, bool]:
@@ -299,8 +361,9 @@ class M6LegacyCoverage(Check):
         if burn <= 0:
             return block, False  # nothing to extrapolate from: observed now
         threshold = max(min_coll, period * burn)
-        below = max(0, threshold - v["balance"])
-        since = block - (below + burn - 1) // burn
+        below = threshold - v["balance"]
+        # strict `balance < threshold`: block - j was liquidatable while below - j * burn > 0
+        since = block - max(0, -(-below // burn) - 1)
         if last_clear is not None:
             since = max(since, last_clear + 1)
         return min(since, block), since < block
@@ -370,7 +433,9 @@ class M6LegacyCoverage(Check):
         return [f"Legacy SSV clusters at block {s['block']}: {s['active']} active ({s['inert']} without validators), "
                 f"{s['validators']} validators, burn {_ssv(burn * self.config['blocks_per_year'])} SSV/yr; "
                 f"liquidatable {s['liquidatable']}, warn {s['warn']}, at zero {s['zero']}, unknown {s['unknown']}, "
-                f"liquidated {s['inactive']}. The surface only shrinks.",
+                f"liquidated {s['inactive']}. The surface only shrinks."
+                + (f" UNKNOWN: the legacy inventory is incomplete ({s['inventory_gap']}); these counts are a lower "
+                   f"bound." if s.get("inventory_gap") else ""),
                 f"Not evaluated for the zero-balance page (0 validators, so no burn): {s.get('inert_zero', 0)} active "
                 f"legacy cluster(s) at balance 0" + (f", e.g. {', '.join(s['inert_zero_ids'])}" if s.get(
                     "inert_zero_ids") else "") + "."]

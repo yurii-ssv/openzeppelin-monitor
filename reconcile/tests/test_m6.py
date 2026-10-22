@@ -596,7 +596,8 @@ def test_m6_listing_short_of_its_total_or_without_one_is_unknown(tmp_path, fault
     w = lw.start()
     lw.api_fault = fault
     advance(w)
-    assert pages(w) == [] and incidents(w) == []
+    # the clusters listed are still evaluated: without a total the listing is whole but unconfirmed
+    assert len(pages(w)) == (0 if fault == "short" else 1)
     health = _health(w)
     assert len(health) == 1 and "inventory incomplete" in health[0]
     assert ("pagination.total 2" if fault == "short" else "no pagination.total") in health[0]
