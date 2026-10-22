@@ -766,3 +766,8 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 ## Event 0070 — CP2e repair 2 delivered, QA 3 (capped, D15)
 
 - CP2e repair 2 done, head `31b7a77`. Diff outside workers/cp2e within the lane paths (m6, m7 checks, tests, fixtures, plan status line); test_m6+m7: 215 passed. QA 3 on Opus, capped, D15 and the no-mutation scope note in the packet, dispatched `task_5acf6026d077`/`ctx_8184634bdb45` (`ms-qa-cp2e-3`, opus/high effective). Released `ctx_3a5d60dc1b12`.
+
+## Event 0071 — CP2e QA 3 (capped, D15) FAIL, 1 BLOCKING; repair 3
+
+- QA 3 (Opus, `ctx_8184634bdb45`, commit `00235da`) on `31b7a77`: FAIL. Attempt-2 finding fixed. New BLOCKING (pre-existing since repair 1): leg (2) of `inventory_gap` compares API rows UNION log-derived clusters with the API's own `pagination.total`, so a log-only cluster masks a short API page; M7 takes a clean first-run baseline without dropped inert legacy balances (mainnet today: 42 active legacy clusters with 0 validators, 2,235.6 SSV, against a surplus of exactly 1 SSV). 4 NOTEs.
+- Pattern: three rounds, three layers of the same class (API completeness at the first M7 run). Failed rounds for CP2e: 3. Repair 3 dispatched `task_517a6c9b022b`/`ctx_116bf746a1a4` (opus/high effective), ONE narrow fix (compare only API rows received with `pagination.total`); known residual (self-consistent partial page) to be recorded. If QA 4 still fails on this class, fall back like D14: M7 ships with the first-run baseline held UNKNOWN until a chain-verified inventory exists (coordinator proposal, needs Marco). Released `ctx_8184634bdb45`.
