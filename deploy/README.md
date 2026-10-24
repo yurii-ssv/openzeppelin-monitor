@@ -120,8 +120,9 @@ endpoints is re-read at the next step. Logs name endpoints by host or by the var
 Soak 1 (event-0084) showed that a Monitor processing no block is silent: no rule fires and the failed-tx inbox stays
 empty, which reads like "nothing happened". The Monitor polls every 60 s (`cron_schedule` `0 * * * * *`) and, after
 each successful cycle, rewrites its last processed block in `<monitor-data>/evm_ethereum_mainnet_last_block.txt`.
-The worker mounts the Monitor's data volume read-only at `/monitor` and reads that file at every step
-(`monitor` section of its config; defaults for the 60 s cron):
+The worker mounts the Monitor's data volume read-only at `/monitor` and reads that file at every step and between
+two check runs of a step (a step can last minutes: the silent evaluation after a backfill took > 10 min on public
+RPCs), delivering what it queued (`monitor` section of its config; defaults for the 60 s cron):
 
 | Health message (page route) | When |
 |---|---|

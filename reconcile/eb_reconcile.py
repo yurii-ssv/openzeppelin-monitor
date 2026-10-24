@@ -150,6 +150,7 @@ class Worker:
         self.notifier = notifier
         self.rpc_failures = 0
         self.rpc_outage_since = None  # clock of the first failed step of the current outage
+        self.head_read = None  # (head, clock) of the last eth_blockNumber answer, for the Monitor watch
         self.bootstrapped = False
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
@@ -281,7 +282,9 @@ class Worker:
         if self.cfg.confirmations < 0:
             blk = self.rpc.call("eth_getBlockByNumber", ["finalized", False])
             return int(blk["number"], 16)
-        return self.rpc.block_number() - self.cfg.confirmations
+        head = self.rpc.block_number()
+        self.head_read = (head, self.clock())
+        return head - self.cfg.confirmations
 
     def check_reorg(self) -> None:
         """Rewind every piece of state derived from blocks above the last common ancestor (checks/README.md §6.1).
@@ -569,6 +572,8 @@ class Worker:
             except Exception as exc:  # noqa: BLE001 - one broken check must not stop the others
                 log.exception("check %s failed at block %d", check.id, block)
                 self._run_failed(check, exc, health=True)
+            finally:
+                self.between_checks()
         if backfilling and set(self.checks) <= set(self.phase().get("evaluated", ())):
             self._go_live(block)
         if first_rpc_error is not None:
@@ -692,6 +697,7 @@ class Worker:
             target = self.target_block() if self.cfg.confirmations < 0 else head - self.cfg.confirmations
         except RpcError:
             return None
+        self.head_read = (head, self.clock())
         cp = self.checkpoint()["block"]
         lag = target - cp
         self.db.set_meta("lag_blocks", lag)
@@ -702,12 +708,27 @@ class Worker:
                                    dedup="lag", realert=True)
         return head
 
-    def watch_monitor(self, head: int | None) -> None:
+    def watch_monitor(self, head: int | None, estimated: bool = False) -> None:
         """One observation of the Monitor's last processed block (monitor_watch.py); runs every step, also when the
-        step's RPC reads failed (then the head is unknown, which is a stall once it lasts)."""
+        step's RPC reads failed (then the head is unknown, which is a stall once it lasts), and between two check
+        runs of a step (`between_checks`)."""
         if self.monitor is not None:
             with self.db.tx():
-                self.monitor.observe(head)
+                self.monitor.observe(head, estimated)
+
+    def between_checks(self) -> None:
+        """A step can run for minutes (the silent evaluation after a backfill, a weekly comparison, public-RPC rate
+        limits): observe the Monitor and deliver what is queued between two check runs, so a Monitor stall (or a
+        page) is not held until the step ends. The head is extrapolated from the last one read (one block per
+        `block_time_s`; a missed slot makes the estimate high, i.e. the lag larger: never a false recovery); a head
+        older than 15 min is unknown."""
+        if self.monitor is None:
+            return
+        head = None
+        if self.head_read is not None and (age := self.clock() - self.head_read[1]) <= 900:
+            head = self.head_read[0] + int(age // self.monitor.cfg["block_time_s"])
+        self.watch_monitor(head, estimated=True)
+        self.deliver()
 
     def _inbox_problem(self) -> dict | None:
         if self.inbox is None:

@@ -130,7 +130,8 @@ tuples validated against storage) and `.venv/bin/python params.py --probe --rpc 
 - `monitor` (D20): `last_block_path` (`/monitor/evm_ethereum_mainnet_last_block.txt`, the Monitor's data volume
   mounted read-only; without it the watch is off and `status.monitor.enabled` is false), `max_lag_blocks` 30,
   `stall_after_s` 300, `max_past_blocks` 50 (never more than the Monitor network template's: a larger value would
-  hide skipped blocks), `cycle_s` 60 (the Monitor's cron). Unknown keys fail at start.
+  hide skipped blocks), `cycle_s` 60 (the Monitor's cron), `block_time_s` 12 (extrapolates the head between two check runs of a long
+  step, where the file is read again and the outbox delivered). Unknown keys fail at start.
 
 ## Tests
 

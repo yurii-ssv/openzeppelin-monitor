@@ -255,6 +255,41 @@ def test_jump_after_an_unobserved_gap_is_reported_as_an_upper_bound(tmp_path):
     assert len(sk) == 1 and "upper bound" in sk[0]["text"]
 
 
+def test_a_stall_is_delivered_between_check_runs_of_a_long_step(tmp_path):
+    """A step can run for many minutes (the silent evaluation after the backfill took > 10 min on ms-cp4r): the watch
+    observes between two check runs with the head extrapolated from the last read, and delivers what it queued."""
+    from test_framework import Stub
+
+    from checks.base import Every
+
+    chain = FakeChain()
+    path = tmp_path / "last.txt"
+    seen = []
+
+    slow_now = []
+
+    def slow(ctx, block):
+        if slow_now:
+            for _ in range(8):  # 8 minutes inside one check run; the Monitor writes nothing meanwhile
+                ctx.clock.advance(60)
+        return []
+
+    def probe(ctx, block):
+        seen.append([k for _, k, _, _ in w.notifier.sent if k.startswith("health:monitor-stall:")])
+        return []
+
+    checks = [Stub(slow, check_id="slow", schedule=(Every(1),)), Stub(probe, check_id="probe", schedule=(Every(1),))]
+    _, w = make_worker(tmp_path, checks, chain=chain, clock=FakeClock(),
+                       monitor={"last_block_path": str(path), "max_past_blocks": M})
+    tick(w, chain, path)  # a healthy observation first
+    assert seen[-1] == []
+    slow_now.append(True)
+    tick(w, chain, advance_monitor=False)  # the slow check runs 8 min with a frozen Monitor; the probe right after
+    assert seen[-1], "monitor-stall not delivered before the next check of the same step"
+    stall = rows(w, "monitor-stall")
+    assert len(stall) == 1 and "has not changed for" in stall[0]["text"]
+
+
 def test_watch_is_off_without_a_monitor_section(tmp_path):
     chain = FakeChain()
     _, w = make_worker(tmp_path, [], chain=chain, clock=FakeClock())

@@ -39,6 +39,7 @@ DEFAULTS = {
     "stall_after_s": 300,
     "max_past_blocks": 50,
     "cycle_s": 60,
+    "block_time_s": 12,
 }
 
 META = "monitor:watch"
@@ -52,7 +53,7 @@ def settings(section: dict | None) -> dict | None:
         raise SystemExit(f"monitor: unknown key(s) {sorted(unknown)}; accepted: {sorted(DEFAULTS)}")
     if not cfg["enabled"] or not cfg["last_block_path"]:
         return None
-    for k in ("max_lag_blocks", "stall_after_s", "max_past_blocks", "cycle_s"):
+    for k in ("max_lag_blocks", "stall_after_s", "max_past_blocks", "cycle_s", "block_time_s"):
         if not isinstance(cfg[k], (int, float)) or isinstance(cfg[k], bool) or cfg[k] <= 0:
             raise SystemExit(f"monitor.{k} must be a positive number, got {cfg[k]!r}")
     return cfg
@@ -84,9 +85,9 @@ class MonitorWatch:
     def state(self) -> dict:
         return self.db.meta(META) or {}
 
-    def observe(self, head: int | None) -> dict:
-        """One observation (every worker step, whether or not its RPC reads succeeded). Queues the health messages
-        in the caller's transaction and returns the new state."""
+    def observe(self, head: int | None, estimated: bool = False) -> dict:
+        """One observation (every worker step, whether or not its RPC reads succeeded, and between two check runs with
+        an `estimated` head). Queues the health messages in the caller's transaction and returns the new state."""
         cfg, now = self.cfg, self.clock()
         st = dict(self.state())
         block, problem = read_last_block(cfg["last_block_path"])
@@ -100,7 +101,7 @@ class MonitorWatch:
         elif "missing" in (problem or ""):
             st["reset"] = True  # the Monitor restarts at the head without its file: everything after prev is skipped
         lag = head - block if head is not None and block is not None else None
-        st.update(head=head, lag_blocks=lag, error=problem, checked_at=now)
+        st.update(head=head, head_estimated=estimated, lag_blocks=lag, error=problem, checked_at=now)
 
         reasons = []
         if problem:
@@ -181,7 +182,7 @@ class MonitorWatch:
     def status(self) -> dict:
         st = self.state()
         return {"enabled": True, "path": self.cfg["last_block_path"], "last_block": st.get("block"),
-                "head": st.get("head"), "lag_blocks": st.get("lag_blocks"), "changed_at": st.get("changed_at"),
+                "head": st.get("head"), "head_estimated": st.get("head_estimated", False), "lag_blocks": st.get("lag_blocks"), "changed_at": st.get("changed_at"),
                 "observed_at": st.get("observed_at"), "stalled": bool(st.get("stall")), "stall": st.get("stall"),
                 "reason": st.get("reason"), "stalls": st.get("stalls", 0),
                 "skipped_blocks_total": st.get("skipped_total", 0), "last_skipped": st.get("last_skipped"),
