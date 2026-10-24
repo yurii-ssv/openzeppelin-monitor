@@ -44,10 +44,10 @@
   "store_blocks": false,
   "recovery_config": {
     "enabled": true,
-    "cron_schedule": "30 */5 * * * *",
-    "max_blocks_per_run": 100,
+    "cron_schedule": "30 * * * * *",
+    "max_blocks_per_run": 10,
     "max_block_age": 7200,
-    "max_retries": 3,
+    "max_retries": 10,
     "retry_delay_ms": 1000
   }
 }

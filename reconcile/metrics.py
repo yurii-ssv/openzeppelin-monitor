@@ -75,6 +75,14 @@ def render(conn: sqlite3.Connection, check_ids: list[str]) -> str:
            [({}, int(bool(watch.get("stall"))))])
     metric("ssv_watch_monitor_skipped_blocks_total", "counter", "Blocks the Monitor skipped and never evaluated "
            "(monitor-skipped health messages).", [({}, watch.get("skipped_total", 0))])
+    missed = meta("monitor:missed") or {}  # D21: the Monitor's missed-blocks file
+    metric("ssv_watch_monitor_missed_blocks", "gauge", "Entries of the Monitor's missed-blocks file at the last read "
+           "(pending: waiting for its recovery job; failed: given up; -1: unreadable or never read).",
+           [({"status": k}, -1 if missed.get("unreadable") or "checked_at" not in missed else missed.get(k, 0))
+            for k in ("pending", "failed")])
+    metric("ssv_watch_monitor_unevaluated_blocks_total", "counter", "Blocks the Monitor fetched but will never "
+           "evaluate: given up, or gone from its missed-blocks file without a provable retry (monitor-unevaluated "
+           "health messages).", [({}, missed.get("unevaluated_total", 0))])
     inbox = conn.execute("SELECT COUNT(*), COALESCE(SUM(resolved = 0), 0), COALESCE(SUM(canonical IS NULL), 0), "
                          "COALESCE(SUM(canonical = 0), 0) FROM inbox").fetchone()
     # pending: revert not yet resolved; held: block not yet confirmed canonical; orphaned: never delivered

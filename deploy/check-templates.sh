@@ -19,9 +19,11 @@
 #   S5  networks: every RPC is an environment reference or an allow-listed public URL; the first (weight 100)
 #       is MAINNET_RPC_URL; weights unique (the Monitor rotates in weight order); D20: at least two
 #       non-Tenderly public URLs and no two possibly-Tenderly endpoints (an environment reference or a
-#       Tenderly host) next to each other in the rotation cycle; cron_schedule is a 6-field cron that fires
-#       at most once a minute (one fixed second); 0 < max_past_blocks <= 100 (a cycle fetches up to
-#       max_past_blocks + 1 full blocks concurrently); recovery_config complete, its cron on another second
+#       Tenderly host) next to each other in the rotation cycle; cron_schedule fires exactly once a minute
+#       (6 fields: one fixed second, then "* * * * *"); 0 < max_past_blocks <= 100 (a cycle fetches up to
+#       max_past_blocks + 1 full blocks concurrently); recovery_config complete, its cron on another second;
+#       D21 (a block whose filter fails is retried by the recovery job): the recovery cron fires exactly once
+#       a minute too, max_retries >= 5, 1 <= max_blocks_per_run <= 25 (a run holds the main job's lock)
 #   S6  monitors: unique names; every triggers[] entry resolves to a defined trigger key;
 #       every network slug resolves; trigger_conditions scripts exist; addresses non-empty;
 #       networks[] non-empty; match_conditions present with at least one non-empty
@@ -199,6 +201,7 @@ for f in "${net_files[@]}"; do
     def public: (.url.type == "plain") and (.url.value | IN($allow[]));
     def maybe_tenderly: envref or ((.url.value | type) == "string" and (.url.value | test("tenderly")));
     def second($c): ($c | type) == "string" and ($c | split(" ") | length) == 6 and ($c | split(" ")[0] | test("^[0-9]{1,2}$"));
+    def every_minute($c): second($c) and ($c | split(" ")[0] | tonumber) < 60 and ($c | split(" ")[1:]) == ["*", "*", "*", "*", "*"];
     (if (.rpc_urls | length) == 0 then "no rpc_urls" else empty end),
     (.rpc_urls[]? | select((envref or public) | not) | "rpc url is neither an environment reference nor an allow-listed keyless public URL"),
     (if ([.rpc_urls[]? | select(.weight == 100 and .url.value == "MAINNET_RPC_URL")] | length) != 1 then "primary RPC (weight 100) must be MAINNET_RPC_URL" else empty end),
@@ -208,12 +211,15 @@ for f in "${net_files[@]}"; do
      | range(0; if $n > 1 then $n else 0 end) as $i
      | select(($r[$i] | maybe_tenderly) and ($r[($i + 1) % $n] | maybe_tenderly))
      | "D20: rotation goes from \($r[$i].url.value) to \($r[($i + 1) % $n].url.value), both possibly Tenderly (one rate limit); interleave a non-Tenderly endpoint"),
-    (if second(.cron_schedule) | not then "cron_schedule must be a 6-field cron with one fixed second (at most once a minute, D20), got \(.cron_schedule)" else empty end),
+    (if every_minute(.cron_schedule) | not then "cron_schedule must be a 6-field cron that fires exactly once a minute (one fixed second, then * * * * *; D20), got \(.cron_schedule)" else empty end),
     (if ((.max_past_blocks // 0) <= 0) then "max_past_blocks must be > 0" else empty end),
     (if ((.max_past_blocks // 0) > 100) then "max_past_blocks must be <= 100 (a cycle fetches up to max_past_blocks + 1 full blocks at once; the public endpoints rate-limit such bursts, D20), got \(.max_past_blocks)" else empty end),
     (if (.recovery_config | type) != "object" then "recovery_config missing"
      else (.recovery_config | (if .enabled != true then "recovery_config.enabled must be true" else empty end),
-           (["cron_schedule", "max_blocks_per_run", "max_block_age", "max_retries", "retry_delay_ms"][] as $k | if has($k) | not then "recovery_config.\($k) missing" else empty end)),
+           (["cron_schedule", "max_blocks_per_run", "max_block_age", "max_retries", "retry_delay_ms"][] as $k | if has($k) | not then "recovery_config.\($k) missing" else empty end),
+           (if every_minute(.cron_schedule) | not then "D21: recovery_config.cron_schedule must fire exactly once a minute (a block whose filter failed is retried each run), got \(.cron_schedule)" else empty end),
+           (if ((.max_retries // 0) | type) != "number" or (.max_retries // 0) < 5 then "D21: recovery_config.max_retries must be >= 5 (retries outlast a public-endpoint rate limit), got \(.max_retries)" else empty end),
+           (if ((.max_blocks_per_run // 0) | type) != "number" or (.max_blocks_per_run // 0) < 1 or (.max_blocks_per_run // 0) > 25 then "D21: recovery_config.max_blocks_per_run must be 1..25 (a recovery run holds the main job'"'"'s lock), got \(.max_blocks_per_run)" else empty end)),
           (if second(.cron_schedule) and second(.recovery_config.cron_schedule)
               and (.cron_schedule | split(" ")[0]) == (.recovery_config.cron_schedule | split(" ")[0])
            then "recovery_config.cron_schedule fires on the same second as cron_schedule (the recovery run is skipped while the main run holds the lock)" else empty end) end)

@@ -271,6 +271,29 @@ def test_jump_after_an_unobserved_gap_is_reported_as_an_upper_bound(tmp_path):
     w.step()
     sk = rows(w, "monitor-skipped")
     assert len(sk) == 1 and "upper bound" in sk[0]["text"]
+    # QA cp4-repair1 N3: a healthy Monitor may have evaluated every block meanwhile; the message leads with that
+    assert "may not have been evaluated" in sk[0]["text"] and "were NOT evaluated" not in sk[0]["text"]
+
+
+def test_file_created_again_between_two_reads_is_a_reset(tmp_path):
+    """QA cp4-repair1 N2 (test_q3_file_lost_and_recreated_between_two_reads_is_too_short): the Monitor's volume was
+    replaced while the worker did not look; the Monitor restarted at the head (L = 0 reads only C), so everything
+    after the previous value is skipped although the jump is shorter than max_past_blocks. The new file has a new
+    inode (the Monitor rewrites its file in place otherwise)."""
+    chain, w, path = setup(tmp_path)
+    tick(w, chain, path)
+    prev = chain.sealed - 3
+    chain.mine(20)
+    new = chain.sealed - 2
+    fresh = path.with_name("fresh")
+    fresh.write_text(str(new))  # created while the old file still exists: a different inode
+    fresh.replace(path)
+    w.clock.advance(30)
+    w.step()
+    sk = rows(w, "monitor-skipped")
+    assert len(sk) == 1 and f"blocks {prev + 1}-{new - 1}" in sk[0]["text"] and "file was missing" in sk[0]["text"]
+    tick(w, chain, path)
+    assert len(rows(w, "monitor-skipped")) == 1  # an in-place rewrite is no reset
 
 
 def test_a_stall_is_delivered_between_check_runs_of_a_long_step(tmp_path):
@@ -281,7 +304,7 @@ def test_a_stall_is_delivered_between_check_runs_of_a_long_step(tmp_path):
     from checks.base import Every
 
     chain = FakeChain()
-    path = tmp_path / "last.txt"
+    path = tmp_path / "evm_ethereum_mainnet_last_block.txt"
     seen = []
 
     slow_now = []
@@ -350,12 +373,9 @@ def test_example_config_and_templates_agree():
     assert len([u for u in plain if "tenderly" not in u]) >= 2
     compose = (ROOT / "docker-compose.reconcile.yaml").read_text()
     assert "target: /monitor" in compose and mon["last_block_path"].startswith("/monitor/")
-    assert cfg.raw["rpc_urls"][-1] == "https://rpc-eth.blockmachine.io"
-
-
-def test_default_rpc_urls_end_with_blockmachine():
-    from rpc import DEFAULT_RPC_URLS
-    assert DEFAULT_RPC_URLS[-1] == "https://rpc-eth.blockmachine.io" and len(DEFAULT_RPC_URLS) == 4
+    # D21: the worker prefers blockmachine and keeps the Monitor's serving endpoint (mevblocker) for last
+    assert cfg.raw["rpc_urls"][1] == "https://rpc-eth.blockmachine.io"
+    assert cfg.raw["rpc_urls"][-1] == "https://rpc.mevblocker.io"
 
 
 # ---- seeded adversarial sweep: a Monitor model (the Rust cycle) against the worker's announcements
