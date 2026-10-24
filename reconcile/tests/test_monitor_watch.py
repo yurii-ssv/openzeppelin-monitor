@@ -132,6 +132,7 @@ def test_not_advancing_is_a_stall_even_within_the_lag_threshold(tmp_path):
         tick(w, chain, advance_monitor=False)
     stall = rows(w, "monitor-stall")
     assert len(stall) == 1 and "has not changed for" in stall[0]["text"]
+    assert "keep up since 0 s" not in stall[0]["text"]  # the onset of a frozen file is its last change
 
 
 def test_unknown_head_is_a_stall_never_clean(tmp_path):

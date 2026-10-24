@@ -119,12 +119,14 @@ class MonitorWatch:
             reasons.append(f"its last block {block} has not changed for {int(now - st['changed_at'])} s")
         if reasons and st.get("bad_since") is None:
             st["bad_since"] = now
+        if frozen and st["bad_since"] > st["changed_at"]:
+            st["bad_since"] = st["changed_at"]  # not keeping up since its last change
         if not reasons:
             st["bad_since"] = None
         st["reason"] = "; ".join(reasons) or None
 
         stall = st.get("stall")
-        due = reasons and (now - st["bad_since"] >= cfg["stall_after_s"] or frozen)
+        due = reasons and now - st["bad_since"] >= cfg["stall_after_s"]
         if due and stall is None:
             st["stalls"] = st.get("stalls", 0) + 1
             stall = st["stall"] = {"n": st["stalls"], "since": st["bad_since"], "block": block if block is not None
