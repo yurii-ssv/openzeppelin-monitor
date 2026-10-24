@@ -2,14 +2,14 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-21T19:45Z (resumed, event-0055)
-- Last recorded event / last processed Orca delivery: event-0055
+- Updated at: 2026-10-24T01:10Z (event-0084)
+- Last recorded event / last processed Orca delivery: event-0084
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); QA worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` @ `9772b2d` (event-0010)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
 - Mode: attended; resumed by Marco (event-0055)
 - Overall acceptance: pending
-- Current checkpoint: CP4 part A PASS WITH NOTES (`1b118a6`); part B (V4.2) after the soak T48 2026-10-24T22:51Z
+- Current checkpoint: CP4 — soak 1 FAILED (Monitor stalled for the whole soak, event-0084, BLOCKING); CP4 repair 1 (D20) in progress; then fresh QA and soak 2. Part A PASS WITH NOTES (`1b118a6`) stands for the code it reviewed
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
 
 | Task | State | Active dispatch / receipt | Frozen head | Owner | Evidence / next action |
@@ -22,14 +22,14 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2e Legacy SSV (M6, M7) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `45cc774`), integrated | settled+released | `45cc774` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; N4 residual recorded |
-| CP3 Integration, compose, fork e2e | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `c3e1234`), integrated (`246b0e3`) | settled+released | `c3e1234` | Claude Opus 5.5 high (QA) | soak running (T0 2026-10-22T22:51Z, T48 2026-10-24T22:51Z) |
+| CP3 Integration, compose, fork e2e | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `c3e1234`), integrated (`246b0e3`) | settled+released | `c3e1234` | Claude Opus 5.5 high (QA) | soak 1 FAILED (event-0084); stack `ms-cp3` stopped, volumes kept |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
 
-- Exact next authorized action and owner: at T48 (2026-10-24T22:51Z) the coordinator collects the soak evidence (workers/cp3/plan.md 'Soak handoff') and dispatches CP4 part B (V4.2 review, fresh Opus QA); then the completion statement; then, with Marco's authorization, DT-18 repairs and cleanup (DT-16). Push and PR are Marco's.
+- Exact next authorized action and owner: CP4 repair 1 (D20: Monitor endpoints + 60 s cron, Monitor stall health, no silent skipped range, Monitor outage/stall tests) by a fresh Opus high implementer; then fresh Opus QA; then soak 2 (fresh 48 h, record mode); then CP4 part B; completion statement; DT-18 repairs and cleanup with Marco's authorization. Push and PR are Marco's.
 - Ready work with no active dispatch: none.
-- Waiting for: soak T48. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
+- Waiting for: CP4 repair 1 worker_done. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
 - Next check/wake mechanism: attended; `orca orchestration check --wait` on the coordinator's Run (15 min) while workers run. Unattended recovery UNVERIFIED (DEF-4).
 - Context resume: verify HEAD/status/runtime, read this file, inspect the next task's latest attempt, continue the first unproven action. Do not reload whole history.
 

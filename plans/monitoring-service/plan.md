@@ -40,6 +40,7 @@ Spec: [`docs/ssv-specs/monitoring-service-spec.md`](../../docs/ssv-specs/monitor
 | D17 | Silent backfill (owner, 2026-10-22): history from `start_block` (activation 24,920,727) is stored and baselined WITHOUT alerting; alerting starts at the first live block after catch-up; a state still wrong at the first live evaluation alerts then. | Marco | 2026-10-22 |
 | D18 | Persistence (owner, 2026-10-22): Docker named volumes for the worker `/data` and the Monitor data/inbox locally; production on Kubernetes (DevOps) as a ReadWriteOnce PVC with one replica, the Monitor and the worker in one pod sharing the volume, config as ConfigMap, secrets as Secret; CP3 documents these constraints, DevOps owns the manifests. | Marco + DevOps | 2026-10-22 |
 | D19 | CP3 approved (owner, 2026-10-22): all CP1/CP2 lanes VERIFIED; continue CP3 then CP4 to the end; goal: running locally. | Marco | 2026-10-22 |
+| D20 | Monitor RPC and polling (owner, 2026-10-24, after the soak-1 Monitor stall, event-0084): the Monitor network template lists Tenderly plus at least two non-Tenderly endpoints (`https://rpc.mevblocker.io`, `https://rpc-eth.blockmachine.io`) so rotation leaves the Tenderly rate limit; Monitor `cron_schedule` every 60 s (may be shortened later); the worker raises a health alert when the Monitor's last processed block stalls, and no block range the Monitor skips is silent; Monitor outage/stall tests added; then fresh QA and a fresh 48 h soak. | Marco | 2026-10-24 |
 
 ## 3. Measured-facts ledger (F rows)
 
