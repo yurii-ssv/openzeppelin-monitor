@@ -125,3 +125,136 @@ See [attempts.md](attempts.md#attempt-1) for commands, exit codes and results.
 ## Completion handoff
 
 See [attempts.md](attempts.md#handoff).
+
+<a id="repair-2"></a>
+# Repair 2 — Monitor filter failures are never silent (D21)
+
+Task contract: [plan.md §2 D21](../../plan.md) · QA input: [qa/cp4-repair1-attempt-1.md](../../qa/cp4-repair1-attempt-1.md) (F1, N1–N8) · Events 0084–0088 · Attempt log: [attempts.md](attempts.md#repair-2)
+
+- Worktree / branch: `/Users/marco/orca/workspaces/ssv-network-monitor/ms-cp4-repair1`, `mtabasco/ms-cp4-repair1`.
+- Start: `git merge --no-edit mtabasco/ms-qa-cp4-r1` (fast-forward `5625e48` → `a9a63c3`), then
+  `git merge --no-edit plan/monitoring-service` (`0655b00`). The second merge conflicted in `execution-log.md` only:
+  the QA branch's unnumbered event vs. events 0085–0088 of the plan branch, whose event 0087 records the same QA
+  outcome. Resolved with the plan branch's version (`git checkout --theirs`, so a later merge of this branch into the
+  plan branch is conflict-free; the QA's own event text stays in `a9a63c3`). **Frozen start head
+  `e0b8fab2b728364d27c16e358656589cf3faf6c1`.**
+- Live authority: Orca task `task_041346c6c981`, dispatch `ctx_8378cf3db146`. Model: Claude Opus 5.5
+  (`claude-opus-5-5`, self-report), effort high (packet).
+- Allowed writes (packet): `src/bootstrap/**`, `src/services/blockwatcher/**`, `deploy/config/networks/**`,
+  `reconcile/**`, `docker-compose*.yaml`, `deploy/**`, `scripts/local-dry-run.sh` (comment), `.gitignore`, this
+  directory, the CP4 status line. Written: only those (no model/type file was needed: see the design note). Not
+  written: other Rust, `deploy/config/monitors/**`, `config/`, `config.zip`, `.env*`, `Dockerfile.production`,
+  `qa/**`, `state.md`; `execution-log.md` only through the start merge (plan branch content, no own edit).
+- Commits: `58635cb` (Rust, D21 exception), `44884e5` (worker, template, gate, docs), records commit = the head in
+  `worker_done`.
+
+## What changed (repair 2)
+
+| Item | Change | Files |
+|---|---|---|
+| F1 / D21 Rust (limited to the block-processing path) | `process_block` no longer maps a filter error to `None` silently: it logs `ERROR … Block <n> was not evaluated: <error>` and reports the block through a task-local scope (`blockwatcher/unevaluated.rs`: `report_unevaluated_block`, `collect_unevaluated_blocks`); a missing network client is reported the same way. The main cycle runs its processing stage inside that scope and, after the pipeline and **before** `save_last_processed_block`, saves the reported blocks with `save_missed_blocks` (the path `detect_missing_blocks` uses, same gating: `store_blocks` or recovery enabled; otherwise an ERROR says they are not recorded) and logs `ERROR … <k> blocks were not evaluated (filter failed), recorded as missed for recovery: [..]`. A failed save returns the cycle's error, so the last block does not advance and the next cycle evaluates the range again. If the processing stage itself dies (join error) every fetched block is recorded. The last block still advances past a recorded block (the recovery owns it). The recovery job runs the handler in the same scope: a reported block is a failed attempt (`retry_count` + 1, `Pending`, `Failed` at `max_retries`, error text "Block filter failed: the block was not evaluated", `retry_delay_ms`) and its triggers do not run; an evaluated block runs the trigger handler with its matches (unchanged path) and is marked `Recovered`, then removed. Shutdown and "no matches" report nothing. | `src/bootstrap/mod.rs`, `src/services/blockwatcher/{mod.rs,service.rs,recovery.rs,unevaluated.rs}` |
+| Design note (why no model change) | `ProcessedBlock` is built with struct literals in 36 places under `tests/integration/**` (not writable), and the handler type `Fn(BlockType, Network) -> BoxFuture<ProcessedBlock>` is a generic bound of `BlockWatcherService`, `process_new_blocks` and `process_missed_blocks`. A task-local side channel keeps every signature: handlers that do not report (integration tests, other callers) behave exactly as before. Limit: a report made on another task than the one the caller scopes is not collected (the handler is polled by the scoped processing task; `filter_block` returns its error to it). | — |
+| 2 Worker: never silent | `monitor_watch.py` reads `<monitor>/evm_ethereum_mainnet_missed_blocks.json` (storage.rs `MissedBlockEntry` list, rewritten in place by `tokio::fs::write`; config `monitor.missed_blocks_path`, default next to `last_block_path`) at every observation (each step, between check runs). `monitor-unevaluated` health (page route), one per block range per reason, dedup `monitor-unevaluated:<reason>:<lo>:<hi>`: (a) `Failed` (given up) — "NOT evaluated … and will not be"; (b) `Pending`/`Recovering` for ≥ `unevaluated_after_s` = **1200 s** (age from the earlier of the Monitor's `first_missed_at` and the worker's first sight; a block announced here is announced once more if later given up); (c) left the file without a provable successful retry: the file was removed or created again (new inode), or the entry was older than `max_block_age / 2` below the newest head seen (only `prune_old_missed_blocks` removes such an entry; `remove_recovered_blocks` removes only blocks the recovery evaluated). Unreadable / unparseable / empty / unknown status / wrong types = `monitor-unevaluated` "cannot be read" (per episode, re-sent per health window), `healthy: false`, `input_unavailable{monitor}` 1, metrics −1; three reads 50 ms apart first (torn in-place write). The Monitor's `last_error` (it can name a keyed RPC URL) is never put into a message or the status. Durable state `meta monitor:missed` (known entries, announcements). Metrics `ssv_watch_monitor_missed_blocks{status}`, `ssv_watch_monitor_unevaluated_blocks_total`; `status.monitor.missed`. | `reconcile/monitor_watch.py`, `reconcile/metrics.py`, `reconcile/config.example.json`, READMEs |
+| 2 Recovery tuning | `recovery_config`: cron `30 */5 * * * *` → **`30 * * * * *`** (every minute, half a cycle after the main job: its lock makes a colliding recovery run skip), `max_retries` 3 → **10** (≥ 10 failed runs, ≥ 10 min, before a block is given up: outlasts the public endpoints' rate-limit bursts, e.g. blockmachine's 60 CU/min window), `max_blocks_per_run` 100 → **10** (a run holds the main job's lock: 10 blocks of ~1–2 s; 10 blocks/min is twice the chain rate), `retry_delay_ms` 1000, `max_block_age` 7200 kept (= worker `monitor.max_block_age`). `check-templates.sh` S5 gates: recovery enabled, its cron exactly once a minute on another second, `max_retries` ≥ 5, `max_blocks_per_run` 1–25. | `deploy/config/networks/evm_ethereum_mainnet.json`, `deploy/check-templates.sh`, `deploy/tests/selftest.sh`, `deploy/README.md` |
+| 3 O1 / D21 worker order | default `rpc_urls` = Tenderly → `rpc-eth.blockmachine.io` → `gateway.tenderly.co/public/mainnet` → `rpc.mevblocker.io` (code, example config, READMEs, tests). The Monitor template order is unchanged. | `reconcile/rpc.py`, `config.example.json`, tests, READMEs |
+| N2 | a new inode of the last-block file (device, inode differ from the last read) is a reset like a missing file: `monitor-skipped` names `[prev+1, new−1]`. ctime is not used: it changes at every in-place write. Limit: a file system that reuses the inode number of a deleted file can hide a recreation. | `monitor_watch.py` |
+| N3 | a jump seen after a worker read older than 1.5 cycles says the blocks "may not have been evaluated" (and still "upper bound"); a jump seen within a cycle keeps "were NOT evaluated". | `monitor_watch.py` |
+| N7 | S5: `cron_schedule` must be exactly once a minute (fixed second < 60, then `* * * * *`); selftest red for `0 0 * * * *` and `0,30 * * * * *`. | `check-templates.sh`, `selftest.sh` |
+| N8 | `scripts/local-dry-run.sh` header names the rotation literals; record correction below. N1, N4, N5, N6: no change (N6 is addressed by O1). | `scripts/local-dry-run.sh`, this record |
+
+N8 record correction (attempts.md, repair 1, row "15 min, worker"): `320c86b` makes the worker observe the Monitor and
+deliver between check runs; it does **not** write the status file between check runs, so the worker container can
+still turn `unhealthy` during a single step longer than 10 min (the K8s startup budget of 30 min covers the first
+backfill, `deploy/README.md` Probes).
+
+## Rust behaviour after repair 2 (changes to the repair-1 table)
+
+| Mechanism | Before (repair 1 table) | After D21 |
+|---|---|---|
+| Per-block filter failure | `result.ok()` → no matches, last block advances: **lost silently** (R1 / QA F1) | ERROR `Block <n> was not evaluated: <error>`; recorded `Pending` in `<slug>_missed_blocks.json` before the last block advances; retried by the recovery job; matches found on retry run the triggers; given up → `Failed` → worker `monitor-unevaluated` |
+| Missing network client for a block | `Err(_) => None`, silent | same as a filter failure |
+| Shutdown during a block | `None`, nothing recorded | unchanged (nothing recorded; the cycle's last-block write is upstream behaviour) |
+| Block without matches | evaluated | unchanged, nothing recorded |
+| Saving the recorded blocks fails | — | the cycle returns an error, the last block does not advance, the next cycle evaluates the range again (duplicates possible, no loss) |
+| Recovery attempt whose filter fails | counted `Recovered` (silent) | failed attempt: `retry_count` + 1, `Failed` at `max_retries` (10), no trigger |
+| `recovery_config` | every 5 min at :30, 100 per run, 3 retries | every minute at :30, 10 per run, 10 retries (measured: a run of 10 blocks with failures 5–39 s; main cycles ≤ 2.4 s; no run skipped) |
+
+## State table (DEFECT-CLASSES obligation; new state and inputs of repair 2)
+
+| State / input | (a) empty | (b) error | (c) partial | (d) reorg | (e) restart | (f) same block | (g) time window |
+|---|---|---|---|---|---|---|---|
+| Monitor missed-blocks file | missing = no entry yet; `[]` clean (`test_no_file_and_an_empty_list_are_clean`); an empty **file** is a problem (the Monitor never writes one) | unreadable / directory / not JSON / wrong types / unknown status → `monitor-unevaluated` "cannot be read", `healthy: false`, metrics −1, never clean (`test_an_unreadable_or_garbage_file…`[7], `test_a_directory_is_unreadable`); known entries kept through the episode (`test_a_waiting_known_entry_survives…`) | torn in-place write read again (`test_a_torn_read…`); entries that vanish: young = recovered (`test_a_block_the_recovery_evaluates_in_time_is_silent`), old = pruned → announced (`test_an_entry_pruned…`), file removed / new inode → announced (`test_a_removed_or_replaced_file…`[2]) | the Monitor records block numbers at 2 confirmations; a reorg does not change a recorded number; the recovery fetches the canonical block by number at retry time | `meta monitor:missed` durable: no repeat after restart (`test_restart_does_not_repeat_announcements`) | one entry per block (storage dedups); announcements per block and reason, contiguous ranges | wall clock: age from min(`first_missed_at`, first sight) (`test_age_counts_from…`[2]); 1200 s threshold (`test_a_block_waiting_longer…`) |
+| Rust unevaluated report | no report → nothing recorded (`test_blocks_without_matches_are_not_recorded_as_missed`, `test_no_matches_is_evaluated`) | filter error → reported (`test_filter_error_reports_the_block_as_unevaluated`); save fails → last block kept (`test_unrecordable_filter_failure_keeps_the_last_block`) | some blocks of a cycle fail → exactly those recorded (`test_filter_failure_is_recorded_as_missed_and_last_block_advances`) | — | the file is the durable state; a restart between record and recovery keeps it | — | recovery: `max_retries` runs then `Failed` (`test_recovery_counts_a_filter_failure_as_failed_and_gives_up_after_max_retries`) |
+| Shutdown | — | nothing reported (`test_shutdown_reports_nothing`) | — | — | — | — | — |
+| Last-block file identity (N2) | — | stat fails → no identity, no reset | — | — | identity in `meta monitor:watch` | in-place rewrite = same inode, no reset (`test_file_created_again_between_two_reads_is_a_reset` second half) | — |
+
+Seeded sweep `test_seeded_sweep_every_block_never_evaluated_is_announced[0..9]`: a model of the Monitor's main cycle
+(filter failure probability by 20-min "weather" period: 0, 5 %, 60 %, 90 %), its recovery job (10 oldest Pending per
+minute, success probability 90 %…5 %, `Failed` at 10, prune at `max_block_age`), random loss of the file, the worker
+stepping every 30 s; asserts every block recorded and never evaluated is announced, no block announced as given
+up/lost was evaluated, and nothing outside the recorded blocks is announced. Per seed 22–229 blocks are never
+evaluated (non-vacuous, probed once). QA F1 reproducer 3 ported: `test_f1_post_outage_catch_up_with_filter_failures_is_never_silent`.
+Spec trigger list (D21 text): filter-failed block recorded and retried → Rust tests (service, recovery, bootstrap);
+never counted as evaluated → `test_filter_failure_is_recorded…`, recovery failure tests; alert on blocks given up →
+`test_given_up_blocks…`; on blocks unevaluated too long → `test_a_block_waiting_longer…`; worker order → 
+`test_default_worker_endpoints_follow_d21`, `test_default_endpoints_are_the_d21_list_in_order`.
+
+## Residuals (repair 2)
+
+- **R1 closed by D21** for filter and client failures (live below). Remaining silent cases: none known in the
+  block-processing path; a shutdown in the middle of a cycle is upstream behaviour (not recorded, by the packet).
+- **R6 (pre-existing, Rust logging, out of scope):** the Monitor's own ERROR lines (upstream `filter_block`,
+  `get_blocks`, rotation) print the RPC URL; a keyed production `MAINNET_RPC_URL` would appear in the Monitor's log.
+  The new `Block <n> was not evaluated: <error>` line repeats the same error text. The worker never forwards
+  `last_error` (test). Owner: Marco/DevOps (log access).
+- **R7 (design limit):** the task-local report reaches only the caller's scope; a future upstream change that runs the
+  block handler on another task would make reports vanish (the Rust tests through `process_new_blocks` and
+  `process_missed_blocks` would turn red).
+- **R8:** a recovery run holds the main job's lock (measured ≤ 39 s for 10 failing blocks); the main cycle then
+  starts up to that much later (not lost: it reads from its last block).
+- **R2 (narrowed by N2):** a recreated last-block file is now a reset unless the file system reuses the inode number.
+- **R3 extended:** the worker's `monitor.max_block_age` must equal the Monitor's (example config checked by pytest;
+  an operator's own config is not); a smaller worker value is safe (more "pruned" announcements), one more than twice
+  the Monitor's would read a prune as a recovery.
+- R4, R5: unchanged (R5 measured again: 06:31Z one whole cycle failed, mevblocker 429 + Tenderly probe).
+
+## Live proof on `ms-cp4r` (repair 2)
+
+Environment: `source .local-dry/cp4r.env.sh` (D16: `MAINNET_RPC_URL=https://mainnet.gateway.tenderly.co`,
+`MAINNET_RPC_URL_2` unset), record mode. Images rebuilt from this branch: Monitor `openzeppelin/openzeppelin-monitor:latest`
+`9ec675a2a69e` (`docker compose build monitor`, exit 0, Rust at `58635cb`; the binary contains the D21 log text),
+worker `ssv-eb-reconcile:local` `fb4b692e4a7a` (`docker compose build eb-reconcile`, at `44884e5`). The records
+commits after them change no code. `.local-dry/config` re-rendered (`scripts/local-dry-run.sh --prepare`, only the
+`recovery_config` values changed); `.local-dry/watch-config.json` = `config.example.json` + `alerts.mode` record +
+`record_path` (it needs the new `monitor` keys). Both tags are shared with `ms-cp3` (not started, untouched; it would
+start on these images). Evidence: [evidence/repair2/](evidence/repair2/).
+
+| UTC | Step | Measured |
+|---|---|---|
+| 06:28:17 | `docker compose up -d` (both recreated; volumes kept: worker live at checkpoint 26,260,697) | exit 0; both `healthy`; recovery job `30 * * * * *` started |
+| 06:28–06:35 | steady state, real endpoints | 6 cycles; 0 `filter_block` errors, 0 `was not evaluated`; 1 whole-cycle failure at 06:31 (`get_blocks`: mevblocker 429 + Tenderly probe, R5: not silent, next cycle caught up) |
+| 06:35:12 | outage control: `MONITOR_CONFIG_DIR=./.local-dry/outage/config docker compose up -d monitor` | — |
+| 06:40:06 | `monitor-stall` (stall 4), record | "last block 26260740 has not changed for 275 s"; sampler 06:40:12: lag 28, `stalled 1`, `input_unavailable{monitor} 1` |
+| 06:47:13 | restore (`docker compose up -d monitor`, D16) | Monitor: `Start block: 26260755 (skipped 14 blocks)`, `Processed 51 blocks (26260755-26260805)` 06:48:34, then `Processed 5 blocks (26260806-26260810)` 06:49:01: **0 filter failures** in the catch-up (QA attempt 1: 50/51) |
+| 06:49:07 | `monitor-skipped` + `monitor-recovered` | skipped "blocks 26260741-26260759 (19) were NOT evaluated … never too short" — the true skip is 26,260,741–26,260,754 (14): the Monitor resumed in two cycles between two worker reads (06:48:34 and 06:49:01), the documented superset case, not exact; recovered "stall 4 lasted 816 s" |
+| 06:51:42–07:03:55 | **injection control 1** (below): Monitor on `.local-dry/inject/config` = the rendered config with one RPC, a local proxy to `rpc-eth.blockmachine.io` that answers 429 to `eth_getLogs` of blocks n % 7 = 0 (always) and n % 3 = 0 (first 8 requests) | 26 blocks injected (proxy log), **26/26 appeared in the missed-blocks file** (20 s sampler), 2 given up (26,260,822, 26,260,829: `Failed`, 10 retries) → **`monitor-unevaluated` "gave up on blocks 26260822-26260822 (1)" and "26260829-26260829 (1)" at 07:02:44**, 24 left the file young (recovered; 11 of their `Successfully recovered missed block` lines are in the saved 07:03:58 log, the other Monitor log lines were lost when the container was recreated: not saved before the switch) |
+| 07:03:58–07:08:51 | D16 config | 5 cycles, 0 filter errors, 11 recoveries (the blocks that kept failing only on the proxy), file = the 2 `Failed` entries |
+| 07:08:55–07:21:22 | **injection control 2** (same proxy, container log streamed and saved) then 07:21:25 D16 restore | see accounting |
+| 07:24:56 | final | worker phase live, checkpoint 26,260,977, lag 2, undelivered 0, `monitor.missed` ok, pending 0, failed 4, `unevaluated_blocks_total` 4; both containers `healthy`; status file `healthy: true`; Monitor on `.local-dry/config` (rotation `MAINNET_RPC_URL, https://rpc.mevblocker.io, https://rpc-eth.blockmachine.io`), env as D16. **Left RUNNING.** |
+
+**Accounting, injection control 2** (`evidence/repair2/account-run2.txt`; command:
+`python3 -I evidence/repair2/account.py <monitor log 07:08:55–07:24:45> <outbox export> <missed-blocks file> 1200 <now>`):
+186 `ERROR filter_block` lines; 93 `Block N was not evaluated` ERRORs for **28 distinct blocks** (= the 28 blocks the
+proxy failed, both directions); recorded as missed: 28; recovered by the recovery job: 26 (log line each); given up: 2
+(26,260,906, 26,260,913) and announced by `monitor-unevaluated` (07:18:35Z, 07:19:37Z); 75 failed retry attempts;
+**failed-and-unaccounted: 0**. Every block counted is either recovered (log line) or announced. Recovery runs:
+13, 5–39 s, no run skipped; main cycles ≤ 2.4 s.
+
+Real-endpoint segments (no injection): 06:28:17–06:35:09, 06:47:13–06:51:39 (inspected live at 06:35 and 06:50:30;
+the container logs were not saved), 07:03:58–07:08:51 and 07:21:25–07:24:45 (saved): 0 filter failures. Steady state
+the Monitor's endpoints were not rate-limited by the worker in this window (O1 in effect; the 06:31 whole-cycle 429
+is mevblocker/Tenderly to this host).
+
+## Verification and handoff (repair 2)
+
+See [attempts.md](attempts.md#repair-2) and [handoff](attempts.md#handoff-2).

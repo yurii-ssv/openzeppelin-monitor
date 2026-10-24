@@ -1,0 +1,44 @@
+[
+  {
+    "key": "health:monitor-stall:66544527b984535f:83001",
+    "created_at": "2026-10-24T06:40:06Z",
+    "sent_at": "2026-10-24T06:40:06Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-stall — mainnet\nThe Monitor is not keeping up: its last block 26260740 has not changed for 275 s. Not positively known to keep up since 275 s (stall 4). None of its rules (M8 events, M10, M11 info, M13, M15, transfers, DAO/Safe, oracle transactions, the failed-tx inbox for M1/M2) evaluates anything meanwhile; an empty inbox proves nothing. Blocks it skips when it resumes (more than max_past_blocks 50 behind) are announced as monitor-skipped."
+  },
+  {
+    "key": "health:monitor-skipped:c9e555a92cdc2bdf",
+    "created_at": "2026-10-24T06:49:07Z",
+    "sent_at": "2026-10-24T06:49:07Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-skipped — mainnet\nThe Monitor's last processed block jumped from 26260740 to 26260810: blocks 26260741-26260759 (19) were NOT evaluated by its rules and will not be (it was more than max_past_blocks (50) behind when it resumed; such blocks are never recorded as missed, so recovery_config does not retry them). Check them by hand (proxy logs, failed transactions to the proxy, transfers to the watched addresses). If it resumed in several quick cycles between two reads of the worker (a catch-up cycle can outlast the cron), the true range ends earlier: this range is never too short."
+  },
+  {
+    "key": "health:monitor-recovered:6bb0d106eeba71d8",
+    "created_at": "2026-10-24T06:49:07Z",
+    "sent_at": "2026-10-24T06:49:07Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-recovered — mainnet\nThe Monitor processes blocks again: last block 26260810, 3 blocks behind the head 26260813; stall 4 lasted 816 s."
+  },
+  {
+    "key": "health:monitor-unevaluated:28732f556292665e",
+    "created_at": "2026-10-24T07:02:44Z",
+    "sent_at": "2026-10-24T07:02:44Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-unevaluated — mainnet\nThe Monitor gave up on blocks 26260822-26260822 (1): it fetched them but their filter failed (an eth_getLogs or receipt request failed after retries and URL rotation), and every retry of its recovery job failed too (recovery_config.max_retries). They were NOT evaluated by its rules (M8 events, M10, M11 info, M13, M15, transfers, DAO/Safe, oracle transactions, the failed-tx inbox for M1/M2) and will not be. Check them by hand (proxy logs, failed transactions to the proxy, transfers to the watched addresses)."
+  },
+  {
+    "key": "health:monitor-unevaluated:1f5fb59ef122c922",
+    "created_at": "2026-10-24T07:02:44Z",
+    "sent_at": "2026-10-24T07:02:44Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-unevaluated — mainnet\nThe Monitor gave up on blocks 26260829-26260829 (1): it fetched them but their filter failed (an eth_getLogs or receipt request failed after retries and URL rotation), and every retry of its recovery job failed too (recovery_config.max_retries). They were NOT evaluated by its rules (M8 events, M10, M11 info, M13, M15, transfers, DAO/Safe, oracle transactions, the failed-tx inbox for M1/M2) and will not be. Check them by hand (proxy logs, failed transactions to the proxy, transfers to the watched addresses)."
+  },
+  {
+    "key": "health:monitor-unevaluated:901355377b525e44",
+    "created_at": "2026-10-24T07:18:35Z",
+    "sent_at": "2026-10-24T07:18:35Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-unevaluated — mainnet\nThe Monitor gave up on blocks 26260906-26260906 (1): it fetched them but their filter failed (an eth_getLogs or receipt request failed after retries and URL rotation), and every retry of its recovery job failed too (recovery_config.max_retries). They were NOT evaluated by its rules (M8 events, M10, M11 info, M13, M15, transfers, DAO/Safe, oracle transactions, the failed-tx inbox for M1/M2) and will not be. Check them by hand (proxy logs, failed transactions to the proxy, transfers to the watched addresses)."
+  },
+  {
+    "key": "health:monitor-unevaluated:70f830091c5de40d",
+    "created_at": "2026-10-24T07:19:37Z",
+    "sent_at": "2026-10-24T07:19:37Z",
+    "text": "🩺 [HEALTH] SSV watch: monitor-unevaluated — mainnet\nThe Monitor gave up on blocks 26260913-26260913 (1): it fetched them but their filter failed (an eth_getLogs or receipt request failed after retries and URL rotation), and every retry of its recovery job failed too (recovery_config.max_retries). They were NOT evaluated by its rules (M8 events, M10, M11 info, M13, M15, transfers, DAO/Safe, oracle transactions, the failed-tx inbox for M1/M2) and will not be. Check them by hand (proxy logs, failed transactions to the proxy, transfers to the watched addresses)."
+  }
+]

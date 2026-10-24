@@ -80,3 +80,56 @@ New findings: R1 per-block filter failure silently counted (Rust); R5 one rotati
   ruling A+B+C); O1 worker bursts hit the Monitor's endpoint.
 Next owner: fresh QA on the head, target ms-cp4r; then soak 2.
 ```
+
+<a id="repair-2"></a>
+## Repair 2, attempt 1 — D21: Monitor filter failures never silent
+
+- Observed UTC: 2026-10-24T05:58Z – 07:35Z
+- Task / Dispatch: `task_041346c6c981` / `ctx_8378cf3db146`
+- Frozen start head: `e0b8fab2b728364d27c16e358656589cf3faf6c1` (merges of `a9a63c3` and `0655b00`; see
+  [plan.md § Repair 2](plan.md#repair-2) for the `execution-log.md` conflict resolution).
+- Code commits `58635cb` (Rust), `44884e5` (worker, template, gate, docs); records commit = the head in `worker_done`.
+
+| Verification ID | Exact command | Exit / result / counts / skips |
+|---|---|---|
+| Rust touched modules | `cargo test --lib -- bootstrap services::blockwatcher` | exit 0, **120 passed** (bootstrap 26 incl. 3 new, blockwatcher 94 incl. 3 `unevaluated` + 4 service + 3 recovery new) |
+| Rust RED (start-head behaviour per stage) | the three wiring points set back to the start head's behaviour (`process_block` `Err(_) => None`; no save of reported blocks; recovery ignores reports), same command | exit 101, **6 failed** / 91 passed: `test_filter_error_reports_the_block_as_unevaluated`, `test_recovery_delivers_on_the_retry_after_a_filter_failure`, `test_recovery_counts_a_filter_failure_as_failed_and_gives_up_after_max_retries`, `test_filter_failure_is_recorded_as_missed_and_last_block_advances`, `test_a_block_whose_filter_failed_is_retried_by_recovery_and_triggered`, `test_unrecordable_filter_failure_keeps_the_last_block`; restored with `git checkout -- src`, porcelain clean, GREEN 120/0. The new tests do not compile on the start head itself (the report API is new) |
+| Rust full lib | `cargo test --lib` | exit 0, **1069 passed, 0 failed, 1 ignored** (the V0.8 mockall flake did not occur; no serial rerun needed) |
+| clippy / fmt | `cargo clippy --all-features --all-targets -- -D warnings`; `cargo fmt --all -- --check` | exit 0 / exit 0 (all targets: the integration tests compile unchanged) |
+| worker RED on start head | start-head `reconcile/`, `deploy/`, compose (`git archive e0b8fab`) + the new/changed test files: `pytest test_monitor_unevaluated.py test_monitor_watch.py test_rpc_failover.py` | **39 failed**, 67 passed (all 35 new D21 tests, N2, N3, the two endpoint-order tests, the config agreement test) |
+| worker GREEN | same files on the head | 106 passed |
+| worker falsifiers | W1 `replaced = False`; W2 every vanished entry = recovered; W3 `Failed` never announced; W4 unreadable = empty; W5 inode reset off (each restored, file identical) | W1: 8 red (removed/replaced + 6 sweep seeds); W2: 1 red (pruned); W3: 14 red (given-up tests, F1 reproducer, 8 sweep seeds); W4: 9 red (garbage tests); W5: 1 red (N2) |
+| suite | `reconcile/.venv/bin/python -m pytest -q -p no:cacheprovider reconcile/tests` | exit 0, **2313 passed** (2278 + 35) |
+| ruff | `reconcile/.venv/bin/ruff check reconcile` | All checks passed |
+| templates | `deploy/check-templates.sh` | exit 0 `checker: OK (32 monitors, 30 triggers, 1 network)` |
+| abi / m15 | `deploy/check-abi.sh --config-dir deploy/config`; `deploy/check-m15-coverage.sh` | exit 0 / exit 0 |
+| selftest | `MONITOR_BIN=…/ms-cp1a/target/release/openzeppelin-monitor deploy/tests/selftest.sh` | exit 0, **310 passed, 0 failed, 0 skipped** (303 + N7 ×2 + D21 ×5); the binary is the ms-cp1a release build: the D21 Rust change does not touch config loading |
+| compose | `docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml config` | exit 0 |
+| images | `docker compose build monitor`; `docker compose build eb-reconcile` (cp4r env) | exit 0 / exit 0 (`9ec675a2a69e`, `fb4b692e4a7a`) |
+| live | [plan.md § Live proof](plan.md#live-proof-on-ms-cp4r-repair-2) | outage control: stall → skipped (superset 19 ⊇ true 14, two-cycle resume) → recovered; injection 1: 26/26 recorded, 2 given up and announced; injection 2: 28 blocks, 26 recovered (log), 2 given up and announced, **failed-and-unaccounted 0**; real endpoints: 0 filter failures |
+
+- Deviations: the Monitor container logs of 06:28–06:47 and of injection control 1 were lost on container recreation
+  (only partial lines were inspected live); injection control 2 was run with the log streamed and saved, and is the
+  complete accounting. The outage control's skipped range was a superset (documented case), not exact.
+- Resulting head: the records commit (in `worker_done`). Next: fresh QA on that head, target `ms-cp4r` (running);
+  then soak 2.
+
+<a id="handoff-2"></a>
+### Completion handoff, repair 2 (≤ 250 words)
+
+```text
+Task / dispatch: task_041346c6c981 / ctx_8378cf3db146 (CP4 repair 2, D21)
+Start -> head: e0b8fab -> records commit on mtabasco/ms-cp4-repair1 (code 58635cb Rust, 44884e5 worker).
+Rust (bootstrap + blockwatcher only): a filter/client failure logs ERROR "Block <n> was not evaluated" and is
+  recorded as missed (save_missed_blocks) before the last block advances; recovery counts it as a failed attempt,
+  runs triggers only for an evaluated block; shutdown/no-matches record nothing. Recovery: every minute :30,
+  10 retries, 10 per run (S5-gated).
+Worker: monitor-unevaluated per block range for Failed, Pending > 1200 s, vanished without proof; garbage file =
+  health, never clean. O1 order. N2, N3, N7, N8 done.
+Tests: cargo lib 1069 passed (touched 120; 6 RED with start behaviour); clippy/fmt 0; suite 2313; ruff clean;
+  worker RED 39 on start head; selftest 310/0/0; templates/abi/m15/compose 0.
+Live ms-cp4r: outage stall -> skipped (superset) -> recovered; injection 2: 28 failed blocks, 26 recovered,
+  2 given up + announced, 0 unaccounted; real endpoints 0 filter failures. RUNNING on D16 env.
+Residuals: R6 Monitor logs print RPC URLs (pre-existing), R7 task-local limit, R8 recovery holds lock <= 39 s.
+Next: fresh QA, then soak 2.
+```
