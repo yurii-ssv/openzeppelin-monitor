@@ -23,6 +23,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2e Legacy SSV (M6, M7) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `45cc774`), integrated | settled+released | `45cc774` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; N4 residual recorded |
 | CP3 Integration, compose, fork e2e | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `c3e1234`), integrated (`246b0e3`) | settled+released | `c3e1234` | Claude Opus 5.5 high (QA) | soak 1 FAILED (event-0084); stack `ms-cp3` stopped, volumes kept |
+| CP4 repair 1 (D20 Monitor stall) | IN PROGRESS | task `task_db92ac7953bd`, dispatch `ctx_4470cc0941c0`, worktree `ms-cp4-repair1` | `e4c6502` | Claude Opus high (implementer) | worker_done → inspect diff, fresh Opus QA, soak 2 on `ms-cp4r` |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
