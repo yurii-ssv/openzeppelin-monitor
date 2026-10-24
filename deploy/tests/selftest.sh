@@ -531,4 +531,33 @@ else
   skipped=$((skipped + 2)); echo "SKIP  render --strict D11 cases (no binary at $BIN)"
 fi
 
+echo "== D20: Monitor endpoints and polling (soak-1 Monitor stall, event-0084)"
+net=deploy/config/networks/evm_ethereum_mainnet.json
+n=$(jq '[.rpc_urls[] | select(.url.type == "plain" and (.url.value | test("tenderly") | not))] | length' "$ROOT/$net")
+[ "${n:-0}" -ge 2 ] && ok "the tracked network lists $n non-Tenderly literal endpoints (>= 2)" || bad "the tracked network lists ${n:-?} non-Tenderly literal endpoints"
+second=$(jq -r '.cron_schedule | split(" ") | if length == 6 then .[0] else "bad" end' "$ROOT/$net")
+case "$second" in [0-9]|[0-5][0-9]) ok "the tracked cron_schedule fires once a minute (second $second)" ;; *) bad "the tracked cron_schedule is not once a minute: $second" ;; esac
+d20() { # d20 <name> <jq mutation> <expected FAIL pattern>
+  local r; r=$(fresh "d20-$1"); mutate "$r/$net" "$2"
+  expect "D20 $1 is red" nonzero "$3" -- bash "$r/deploy/check-templates.sh"
+}
+d20 cron2s '.cron_schedule = "*/2 * * * * *"' 'cron_schedule must be a 6-field cron'
+d20 cron5field '.cron_schedule = "* * * * *"' 'cron_schedule must be a 6-field cron'
+d20 onepublic 'del(.rpc_urls[] | select(.url.value == "https://rpc-eth.blockmachine.io"))' 'at least two non-Tenderly'
+d20 tenderlyonly '(.rpc_urls[] | select(.url.type == "plain") | .url.value) = "https://gateway.tenderly.co/public/mainnet"' 'at least two non-Tenderly'
+d20 adjacent '(.rpc_urls[] | select(.url.value == "https://rpc.mevblocker.io") | .weight) = 75' 'both possibly Tenderly'
+d20 keyedplain '(.rpc_urls[] | select(.url.value == "https://rpc.mevblocker.io") | .url.value) = "https://eth-mainnet.example/v1/k3y"' 'S2 plain value present'
+d20 plainprimary '.rpc_urls[0].url = {"type":"plain","value":"https://rpc.mevblocker.io"}' 'primary RPC \(weight 100\) must be MAINNET_RPC_URL'
+d20 sameweight '(.rpc_urls[] | select(.url.value == "https://rpc.mevblocker.io") | .weight) = 70' 'weights must be unique'
+d20 pastblocks '.max_past_blocks = 3600' 'max_past_blocks must be <= 100'
+d20 recoverysecond '.recovery_config.cron_schedule = "0 */5 * * * *"' 'fires on the same second'
+if [ -x "$BIN" ]; then
+  # a literal (plain) URL cannot be unset: with only MAINNET_RPC_URL set the render keeps both public endpoints
+  expect "render with MAINNET_RPC_URL_2 unset keeps the two literal endpoints and passes --check" zero '--check passed' -- env -u MAINNET_RPC_URL_2 MONITOR_BIN="$BIN" TELEGRAM_CHAT_ID=-100123 bash "$ROOT/deploy/render.sh" --out "$TMP/d20-render/config"
+  n=$(jq '[.rpc_urls[] | .url.value] | join(",")' "$TMP/d20-render/config/networks/evm_ethereum_mainnet.json")
+  [ "$n" = '"MAINNET_RPC_URL,https://rpc.mevblocker.io,https://rpc-eth.blockmachine.io"' ] && ok "rendered rotation without MAINNET_RPC_URL_2: $n" || bad "rendered rotation without MAINNET_RPC_URL_2: $n"
+else
+  skipped=$((skipped + 2)); echo "SKIP  render D20 cases (no binary at $BIN)"
+fi
+
 finish

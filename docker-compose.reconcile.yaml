@@ -13,7 +13,9 @@
 # Development and QA keep alerts.mode "record" or point the *_env names of the config at TEST_*.
 #
 # Volumes (D18): `watch-data` holds the worker's SQLite database (+ WAL), status file and record-mode alerts;
-# `monitor-data` is the Monitor's data volume, of which the worker mounts only `inbox/`, read-only.
+# `monitor-data` is the Monitor's data volume, mounted read-only twice: `inbox/` at /inbox (the failed-tx inbox) and
+# the whole volume at /monitor, where the worker reads the Monitor's last processed block (D20 stall watch,
+# config `monitor.last_block_path`).
 # `inbox-init` creates the empty inbox file before the worker starts (a missing inbox is a health alert).
 
 services:
@@ -77,6 +79,11 @@ services:
         read_only: true
         volume:
           subpath: inbox
+      # The Monitor's data dir, read-only: its last processed block (<network>_last_block.txt) for the stall watch.
+      - type: volume
+        source: monitor-data
+        target: /monitor
+        read_only: true
 
 volumes:
   watch-data: {}

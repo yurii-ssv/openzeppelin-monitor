@@ -72,10 +72,12 @@ def no_sleep(monkeypatch):
 
 
 def test_default_endpoints_are_the_d16_list_in_order():
+    """D16 list plus the D20 fourth endpoint (CP4 repair 1), last."""
     assert resolve_endpoints(DEFAULT_RPC_URLS, "MAINNET_RPC_URL", environ={}) == [
         ("mainnet.gateway.tenderly.co", "https://mainnet.gateway.tenderly.co"),
         ("gateway.tenderly.co", "https://gateway.tenderly.co/public/mainnet"),
-        ("rpc.mevblocker.io", "https://rpc.mevblocker.io")]
+        ("rpc.mevblocker.io", "https://rpc.mevblocker.io"),
+        ("rpc-eth.blockmachine.io", "https://rpc-eth.blockmachine.io")]
 
 
 def test_mainnet_rpc_url_overrides_the_primary_and_env_names_resolve():

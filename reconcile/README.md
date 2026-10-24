@@ -28,6 +28,10 @@ The worker is read-only against the chain. Each step:
    A failed read invalidates the parameters (checks that read them do not run) and is retried every
    step; see [checks/README.md §5.1](checks/README.md).
 4. Re-alerts open incidents (page 6 h, warn 24 h), sends the daily digest, delivers the outbox.
+5. Reads the Monitor's last processed block (`monitor_watch.py`, D20): a Monitor that stalls, a missing or unreadable
+   file, or an unknown head for 5 min is a `monitor-stall` health message (one per stall), `monitor-recovered` when it
+   catches up, and every block range the Monitor skips is a `monitor-skipped` message naming it
+   ([runbook](../deploy/README.md#monitor-stall-watch-d20)).
 
 | Module | Role |
 |---|---|
@@ -41,6 +45,7 @@ The worker is read-only against the chain. Each step:
 | `inventory.py` | SSV API v4 + logs, every tuple validated against storage |
 | `inbox.py` | failed-transaction inbox and revert decoding |
 | `metrics.py` | Prometheus text exposition (stdlib HTTP server) |
+| `monitor_watch.py` | the Monitor's progress (last processed block): stall, recovery, skipped ranges (D20) |
 | `eb_events.py`, `eb_storage.py`, `eb_model.py` | event decoding, pinned storage layout, M5 replay model |
 
 ## M5 (#94775) — `checks/m5_eb_desync.py`
@@ -101,8 +106,10 @@ Metrics: `ssv_watch_checkpoint_block`, `ssv_watch_lag_blocks`, `ssv_watch_backfi
 `ssv_watch_outbox_undelivered`, `ssv_watch_outbox_failing`, `ssv_watch_check_last_run_seconds{check}`,
 `ssv_watch_check_last_run_block{check}`, `ssv_watch_check_errors_total{check}`,
 `ssv_watch_rpc_consecutive_failures`, `ssv_watch_inbox_entries{state}`,
-`ssv_watch_input_unavailable{input="params"|"inbox"}`. `<db_path>.status.json` has `healthy: false`
-while a step fails or a configured input (parameters, inbox) cannot be read.
+`ssv_watch_input_unavailable{input="params"|"inbox"|"monitor"}`, `ssv_watch_monitor_last_block`,
+`ssv_watch_monitor_lag_blocks`, `ssv_watch_monitor_stalled`, `ssv_watch_monitor_skipped_blocks_total`.
+`<db_path>.status.json` has `healthy: false` while a step fails, a configured input (parameters, inbox) cannot be
+read or a Monitor stall is open.
 
 LIVE probes (read-only): `.venv/bin/python inventory.py --probe --rpc <url>` (API v4 pages, ≥ 5 sampled
 tuples validated against storage) and `.venv/bin/python params.py --probe --rpc <url>`.
@@ -115,11 +122,15 @@ tuples validated against storage) and `.venv/bin/python params.py --probe --rpc 
 - `checks.m5.layout`: pinned from `ssv-network-triage/contracts.lock.json`. Any drift suspends M5
   with a health alert. After an upgrade, revalidate `eb_storage.py`, then update the pin.
 - `confirmations`: blocks behind head (default 12). A negative value uses the `finalized` tag.
-- RPC (D16): `rpc_urls`, tried in order with failover (default `https://mainnet.gateway.tenderly.co`,
-  `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`); entries are URLs or environment
-  variable names; `rpc_url_env` (`MAINNET_RPC_URL`), when set, replaces the first. Archive state is not needed
-  (state is read at the checkpoint block), `eth_getLogs` over history is; `max_log_range` 5,000 (the cap of all
-  three), halved when an endpoint rejects a window.
+- RPC (D16, D20): `rpc_urls`, tried in order with failover (default `https://mainnet.gateway.tenderly.co`,
+  `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`, `https://rpc-eth.blockmachine.io`);
+  entries are URLs or environment variable names; `rpc_url_env` (`MAINNET_RPC_URL`), when set, replaces the first.
+  Archive state is not needed (state is read at the checkpoint block), `eth_getLogs` over history is;
+  `max_log_range` 5,000 (the cap of all four), halved when an endpoint rejects a window.
+- `monitor` (D20): `last_block_path` (`/monitor/evm_ethereum_mainnet_last_block.txt`, the Monitor's data volume
+  mounted read-only; without it the watch is off and `status.monitor.enabled` is false), `max_lag_blocks` 30,
+  `stall_after_s` 300, `max_past_blocks` 50 (never more than the Monitor network template's: a larger value would
+  hide skipped blocks), `cycle_s` 60 (the Monitor's cron). Unknown keys fail at start.
 
 ## Tests
 

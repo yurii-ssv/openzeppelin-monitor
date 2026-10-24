@@ -6,7 +6,9 @@
 # Pairs the "no plain secret" scan with required-field assertions, so a template that loses its
 # credentials or chat id reference is red, not just a template that gains a plain value:
 #   S1  every file under monitors/ triggers/ networks/ parses as JSON
-#   S2  V0.6: no {"type":"plain"} value anywhere in triggers/ or networks/
+#   S2  V0.6: no {"type":"plain"} value anywhere in triggers/ or networks/, except a network RPC URL that is
+#       one of the keyless public endpoints in PUBLIC_RPC_URLS (D20: no API key, so not a secret; a literal
+#       cannot be unset, so it can never stop the Monitor from loading)
 #   S3  V0.3: no webhook URL or bot-token shaped string anywhere under deploy/ (secret scan)
 #   S4  triggers: unique keys and names; per type the required credential / destination fields
 #         telegram  token = {type:environment, value: NAME}; chat_id = "${TELEGRAM_CHAT_ID}"; message title+body
@@ -14,8 +16,12 @@
 #                   whose key ends _success or _other_sender (info) uses DISCORD_WEBHOOK_INFO, every
 #                   other Discord trigger (failed, dissent, safe, large transfer) its own variable
 #         script    language, script_path to an existing file under triggers/scripts, timeout_ms > 0
-#   S5  networks: every RPC is an environment reference; the first (weight 100) is MAINNET_RPC_URL;
-#       max_past_blocks > 0; recovery_config complete
+#   S5  networks: every RPC is an environment reference or an allow-listed public URL; the first (weight 100)
+#       is MAINNET_RPC_URL; weights unique (the Monitor rotates in weight order); D20: at least two
+#       non-Tenderly public URLs and no two possibly-Tenderly endpoints (an environment reference or a
+#       Tenderly host) next to each other in the rotation cycle; cron_schedule is a 6-field cron that fires
+#       at most once a minute (one fixed second); 0 < max_past_blocks <= 100 (a cycle fetches up to
+#       max_past_blocks + 1 full blocks concurrently); recovery_config complete, its cron on another second
 #   S6  monitors: unique names; every triggers[] entry resolves to a defined trigger key;
 #       every network slug resolves; trigger_conditions scripts exist; addresses non-empty;
 #       networks[] non-empty; match_conditions present with at least one non-empty
@@ -49,6 +55,10 @@ CFG=${CFG:-$ROOT/deploy/config}
 { command -v jq >/dev/null && [ "$(jq -n '1 + 1' 2>/dev/null)" = 2 ]; } || { echo "checker: jq is required (not on PATH, or not working)" >&2; exit 2; }
 JQ_ERR=$(mktemp) || { echo "checker: cannot create a temporary file" >&2; exit 2; }
 trap 'rm -f "$JQ_ERR"' EXIT
+
+# Keyless public mainnet RPCs (D16/D20) a network template may name literally. Anything else, a keyed URL
+# included, must stay an environment reference.
+PUBLIC_RPC_URLS='["https://rpc.mevblocker.io","https://rpc-eth.blockmachine.io","https://mainnet.gateway.tenderly.co","https://gateway.tenderly.co/public/mainnet"]'
 
 errors=0
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
@@ -111,7 +121,11 @@ shape network_shape "${net_files[@]}"
 [ $errors -eq 0 ] || { echo "checker: $errors failure(s)"; exit 1; }
 
 # S2 -- V0.6 plain-value scan. Counts the objects, so an empty plain value is a violation too.
-if jqo "S2 plain-value scan" -s '[.[] | .. | objects | select(.type? == "plain")] | length' "${trig_files[@]}" "${net_files[@]}"; then
+if jqo "S2 plain-value scan" -s --argjson allow "$PUBLIC_RPC_URLS" '[.[] | . as $doc
+    | paths(type == "object" and .type? == "plain") as $p
+    | select((($doc | type) == "object" and ($doc | has("network_type")) and ($p | length) == 3
+              and $p[0] == "rpc_urls" and $p[2] == "url" and ($doc | getpath($p).value | IN($allow[]))) | not)]
+    | length' "${trig_files[@]}" "${net_files[@]}"; then
   [ "$JQ_OUT" = 0 ] || fail "S2 plain value present in triggers/networks ($JQ_OUT value(s); not printed)"
 fi
 
@@ -180,14 +194,29 @@ done
 # S5 -- networks.
 for f in "${net_files[@]}"; do
   rel=${f#"$ROOT"/}
-  jqo "S5 $rel" -r '
+  jqo "S5 $rel" -r --argjson allow "$PUBLIC_RPC_URLS" '
+    def envref: (.url.type == "environment") and ((.url.value | type) == "string") and (.url.value | test("^[A-Z][A-Z0-9_]*$"));
+    def public: (.url.type == "plain") and (.url.value | IN($allow[]));
+    def maybe_tenderly: envref or ((.url.value | type) == "string" and (.url.value | test("tenderly")));
+    def second($c): ($c | type) == "string" and ($c | split(" ") | length) == 6 and ($c | split(" ")[0] | test("^[0-9]{1,2}$"));
     (if (.rpc_urls | length) == 0 then "no rpc_urls" else empty end),
-    (.rpc_urls[]? | select(((.url.type == "environment") and (.url.value | test("^[A-Z][A-Z0-9_]*$"))) | not) | "rpc url is not an environment reference"),
+    (.rpc_urls[]? | select((envref or public) | not) | "rpc url is neither an environment reference nor an allow-listed keyless public URL"),
     (if ([.rpc_urls[]? | select(.weight == 100 and .url.value == "MAINNET_RPC_URL")] | length) != 1 then "primary RPC (weight 100) must be MAINNET_RPC_URL" else empty end),
+    (if ([.rpc_urls[]?.weight] | length) != ([.rpc_urls[]?.weight] | unique | length) then "rpc_urls weights must be unique (the Monitor rotates in weight order)" else empty end),
+    (if ([.rpc_urls[]? | select(public and (maybe_tenderly | not))] | length) < 2 then "D20: at least two non-Tenderly public RPC URLs are required" else empty end),
+    ([.rpc_urls[]?] | sort_by(-.weight) as $r | ($r | length) as $n
+     | range(0; if $n > 1 then $n else 0 end) as $i
+     | select(($r[$i] | maybe_tenderly) and ($r[($i + 1) % $n] | maybe_tenderly))
+     | "D20: rotation goes from \($r[$i].url.value) to \($r[($i + 1) % $n].url.value), both possibly Tenderly (one rate limit); interleave a non-Tenderly endpoint"),
+    (if second(.cron_schedule) | not then "cron_schedule must be a 6-field cron with one fixed second (at most once a minute, D20), got \(.cron_schedule)" else empty end),
     (if ((.max_past_blocks // 0) <= 0) then "max_past_blocks must be > 0" else empty end),
+    (if ((.max_past_blocks // 0) > 100) then "max_past_blocks must be <= 100 (a cycle fetches up to max_past_blocks + 1 full blocks at once; the public endpoints rate-limit such bursts, D20), got \(.max_past_blocks)" else empty end),
     (if (.recovery_config | type) != "object" then "recovery_config missing"
      else (.recovery_config | (if .enabled != true then "recovery_config.enabled must be true" else empty end),
-           (["cron_schedule", "max_blocks_per_run", "max_block_age", "max_retries", "retry_delay_ms"][] as $k | if has($k) | not then "recovery_config.\($k) missing" else empty end)) end)
+           (["cron_schedule", "max_blocks_per_run", "max_block_age", "max_retries", "retry_delay_ms"][] as $k | if has($k) | not then "recovery_config.\($k) missing" else empty end)),
+          (if second(.cron_schedule) and second(.recovery_config.cron_schedule)
+              and (.cron_schedule | split(" ")[0]) == (.recovery_config.cron_schedule | split(" ")[0])
+           then "recovery_config.cron_schedule fires on the same second as cron_schedule (the recovery run is skipped while the main run holds the lock)" else empty end) end)
   ' "$f" && emit "S5 $rel" "$JQ_OUT"
 done
 

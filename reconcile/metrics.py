@@ -62,8 +62,19 @@ def render(conn: sqlite3.Connection, check_ids: list[str]) -> str:
     metric("ssv_watch_rpc_consecutive_failures", "gauge", "Consecutive failed worker steps.",
            [({}, meta("rpc_failures", 0))])
     unavailable = meta("inputs_unavailable", {})
-    metric("ssv_watch_input_unavailable", "gauge", "1 while a configured input (live parameters, inbox) cannot be read.",
-           [({"input": k}, int(unavailable.get(k, False))) for k in ("params", "inbox")])
+    metric("ssv_watch_input_unavailable", "gauge", "1 while a configured input (live parameters, inbox) cannot be read "
+           "or the Monitor stalls (input monitor).",
+           [({"input": k}, int(unavailable.get(k, False))) for k in ("params", "inbox", "monitor")])
+    watch = meta("monitor:watch") or {}  # monitor_watch.py (D20); absent while the watch is off
+    lag = watch.get("lag_blocks")
+    metric("ssv_watch_monitor_last_block", "gauge", "The Monitor's last processed block as last read (-1: never read).",
+           [({}, watch.get("block") if watch.get("block") is not None else -1)])
+    metric("ssv_watch_monitor_lag_blocks", "gauge", "Head minus the Monitor's last processed block at the last read "
+           "(-1: unknown: file unreadable or head unknown).", [({}, lag if lag is not None else -1)])
+    metric("ssv_watch_monitor_stalled", "gauge", "1 while a Monitor stall is open (monitor-stall health message).",
+           [({}, int(bool(watch.get("stall"))))])
+    metric("ssv_watch_monitor_skipped_blocks_total", "counter", "Blocks the Monitor skipped and never evaluated "
+           "(monitor-skipped health messages).", [({}, watch.get("skipped_total", 0))])
     inbox = conn.execute("SELECT COUNT(*), COALESCE(SUM(resolved = 0), 0), COALESCE(SUM(canonical IS NULL), 0), "
                          "COALESCE(SUM(canonical = 0), 0) FROM inbox").fetchone()
     # pending: revert not yet resolved; held: block not yet confirmed canonical; orphaned: never delivered

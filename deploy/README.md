@@ -33,7 +33,7 @@ export COMPOSE_FILE=docker-compose.yaml:docker-compose.reconcile.yaml
 | Monitor config | production: `deploy/render.sh --out config --strict` (secrets in the environment); local or soak without real channels: `scripts/local-dry-run.sh --prepare` (renders into `.local-dry/config` and keeps only `TEST_*` triggers, the inbox bridge and a local log) and `export MONITOR_CONFIG_DIR=./.local-dry/config` |
 | Worker config | `cp reconcile/config.example.json reconcile/config.json` (gitignored); keep `"alerts": {"mode": "record"}` until routes are enabled; add `"record_path": "/data/alerts-record.jsonl"` to keep recorded alerts in the volume |
 | Secrets and RPC | environment only (`.env`, untracked; names in `.env.example` and in the header of `docker-compose.reconcile.yaml`). Never a value in a tracked file. `docker compose config` prints resolved values: never paste its output |
-| RPC (D16) | the worker's `rpc_urls`, in failover order: `https://mainnet.gateway.tenderly.co`, `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`; `MAINNET_RPC_URL`, when set, replaces the first. The Monitor reads `MAINNET_RPC_URL` (and `MAINNET_RPC_URL_2`, optional) |
+| RPC (D16, D20) | **Worker** `rpc_urls`, in failover order: `https://mainnet.gateway.tenderly.co`, `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`, `https://rpc-eth.blockmachine.io`; `MAINNET_RPC_URL`, when set, replaces the first. **Monitor** (`deploy/config/networks/evm_ethereum_mainnet.json`, rotation in weight order): `MAINNET_RPC_URL` (required, weight 100), `https://rpc.mevblocker.io` (literal, 90), `MAINNET_RPC_URL_2` (optional, 80; dropped by `render.sh` when unset), `https://rpc-eth.blockmachine.io` (literal, 70). Tenderly and non-Tenderly alternate, so a Tenderly rate limit (one per IP, soak 1) rotates to another provider; the two literals are keyless public URLs and cannot be unset. Set `MAINNET_RPC_URL_2` only to a different endpoint than `MAINNET_RPC_URL` |
 
 ### Start, stop, restart
 
@@ -74,8 +74,11 @@ parameters, inbox) or a reorg re-evaluation is pending. Metrics: `ssv_watch_chec
 `ssv_watch_open_incidents{check,severity}`, `ssv_watch_outbox_undelivered`, `ssv_watch_outbox_failing`,
 `ssv_watch_check_last_run_seconds{check}`, `ssv_watch_check_last_run_block{check}`,
 `ssv_watch_check_errors_total{check}`, `ssv_watch_rpc_consecutive_failures`, `ssv_watch_inbox_entries{state}`,
-`ssv_watch_input_unavailable{input}`. Alert on: lag > 50 for 10 min, `rpc_consecutive_failures` ≥ 3,
-`outbox_failing` > 0, `input_unavailable` = 1, a check's `last_run_seconds` older than 2× its interval.
+`ssv_watch_input_unavailable{input}` (`params`, `inbox`, `monitor`), `ssv_watch_monitor_last_block`,
+`ssv_watch_monitor_lag_blocks` (−1 unknown), `ssv_watch_monitor_stalled`, `ssv_watch_monitor_skipped_blocks_total`.
+Alert on: lag > 50 for 10 min, `rpc_consecutive_failures` ≥ 3, `outbox_failing` > 0, `input_unavailable` = 1,
+`monitor_stalled` = 1, an increase of `monitor_skipped_blocks_total`, a check's `last_run_seconds` older than 2× its
+interval. `status` has a `monitor` section (last block, head, lag, stall, skipped blocks).
 
 ### Backfill phase (D17)
 
@@ -111,6 +114,31 @@ other than a revert moves to the next endpoint; a revert is an answer; an empty 
 When all fail, the step fails: after 3 consecutive failed steps a `rpc` health message is queued (again at 20 and
 100), and `rpc-recovered` when a step succeeds again. A scan window whose reads were answered by two different
 endpoints is re-read at the next step. Logs name endpoints by host or by the variable name, never by URL.
+
+### Monitor stall watch (D20)
+
+Soak 1 (event-0084) showed that a Monitor processing no block is silent: no rule fires and the failed-tx inbox stays
+empty, which reads like "nothing happened". The Monitor polls every 60 s (`cron_schedule` `0 * * * * *`) and, after
+each successful cycle, rewrites its last processed block in `<monitor-data>/evm_ethereum_mainnet_last_block.txt`.
+The worker mounts the Monitor's data volume read-only at `/monitor` and reads that file at every step
+(`monitor` section of its config; defaults for the 60 s cron):
+
+| Health message (page route) | When |
+|---|---|
+| `monitor-stall` | for `stall_after_s` (300 s): the Monitor is more than `max_lag_blocks` (30, ~6 min) behind the head the worker reads, or its value has not changed, or the file is missing, unreadable or not a number, or the head is unknown (the worker's own RPC fails: unknown is a stall). One per stall (a second stall in the same health window is announced), re-sent every health window (6 h) while it lasts; `status.monitor.stalled`, `healthy: false`, `ssv_watch_monitor_stalled` 1 |
+| `monitor-recovered` | the first later step that measures the lag within `max_lag_blocks` with a changing value |
+| `monitor-skipped` | the Monitor's last block jumped by more than `max_past_blocks + 1` (it resumed more than `max_past_blocks` = 50 blocks, ~10 min, behind: blocks `[prev+1, new−51]` are never evaluated), or its file was lost (it restarts at the head: `[prev+1, new−1]`). The message names the range; it is marked an upper bound when the worker did not see the Monitor's previous value (a worker restart or a step longer than a Monitor cycle). Check the range by hand |
+
+Why `max_past_blocks` 50: a Monitor cycle fetches every block from its last one to the head **at once**
+(`eth_getBlockByNumber` with transactions, all concurrently, ~0.45 MB each) and fails as a whole if one request fails;
+with 3,600 (soak 1) a resumed Monitor sent 1,400+ concurrent requests, was rate-limited and never caught up. 50
+concurrent full blocks were served without a 429 by `rpc.mevblocker.io` and `rpc-eth.blockmachine.io` (2026-10-24);
+100 were not (10 % and 44 % HTTP 429). A Monitor outage longer than ~10 min therefore loses blocks, and the worker
+names them. `recovery_config` does not help here: the Monitor retries only blocks missing *inside* a fetched range,
+never the skipped ones (`workers/cp4-repair1/plan.md`, behaviour table). Its job runs at second 30 every 5 min, so it
+never waits on the main job's lock.
+
+The Monitor container has a healthcheck (its last-block file rewritten within 5 min); compose only reports it.
 
 ### Rotate secrets
 
@@ -151,7 +179,8 @@ endpoints is re-read at the next step. Logs name endpoints by host or by the var
   Not NFS/EFS or another network filesystem: SQLite in WAL mode needs POSIX locks and shared memory on a local
   filesystem.
 - **One pod, two containers** (Monitor and worker) sharing the PVC: the Monitor mounts it at `/app/data`, the
-  worker mounts a `subPath: watch` at `/data` and `subPath: inbox` read-only at `/inbox`. An initContainer creates
+  worker mounts a `subPath: watch` at `/data`, `subPath: inbox` read-only at `/inbox` and the PVC root read-only at
+  `/monitor` (the Monitor's last processed block, D20 stall watch). An initContainer creates
   `inbox/failed-tx.jsonl` (empty, `touch`, never truncate) before both start (the compose `inbox-init` service).
 - **Config**: ConfigMaps for the rendered Monitor config (`config/`, read-only at `/app/config`) and the worker's
   `config.json` (at `/app/config.json`). **Secrets**: a Secret exposed as environment variables (names as in
@@ -164,6 +193,10 @@ endpoints is re-read at the next step. Logs name endpoints by host or by the var
   RPC outage longer than its budget, which a restart does not fix; the outage is already reported (`rpc` health
   message, `healthy: false`, `ssv_watch_rpc_consecutive_failures`). Give the first start a 30 min startup budget
   (backfill). Metrics: port 9464, path `/metrics`.
+- **Monitor probes**: readiness = the compose Monitor healthcheck (its `evm_ethereum_mainnet_last_block.txt` rewritten
+  within 5 min; the image has `python3`); no liveness probe on it, or a generous one (≥ 30 min): an RPC outage stalls
+  the Monitor and a restart does not fix it. The stall is reported by the worker (`monitor-stall` health message,
+  `ssv_watch_monitor_stalled`), so a stalled Monitor is never silent; alert on `ssv_watch_monitor_stalled` too.
 - **Backup**: volume snapshots of the PVC (stop the worker or accept a crash-consistent SQLite+WAL snapshot,
   which SQLite recovers on open).
 
