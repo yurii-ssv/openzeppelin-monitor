@@ -33,7 +33,7 @@ export COMPOSE_FILE=docker-compose.yaml:docker-compose.reconcile.yaml
 | Monitor config | production: `deploy/render.sh --out config --strict` (secrets in the environment); local or soak without real channels: `scripts/local-dry-run.sh --prepare` (renders into `.local-dry/config` and keeps only `TEST_*` triggers, the inbox bridge and a local log) and `export MONITOR_CONFIG_DIR=./.local-dry/config` |
 | Worker config | `cp reconcile/config.example.json reconcile/config.json` (gitignored); keep `"alerts": {"mode": "record"}` until routes are enabled; add `"record_path": "/data/alerts-record.jsonl"` to keep recorded alerts in the volume |
 | Secrets and RPC | environment only (`.env`, untracked; names in `.env.example` and in the header of `docker-compose.reconcile.yaml`). Never a value in a tracked file. `docker compose config` prints resolved values: never paste its output |
-| RPC (D16, D20) | **Worker** `rpc_urls`, in failover order: `https://mainnet.gateway.tenderly.co`, `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`, `https://rpc-eth.blockmachine.io`; `MAINNET_RPC_URL`, when set, replaces the first. **Monitor** (`deploy/config/networks/evm_ethereum_mainnet.json`, rotation in weight order): `MAINNET_RPC_URL` (required, weight 100), `https://rpc.mevblocker.io` (literal, 90), `MAINNET_RPC_URL_2` (optional, 80; dropped by `render.sh` when unset), `https://rpc-eth.blockmachine.io` (literal, 70). Tenderly and non-Tenderly alternate, so a Tenderly rate limit (one per IP, soak 1) rotates to another provider; the two literals are keyless public URLs and cannot be unset. Set `MAINNET_RPC_URL_2` only to a different endpoint than `MAINNET_RPC_URL` |
+| RPC (D16, D20) | **Worker** `rpc_urls`, in failover order: `https://mainnet.gateway.tenderly.co`, `https://gateway.tenderly.co/public/mainnet`, `https://rpc.mevblocker.io`, `https://rpc-eth.blockmachine.io`; `MAINNET_RPC_URL`, when set, replaces the first. **Monitor** (`deploy/config/networks/evm_ethereum_mainnet.json`, rotation in weight order): `MAINNET_RPC_URL` (required, weight 100), `https://rpc.mevblocker.io` (literal, 90), `MAINNET_RPC_URL_2` (optional, 80; dropped by `render.sh` when unset), `https://rpc-eth.blockmachine.io` (literal, 70). Tenderly and non-Tenderly alternate, so a Tenderly rate limit (one per IP, soak 1) rotates to another provider; the two literals are keyless public URLs and cannot be unset. In production `MAINNET_RPC_URL` is the company/non-Tenderly endpoint and `MAINNET_RPC_URL_2` stays unset (R5, [Monitor stall watch](#monitor-stall-watch-d20)) |
 
 ### Start, stop, restart
 
@@ -126,9 +126,18 @@ RPCs), delivering what it queued (`monitor` section of its config; defaults for 
 
 | Health message (page route) | When |
 |---|---|
-| `monitor-stall` | for `stall_after_s` (300 s): the Monitor is more than `max_lag_blocks` (30, ~6 min) behind the head the worker reads, or its value has not changed, or the file is missing, unreadable or not a number, or the head is unknown (the worker's own RPC fails: unknown is a stall). One per stall (a second stall in the same health window is announced), re-sent every health window (6 h) while it lasts; `status.monitor.stalled`, `healthy: false`, `ssv_watch_monitor_stalled` 1 |
+| `monitor-stall` | for `stall_after_s` (240 s): the Monitor is more than `max_lag_blocks` (30, ~6 min) behind the head the worker reads, or its value has not changed, or the file is missing, unreadable or not a number, or the head is unknown (the worker's own RPC fails: unknown is a stall). One per stall (a second stall in the same health window is announced), re-sent every health window (6 h) while it lasts; `status.monitor.stalled`, `healthy: false`, `ssv_watch_monitor_stalled` 1 |
+| (timing) | a Monitor that stops is announced ~4–5 min after its last successful cycle, at a lag of ~25–35 blocks: before it reaches `max_past_blocks` (50) and starts losing blocks (a long worker check run delays delivery; the worker observes between check runs) |
 | `monitor-recovered` | the first later step that measures the lag within `max_lag_blocks` with a changing value |
 | `monitor-skipped` | the Monitor's last block jumped by more than `max_past_blocks + 1` (it resumed more than `max_past_blocks` = 50 blocks, ~10 min, behind: blocks `[prev+1, new−51]` are never evaluated), or its file was lost (it restarts at the head: `[prev+1, new−1]`). The message names the range; it is marked an upper bound when the worker did not see the Monitor's previous value (a worker restart or a step longer than a Monitor cycle). Check the range by hand |
+
+Rotation limit (R5, Rust, unchanged): for each failed request the Monitor probes only the first fallback in its queue
+(weight order, built without the endpoint active at start); if that probe fails the request fails, so the third and
+fourth endpoints are reached only through successful rotations. With Tenderly rate-limited at start the Monitor serves
+from `rpc.mevblocker.io` and, when that 429s, probes only Tenderly (ms-cp4r, 2026-10-24: 3 of 21 cycles failed and
+recovered by themselves; `rpc-eth.blockmachine.io` got no request). In production set `MAINNET_RPC_URL` to the
+company/non-Tenderly endpoint and leave `MAINNET_RPC_URL_2` unset; a persisting failure is a `monitor-stall` page
+before any block is lost.
 
 Why `max_past_blocks` 50: a Monitor cycle fetches every block from its last one to the head **at once**
 (`eth_getBlockByNumber` with transactions, all concurrently, ~0.45 MB each) and fails as a whole if one request fails;

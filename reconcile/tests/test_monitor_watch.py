@@ -378,6 +378,7 @@ def test_seeded_sweep_every_skipped_block_is_announced_and_no_stall_is_silent(tm
     mon.cycle(chain.sealed, True)
     first = mon.last
     down_until = worker_down_until = -1
+    was_stalled = False
     bad_since = None  # oracle: start of the current period in which the Monitor is not positively keeping up
     t = 0
     for minute in range(240):
@@ -402,9 +403,15 @@ def test_seeded_sweep_every_skipped_block_is_announced_and_no_stall_is_silent(tm
             ok = (not chain.down and mon.last is not None and chain.sealed - mon.last <= 30)
             bad_since = None if ok else (t if bad_since is None else bad_since)
             st = w.status()["monitor"]
-            if bad_since is not None and t - bad_since >= 300 + 30:
+            stall_s = monitor_watch.DEFAULTS["stall_after_s"]
+            if bad_since is not None and t - bad_since >= stall_s + 30:
                 assert st["stalled"], f"seed {seed} minute {minute}: Monitor not keeping up since {bad_since}, silent"
-            advancing = st["changed_at"] is not None and w.clock() - st["changed_at"] < 300
+            if st["stalled"] and not was_stalled and mon.last is not None and minute >= worker_down_until:
+                # D20 (coordinator): a stopped Monitor is announced before its lag can reach max_past_blocks
+                assert chain.sealed - mon.last <= M, f"seed {seed} minute {minute}: stall announced only at lag " \
+                    f"{chain.sealed - mon.last}"
+            was_stalled = st["stalled"]
+            advancing = st["changed_at"] is not None and w.clock() - st["changed_at"] < stall_s
             if ok and advancing:
                 assert not st["stalled"], f"seed {seed} minute {minute}: stall kept after a proven recovery"
     chain.down = False
@@ -426,5 +433,8 @@ def test_seeded_sweep_every_skipped_block_is_announced_and_no_stall_is_silent(tm
 
 
 def test_defaults_are_stated_for_a_60_s_cron():
-    assert monitor_watch.DEFAULTS["max_lag_blocks"] == 30 and monitor_watch.DEFAULTS["stall_after_s"] == 300
+    assert monitor_watch.DEFAULTS["max_lag_blocks"] == 30 and monitor_watch.DEFAULTS["stall_after_s"] == 240
+    # announced before any block is lost: ~2 blocks behind at the last write, + the grace and one worker step
+    lag_at_alert = 2 + (monitor_watch.DEFAULTS["stall_after_s"] + DEFAULTS["poll_interval_s"]) / 12
+    assert lag_at_alert < monitor_watch.DEFAULTS["max_past_blocks"] / 2
     assert DEFAULTS["poll_interval_s"] <= monitor_watch.DEFAULTS["cycle_s"]  # the worker sees every Monitor write

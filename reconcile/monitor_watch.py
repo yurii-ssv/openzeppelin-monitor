@@ -30,13 +30,15 @@ log = logging.getLogger("eb-reconcile")
 
 # Defaults for the Monitor template's 60 s cron (deploy/config/networks/evm_ethereum_mainnet.json): a healthy Monitor
 # is at most ~2 confirmations + 5 blocks of one cycle + a few blocks of read skew (~10) behind the head; 30 blocks
-# is ~6 min, i.e. about five failed cycles. `max_past_blocks` must not exceed the Monitor's own value (a smaller one
-# over-reports the skipped range, a larger one would hide blocks).
+# is ~6 min, i.e. about five failed cycles. `stall_after_s` 240 (four failed cycles): a Monitor that stops is
+# announced (value unchanged for 240 s, seen within one worker step) at a lag of about 2 + 270/12 = ~25 blocks plus
+# the delivery delay, well before it reaches `max_past_blocks` (50) and starts losing blocks. `max_past_blocks` must
+# not exceed the Monitor's own value (a smaller one over-reports the skipped range, a larger one would hide blocks).
 DEFAULTS = {
     "enabled": True,
     "last_block_path": None,
     "max_lag_blocks": 30,
-    "stall_after_s": 300,
+    "stall_after_s": 240,
     "max_past_blocks": 50,
     "cycle_s": 60,
     "block_time_s": 12,

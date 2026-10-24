@@ -29,7 +29,7 @@ The worker is read-only against the chain. Each step:
    step; see [checks/README.md §5.1](checks/README.md).
 4. Re-alerts open incidents (page 6 h, warn 24 h), sends the daily digest, delivers the outbox.
 5. Reads the Monitor's last processed block (`monitor_watch.py`, D20): a Monitor that stalls, a missing or unreadable
-   file, or an unknown head for 5 min is a `monitor-stall` health message (one per stall), `monitor-recovered` when it
+   file, or an unknown head for 4 min is a `monitor-stall` health message (one per stall), `monitor-recovered` when it
    catches up, and every block range the Monitor skips is a `monitor-skipped` message naming it
    ([runbook](../deploy/README.md#monitor-stall-watch-d20)).
 
@@ -129,7 +129,7 @@ tuples validated against storage) and `.venv/bin/python params.py --probe --rpc 
   `max_log_range` 5,000 (the cap of all four), halved when an endpoint rejects a window.
 - `monitor` (D20): `last_block_path` (`/monitor/evm_ethereum_mainnet_last_block.txt`, the Monitor's data volume
   mounted read-only; without it the watch is off and `status.monitor.enabled` is false), `max_lag_blocks` 30,
-  `stall_after_s` 300, `max_past_blocks` 50 (never more than the Monitor network template's: a larger value would
+  `stall_after_s` 240, `max_past_blocks` 50 (never more than the Monitor network template's: a larger value would
   hide skipped blocks), `cycle_s` 60 (the Monitor's cron), `block_time_s` 12 (extrapolates the head between two check runs of a long
   step, where the file is read again and the outbox delivered). Unknown keys fail at start.
 
