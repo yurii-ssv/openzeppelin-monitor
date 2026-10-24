@@ -222,6 +222,23 @@ def test_jump_beyond_max_past_blocks_names_the_skipped_range(tmp_path):
     assert f"ssv_watch_monitor_skipped_blocks_total {hi - lo + 1}" in m
 
 
+def test_resume_in_two_quick_cycles_is_reported_as_a_superset(tmp_path):
+    """ms-cp4r 2026-10-24T01:55Z: the catch-up cycle read 51 blocks in 67 s, the queued tick ran 1.5 s later; the
+    worker saw one jump. The reported range covers the true one (never too short) and says it may end earlier."""
+    chain, w, path = setup(tmp_path)
+    tick(w, chain, path)
+    prev = chain.sealed - 3
+    chain.mine(80)
+    first = chain.sealed - 2  # first cycle: reads [first - M, first], skips [prev + 1, first - M - 1]
+    chain.mine(6)
+    write(path, chain.sealed - 2)  # the second cycle followed at once; the worker only sees this value
+    w.clock.advance(60)
+    w.step()
+    sk = rows(w, "monitor-skipped")
+    lo, hi = map(int, sk[0]["text"].split(": blocks ")[1].split(" ")[0].split("-"))
+    assert lo == prev + 1 and hi >= first - M - 1 and "never too short" in sk[0]["text"]
+
+
 def test_jump_within_max_past_blocks_skips_nothing(tmp_path):
     chain, w, path = setup(tmp_path)
     tick(w, chain, path)

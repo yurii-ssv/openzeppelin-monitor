@@ -14,8 +14,10 @@ failed transaction": the worker therefore reads the Monitor's last processed blo
   `[max(last + 1, head_confirmed - max_past_blocks), head_confirmed]`, so when its last block jumps by more than
   `max_past_blocks + 1` the blocks `[prev + 1, new - max_past_blocks - 1]` are skipped (never recorded as missed,
   never recovered); a Monitor that lost its last-block file restarts at the head and skips `[prev + 1, new - 1]`.
-  The range is exact when the worker saw the Monitor's previous value (consecutive observations within
-  `1.5 x cycle_s`) and an upper bound otherwise (stated in the message).
+  The range is never too short: when the Monitor resumed in several cycles between two reads (a catch-up cycle can
+  outlast the cron, and the queued tick then runs at once: ms-cp4r, 51 blocks in 67 s then 6 blocks 1.5 s later) the
+  true range ends earlier, so it is exact only for a resume in one cycle; the message says so, and calls it an
+  upper bound outright when the worker's previous read is older than `1.5 x cycle_s`.
 
 State is durable (`meta` key `monitor:watch`), so a restart neither forgets an open stall nor re-announces it.
 Behaviour of the Monitor itself (Rust, unchanged): plans/monitoring-service/workers/cp4-repair1/plan.md.
@@ -161,13 +163,14 @@ class MonitorWatch:
             lo, hi, why = prev + 1, new - m - 1, f"it was more than max_past_blocks ({m}) behind when it resumed"
         if hi < lo:
             return
-        exact = prev_at is not None and now - prev_at <= 1.5 * self.cfg["cycle_s"]
+        seen = prev_at is not None and now - prev_at <= 1.5 * self.cfg["cycle_s"]
         st["skipped_total"] = st.get("skipped_total", 0) + (hi - lo + 1)
         st["last_skipped"] = [lo, hi]
         log.error("Monitor skipped blocks %d-%d (%s)", lo, hi, why)
-        bound = "" if exact else (
-            f" The worker last read the Monitor's value {_ago(now, prev_at)} (more than one Monitor cycle), so this "
-            f"is an upper bound: the Monitor may have passed through intermediate values the worker did not see.")
+        bound = (" If it resumed in several quick cycles between two reads of the worker (a catch-up cycle can outlast "
+                 "the cron), the true range ends earlier: this range is never too short." if seen else
+                 f" The worker last read the Monitor's value {_ago(now, prev_at)} (more than one Monitor cycle), so this "
+                 f"is an upper bound: the Monitor may have passed through intermediate values the worker did not see.")
         self.alerts.health(
             "monitor-skipped",
             f"The Monitor's last processed block jumped from {prev} to {new}: blocks {lo}-{hi} ({hi - lo + 1}) were "
