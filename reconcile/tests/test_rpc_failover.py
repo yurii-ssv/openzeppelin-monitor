@@ -71,9 +71,11 @@ def no_sleep(monkeypatch):
 # ---------------------------------------------------------------- configuration
 
 
-def test_default_endpoints_are_the_d16_list_in_order():
+def test_default_endpoints_are_the_d21_list_in_order():
+    """D16 list plus the D20 fourth endpoint, in the D21 order: the Monitor's serving endpoint (mevblocker) last."""
     assert resolve_endpoints(DEFAULT_RPC_URLS, "MAINNET_RPC_URL", environ={}) == [
         ("mainnet.gateway.tenderly.co", "https://mainnet.gateway.tenderly.co"),
+        ("rpc-eth.blockmachine.io", "https://rpc-eth.blockmachine.io"),
         ("gateway.tenderly.co", "https://gateway.tenderly.co/public/mainnet"),
         ("rpc.mevblocker.io", "https://rpc.mevblocker.io")]
 

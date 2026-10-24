@@ -12,7 +12,8 @@
 #   TEST_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
 #   TEST_TELEGRAM_TOKEN=123456789:ABC...   TEST_TELEGRAM_CHAT_ID=123456789
 #   TEST_RPC_URL=https://ethereum-rpc.publicnode.com   (replaces the network RPC endpoints)
-# Without TEST_RPC_URL the rendered network reads MAINNET_RPC_URL (and MAINNET_RPC_URL_2).
+# Without TEST_RPC_URL the rendered network keeps the template rotation (D20): MAINNET_RPC_URL, the keyless
+# public literals https://rpc.mevblocker.io and https://rpc-eth.blockmachine.io, and MAINNET_RPC_URL_2 when set.
 #
 # Fail-closed (CP1A repair 4): every rewrite below goes through rewrite(), which aborts the script when jq
 # fails (`jq ... && mv ...` does not trip `set -e`, so a failed rewrite used to leave the production

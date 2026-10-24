@@ -22,6 +22,7 @@ use crate::{
 			recovery::process_missed_blocks,
 			storage::BlockStorage,
 			tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait},
+			unevaluated::collect_unevaluated_blocks,
 		},
 	},
 };
@@ -571,7 +572,8 @@ pub async fn process_new_blocks<
 	let (trigger_tx, trigger_rx) = mpsc::channel::<ProcessedBlock>(blocks.len() * 2);
 
 	// Stage 1: Block Processing Pipeline
-	let process_handle = tokio::spawn({
+	// Blocks the handler reports as not evaluated (filter failure) are collected for this run.
+	let process_handle = tokio::spawn(collect_unevaluated_blocks({
 		let network = network.clone();
 		let block_handler = block_handler.clone();
 		let mut trigger_tx = trigger_tx.clone();
@@ -596,7 +598,7 @@ pub async fn process_new_blocks<
 
 			Ok::<(), BlockWatcherError>(())
 		}
-	});
+	}));
 
 	// Stage 2: Trigger Pipeline
 	let trigger_handle = tokio::spawn({
@@ -730,7 +732,52 @@ pub async fn process_new_blocks<
 	drop(trigger_tx);
 
 	// Wait for both pipeline stages to complete
-	let (_process_result, _trigger_result) = tokio::join!(process_handle, trigger_handle);
+	let (process_result, _trigger_result) = tokio::join!(process_handle, trigger_handle);
+
+	// A block whose filter failed was not evaluated: record it as missed so that the recovery job
+	// retries it, before the last processed block moves past it (D21). If the processing stage
+	// itself died, none of its blocks is known to be evaluated.
+	let unevaluated_blocks: Vec<u64> = match process_result {
+		Ok((_, unevaluated)) => unevaluated.into_iter().collect(),
+		Err(e) => {
+			tracing::error!(
+				network = %network.slug,
+				error = %e,
+				"Block processing stage failed; no block of this run is known to be evaluated"
+			);
+			blocks.iter().filter_map(|block| block.number()).collect()
+		}
+	};
+	if !unevaluated_blocks.is_empty() {
+		let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
+		if network.store_blocks.unwrap_or(false) || recovery_enabled {
+			tracing::error!(
+				network = %network.slug,
+				count = unevaluated_blocks.len(),
+				"{} blocks were not evaluated (filter failed), recorded as missed for recovery: {:?}",
+				unevaluated_blocks.len(),
+				unevaluated_blocks
+			);
+			block_storage
+				.save_missed_blocks(&network.slug, &unevaluated_blocks)
+				.await
+				.with_context(|| {
+					format!(
+						"Failed to save {} unevaluated blocks",
+						unevaluated_blocks.len()
+					)
+				})?;
+		} else {
+			tracing::error!(
+				network = %network.slug,
+				count = unevaluated_blocks.len(),
+				"{} blocks were not evaluated (filter failed) and are NOT recorded (recovery \
+				 disabled): {:?}",
+				unevaluated_blocks.len(),
+				unevaluated_blocks
+			);
+		}
+	}
 
 	if network.store_blocks.unwrap_or(false) {
 		// Delete old blocks before saving new ones
@@ -1321,6 +1368,213 @@ mod tests {
 			.await
 			.unwrap();
 		assert!(!missed.is_empty());
+	}
+
+	// ============ D21: blocks whose filter failed ============
+
+	/// Block handler that reports `unevaluated` blocks as not evaluated (as the bootstrap handler
+	/// does when a filter fails) on the first `fail_times` calls for each of them, and evaluates
+	/// every other block with no matches
+	fn create_failing_filter_block_handler(
+		unevaluated: Vec<u64>,
+		fail_times: usize,
+		calls: Arc<AtomicUsize>,
+	) -> Arc<
+		impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
+	> {
+		Arc::new(move |block: BlockType, network: Network| {
+			let unevaluated = unevaluated.clone();
+			let calls = calls.clone();
+			Box::pin(async move {
+				let block_number = block.number().unwrap_or(0);
+				if unevaluated.contains(&block_number)
+					&& calls.fetch_add(1, Ordering::SeqCst) < fail_times
+				{
+					crate::services::blockwatcher::report_unevaluated_block(block_number);
+				}
+				ProcessedBlock {
+					network_slug: network.slug,
+					block_number,
+					processing_results: vec![],
+				}
+			}) as BoxFuture<'static, ProcessedBlock>
+		})
+	}
+
+	fn missed_block_numbers(dir: &std::path::Path) -> Vec<u64> {
+		match std::fs::read_to_string(dir.join("test_network_missed_blocks.json")) {
+			Ok(content) => serde_json::from_str::<
+				Vec<crate::services::blockwatcher::MissedBlockEntry>,
+			>(&content)
+			.unwrap()
+			.into_iter()
+			.map(|e| e.block_number)
+			.collect(),
+			Err(_) => vec![],
+		}
+	}
+
+	#[tokio::test]
+	async fn test_filter_failure_is_recorded_as_missed_and_last_block_advances() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_last_processed_block("test_network", 80)
+			.await
+			.unwrap();
+		let mut network = create_test_network_with_recovery();
+		network.store_blocks = Some(false);
+
+		let result = process_new_blocks(
+			&network,
+			&MockRpcClient::new(100),
+			storage.clone(),
+			create_failing_filter_block_handler(
+				vec![83, 86],
+				usize::MAX,
+				Arc::new(AtomicUsize::new(0)),
+			),
+			create_trigger_handler(),
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		assert_eq!(
+			storage
+				.get_last_processed_block("test_network")
+				.await
+				.unwrap(),
+			Some(88)
+		);
+		assert_eq!(missed_block_numbers(temp_dir.path()), vec![83, 86]);
+		let pending = storage
+			.get_missed_blocks("test_network", 1000, 88, 3)
+			.await
+			.unwrap();
+		assert_eq!(
+			pending.len(),
+			2,
+			"recorded blocks are eligible for recovery"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_without_matches_are_not_recorded_as_missed() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_last_processed_block("test_network", 80)
+			.await
+			.unwrap();
+
+		let result = process_new_blocks(
+			&create_test_network_with_recovery(),
+			&MockRpcClient::new(100),
+			storage.clone(),
+			create_block_handler(),
+			create_trigger_handler(),
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		assert_eq!(
+			storage
+				.get_last_processed_block("test_network")
+				.await
+				.unwrap(),
+			Some(88)
+		);
+		assert!(missed_block_numbers(temp_dir.path()).is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_unrecordable_filter_failure_keeps_the_last_block() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_last_processed_block("test_network", 80)
+			.await
+			.unwrap();
+		// The missed-blocks file cannot be read or written
+		std::fs::create_dir(temp_dir.path().join("test_network_missed_blocks.json")).unwrap();
+
+		let result = process_new_blocks(
+			&create_test_network_with_recovery(),
+			&MockRpcClient::new(100),
+			storage.clone(),
+			create_failing_filter_block_handler(
+				vec![83],
+				usize::MAX,
+				Arc::new(AtomicUsize::new(0)),
+			),
+			create_trigger_handler(),
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await;
+
+		assert!(result.is_err());
+		// The next cycle evaluates the range again
+		assert_eq!(
+			storage
+				.get_last_processed_block("test_network")
+				.await
+				.unwrap(),
+			Some(80)
+		);
+	}
+
+	#[tokio::test]
+	async fn test_a_block_whose_filter_failed_is_retried_by_recovery_and_triggered() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_last_processed_block("test_network", 80)
+			.await
+			.unwrap();
+		let network = create_test_network_with_recovery();
+		let rpc_client = MockRpcClient::new(100);
+		// Block 85 fails once (main cycle), then evaluates (recovery)
+		let block_handler =
+			create_failing_filter_block_handler(vec![85], 1, Arc::new(AtomicUsize::new(0)));
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let trigger_handler = {
+			let triggered = triggered.clone();
+			Arc::new(move |block: &ProcessedBlock| {
+				triggered.lock().unwrap().push(block.block_number);
+				tokio::spawn(async move {})
+			})
+		};
+
+		process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await
+		.unwrap();
+		assert_eq!(missed_block_numbers(temp_dir.path()), vec![85]);
+		triggered.lock().unwrap().clear();
+
+		let result = process_missed_blocks(
+			&network,
+			network.recovery_config.as_ref().unwrap(),
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(result.recovered, 1);
+		assert_eq!(*triggered.lock().unwrap(), vec![85]);
+		assert!(missed_block_numbers(temp_dir.path()).is_empty());
 	}
 
 	// ============ Solana missed block detection tests ============

@@ -42,9 +42,12 @@ def _revert_data(err) -> str | None:
 
 
 DEFAULT_RPC_URLS = (
-    # D16 (2026-10-22): public endpoints, in failover order. None is archive-guaranteed and all cap
-    # eth_getLogs at 5000 blocks (`max_log_range`). `rpc_url_env` (MAINNET_RPC_URL), when set, replaces the first.
+    # D16 (2026-10-22) + D20 + D21 (2026-10-24): public endpoints, in failover order. None is archive-guaranteed and
+    # all cap eth_getLogs at 5000 blocks (`max_log_range`). `rpc_url_env` (MAINNET_RPC_URL), when set, replaces the
+    # first. D21: rpc.mevblocker.io serves the Monitor (Tenderly -> mevblocker -> blockmachine), so the worker's
+    # bursts go to blockmachine first and reach mevblocker last.
     "https://mainnet.gateway.tenderly.co",
+    "https://rpc-eth.blockmachine.io",
     "https://gateway.tenderly.co/public/mainnet",
     "https://rpc.mevblocker.io",
 )

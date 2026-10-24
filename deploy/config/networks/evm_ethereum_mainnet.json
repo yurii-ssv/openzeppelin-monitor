@@ -14,24 +14,40 @@
     {
       "type_": "rpc",
       "url": {
+        "type": "plain",
+        "value": "https://rpc.mevblocker.io"
+      },
+      "weight": 90
+    },
+    {
+      "type_": "rpc",
+      "url": {
         "type": "environment",
         "value": "MAINNET_RPC_URL_2"
       },
-      "weight": 50
+      "weight": 80
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://rpc-eth.blockmachine.io"
+      },
+      "weight": 70
     }
   ],
   "chain_id": 1,
   "block_time_ms": 12000,
   "confirmation_blocks": 2,
-  "cron_schedule": "*/2 * * * * *",
-  "max_past_blocks": 3600,
-  "store_blocks": true,
+  "cron_schedule": "0 * * * * *",
+  "max_past_blocks": 50,
+  "store_blocks": false,
   "recovery_config": {
     "enabled": true,
-    "cron_schedule": "0 */5 * * * *",
-    "max_blocks_per_run": 100,
+    "cron_schedule": "30 * * * * *",
+    "max_blocks_per_run": 10,
     "max_block_age": 7200,
-    "max_retries": 3,
+    "max_retries": 10,
     "retry_delay_ms": 1000
   }
 }

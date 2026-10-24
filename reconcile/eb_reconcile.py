@@ -13,7 +13,9 @@ The worker is read-only against the chain. Each step:
   4. reloads live protocol parameters after a parameter event or a reorg (a failed read invalidates
      them and is retried every step), then runs every due check (interval, event, inbox and
      near-set-per-block schedules) and turns its findings into incidents and outbox messages,
-  5. re-alerts open incidents, sends the daily digest, delivers the outbox.
+  5. re-alerts open incidents, sends the daily digest, delivers the outbox,
+  6. watches the Monitor's progress (its last processed block; monitor_watch.py, D20): a stall, a missing file or a
+     skipped block range is a health message, never silence.
 Checks live in checks/ (interface: checks/README.md); M5 (#94775) is checks/m5_eb_desync.py.
 
 Commands:
@@ -49,6 +51,8 @@ from db import DB  # noqa: F401 - re-exported
 from eb_events import PARAM_KINDS, TOPIC0, decode_log
 from inbox import Inbox, InboxUnavailable
 from inventory import API_DEFAULT, InventoryCache
+from monitor_watch import MonitorWatch
+from monitor_watch import settings as monitor_settings
 from notify import RecordOnly, Telegram, make_notifier  # noqa: F401 - re-exported
 from params import Params, ParamsUnavailable
 from rpc import DEFAULT_RPC_URLS, Chain, Rpc, RpcError, resolve_endpoints
@@ -117,6 +121,7 @@ BACKFILL_DEFAULTS = {"enabled": True, "live_within_blocks": 12, "blocks_per_step
 TOP_LEVEL_KEYS = set(DEFAULTS) | {
     "_comment", "chain_id", "proxy", "views", "activation_block", "start_block", "pr614_guards_from", "rpc_url_env",
     "rpc_urls", "rpc_primary_retry_s", "backfill", "db_path", "layout", "alerts", "checks", "inbox", "inventory", "metrics",
+    "monitor",
 }
 
 
@@ -145,6 +150,7 @@ class Worker:
         self.notifier = notifier
         self.rpc_failures = 0
         self.rpc_outage_since = None  # clock of the first failed step of the current outage
+        self.head_read = None  # (head, clock) of the last eth_blockNumber answer, for the Monitor watch
         self.bootstrapped = False
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
@@ -167,6 +173,8 @@ class Worker:
             db, lambda b: Chain(self.rpc, b, cfg.max_log_range), cfg.proxy, clock,
             api_base=inv_cfg.get("api_url", API_DEFAULT) or API_DEFAULT, use_api=bool(inv_cfg.get("api_url", API_DEFAULT)),
             api_refresh_s=inv_cfg.get("api_refresh_s", 600), **kw)
+        watch_cfg = monitor_settings(cfg.raw.get("monitor"))
+        self.monitor = MonitorWatch(watch_cfg, db, self.alerts, clock) if watch_cfg else None
         self.backfill_cfg = {**BACKFILL_DEFAULTS, **cfg.section("backfill")}
         unknown = set(self.backfill_cfg) - set(BACKFILL_DEFAULTS)
         if unknown:
@@ -274,7 +282,9 @@ class Worker:
         if self.cfg.confirmations < 0:
             blk = self.rpc.call("eth_getBlockByNumber", ["finalized", False])
             return int(blk["number"], 16)
-        return self.rpc.block_number() - self.cfg.confirmations
+        head = self.rpc.block_number()
+        self.head_read = (head, self.clock())
+        return head - self.cfg.confirmations
 
     def check_reorg(self) -> None:
         """Rewind every piece of state derived from blocks above the last common ancestor (checks/README.md §6.1).
@@ -562,6 +572,8 @@ class Worker:
             except Exception as exc:  # noqa: BLE001 - one broken check must not stop the others
                 log.exception("check %s failed at block %d", check.id, block)
                 self._run_failed(check, exc, health=True)
+            finally:
+                self.between_checks()
         if backfilling and set(self.checks) <= set(self.phase().get("evaluated", ())):
             self._go_live(block)
         if first_rpc_error is not None:
@@ -678,11 +690,14 @@ class Worker:
 
     # ---- health
 
-    def lag_check(self) -> None:
+    def lag_check(self) -> int | None:
+        """The lag health check; returns the head it read (None when the RPC fails) for the Monitor watch."""
         try:
-            target = self.target_block()
+            head = self.rpc.block_number()
+            target = self.target_block() if self.cfg.confirmations < 0 else head - self.cfg.confirmations
         except RpcError:
-            return
+            return None
+        self.head_read = (head, self.clock())
         cp = self.checkpoint()["block"]
         lag = target - cp
         self.db.set_meta("lag_blocks", lag)
@@ -691,6 +706,29 @@ class Worker:
             with self.db.tx():
                 self.alerts.health("lag", f"Checkpoint {cp} is {lag} blocks behind the confirmed head {target}.",
                                    dedup="lag", realert=True)
+        return head
+
+    def watch_monitor(self, head: int | None, estimated: bool = False) -> None:
+        """One observation of the Monitor's last processed block (monitor_watch.py); runs every step, also when the
+        step's RPC reads failed (then the head is unknown, which is a stall once it lasts), and between two check
+        runs of a step (`between_checks`)."""
+        if self.monitor is not None:
+            with self.db.tx():
+                self.monitor.observe(head, estimated)
+
+    def between_checks(self) -> None:
+        """A step can run for minutes (the silent evaluation after a backfill, a weekly comparison, public-RPC rate
+        limits): observe the Monitor and deliver what is queued between two check runs, so a Monitor stall (or a
+        page) is not held until the step ends. The head is extrapolated from the last one read (one block per
+        `block_time_s`; a missed slot makes the estimate high, i.e. the lag larger: never a false recovery); a head
+        older than 15 min is unknown."""
+        if self.monitor is None:
+            return
+        head = None
+        if self.head_read is not None and (age := self.clock() - self.head_read[1]) <= 900:
+            head = self.head_read[0] + int(age // self.monitor.cfg["block_time_s"])
+        self.watch_monitor(head, estimated=True)
+        self.deliver()
 
     def _inbox_problem(self) -> dict | None:
         if self.inbox is None:
@@ -718,6 +756,7 @@ class Worker:
             "open_incidents": {f"{c}/{s}": n for c, s, n in self.db.conn.execute(
                 "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity")},
             "undelivered": self.db.conn.execute("SELECT COUNT(*) FROM outbox WHERE sent_at IS NULL").fetchone()[0],
+            "monitor": self.monitor.status() if self.monitor else {"enabled": False},
         }
 
     def degraded(self) -> list[str]:
@@ -728,6 +767,8 @@ class Worker:
             out.append(f"live parameters unavailable: {self.params.error}")
         if down := self._inbox_problem():
             out.append(f"inbox unavailable: {down['error']}")
+        if self.monitor is not None and (stalled := self.monitor.problem()):
+            out.append(stalled)
         pending = sorted(c for c in self.checks if self.db.meta(f"reorg:{c}") is not None)
         if pending:
             out.append(f"reorg re-evaluation pending for check(s) {', '.join(pending)}")
@@ -741,6 +782,7 @@ class Worker:
         tmp.replace(path)
 
     def step(self, force: bool = False) -> None:
+        failed = None  # the RPC error of a failed step (the status file says healthy: false with it)
         try:
             if not self.bootstrapped:  # an RPC outage at start is an RPC failure like any other, not a crash loop
                 self.bootstrap()
@@ -755,9 +797,8 @@ class Worker:
                                        dedup=f"rpc-recovered:{self.checkpoint()['block']}")
             self.rpc_failures = 0
             self.db.set_meta("rpc_failures", 0)
-            problems = self.degraded()
-            self.write_status(not problems, "; ".join(problems) or None)
         except RpcError as exc:
+            failed = exc
             self.rpc_failures += 1
             if self.rpc_failures == 1:
                 self.rpc_outage_since = self.clock()
@@ -770,12 +811,19 @@ class Worker:
                                        f"Checkpoint {cp['block'] if cp else 'not set (bootstrap)'}.",
                                        dedup=f"rpc:{self.rpc_outage_since}:{self.rpc_failures}")  # per outage
             if not self.bootstrapped:  # no checkpoint yet: no status file (the healthcheck stays red)
+                self.watch_monitor(None)
                 self.deliver()
                 return
-            self.write_status(False, str(exc))
+        head = self.lag_check()
+        self.watch_monitor(head)
+        if failed is None:
+            problems = self.degraded()
+            self.write_status(not problems, "; ".join(problems) or None)
+        else:
+            self.write_status(False, str(failed))
         inbox_down = bool(self._inbox_problem())
-        self.db.set_meta("inputs_unavailable", {"params": not self.params.ok, "inbox": inbox_down})
-        self.lag_check()
+        self.db.set_meta("inputs_unavailable", {"params": not self.params.ok, "inbox": inbox_down,
+                                                "monitor": bool(self.monitor and self.monitor.problem())})
         self.housekeeping()
         self.deliver()
 

@@ -1,0 +1,285 @@
+{
+ "identity": {
+  "chain_id": 1,
+  "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1",
+  "start_block": 24920727
+ },
+ "schema_version": 1,
+ "checkpoint": {
+  "block": 26259393,
+  "hash": "0xa9b779be2f5398b9ed657a90a41878d8fe6a200e3f678fa630c61b63fd77f191"
+ },
+ "lag_blocks": 0,
+ "phase": {
+  "phase": "live",
+  "since": 1792805552.7793343,
+  "caught_up_block": 26259174,
+  "history_block": 26259174,
+  "first_live": [],
+  "checkpoint": 26259393,
+  "target": 26259393
+ },
+ "checks": {
+  "m5": {
+   "at": 1792807444.4522662,
+   "block": 26259380,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_getStorageAt": 526
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": {
+    "block": 26259380,
+    "at": 1792807447.9510007,
+    "full": false,
+    "evaluated": 174,
+    "counts": {
+     "not_eth": 43,
+     "clean": 131
+    }
+   }
+  },
+  "m3": {
+   "at": 1792807150.4030972,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_call": 1195
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m4": {
+   "at": 1792807207.264397,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 1,
+   "rpc_calls": {
+    "eth_call": 2859,
+    "eth_getStorageAt": 1,
+    "eth_getBalance": 1
+   },
+   "errors": 1,
+   "last_error": "RpcError: transport error: all 4 RPC endpoints failed (MAINNET_RPC_URL: transport error: HTTP 429; gateway.tenderly.co: transport error: HTTP 429; rpc.mevblocker.io: transport error: HTTP 429; rpc-eth.blockmachine.io: transport error: HTTP 429)",
+   "state": null
+  },
+  "m14": {
+   "at": 1792807237.1345866,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_getBlockByNumber": 1
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m9": {
+   "at": 1792807603.4612987,
+   "block": 26259393,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_getBlockByNumber": 2
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m10": {
+   "at": 1792807540.521995,
+   "block": 26259388,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {},
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m11": {
+   "at": 1792807540.542283,
+   "block": 26259388,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_getBlockByNumber": 2
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m8": {
+   "at": 1792807540.7019975,
+   "block": 26259388,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 1,
+   "rpc_calls": {
+    "eth_call": 1
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m12": {
+   "at": 1792807540.7818112,
+   "block": 26259388,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 4,
+   "rpc_calls": {
+    "eth_getBalance": 2,
+    "eth_getTransactionCount": 1,
+    "eth_getBlockByNumber": 9,
+    "eth_feeHistory": 1
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m13": {
+   "at": 1792807603.663465,
+   "block": 26259393,
+   "reasons": [
+    "block"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_getBalance": 4
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m1": {
+   "at": 1792807245.6637902,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {},
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m2": {
+   "at": 1792807245.674688,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_call": 2874
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m6": {
+   "at": 1792807274.7025406,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {
+    "eth_call": 1692,
+    "eth_getStorageAt": 1
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  },
+  "m7": {
+   "at": 1792807292.66652,
+   "block": 26259353,
+   "reasons": [
+    "interval"
+   ],
+   "findings": 1,
+   "rpc_calls": {
+    "eth_getStorageAt": 3,
+    "eth_call": 2921
+   },
+   "errors": 0,
+   "last_error": null,
+   "state": null
+  }
+ },
+ "params_block": null,
+ "reorg_pending": {},
+ "params": {
+  "enabled": true,
+  "ok": true,
+  "block": null,
+  "error": null
+ },
+ "inbox": {
+  "enabled": true,
+  "ok": true,
+  "path": "/inbox/failed-tx.jsonl",
+  "error": null,
+  "held": 0,
+  "orphaned": 0
+ },
+ "open_incidents": {
+  "m7/info": 1
+ },
+ "undelivered": 0,
+ "monitor": {
+  "enabled": true,
+  "path": "/monitor/evm_ethereum_mainnet_last_block.txt",
+  "last_block": 26259399,
+  "head": 26259405,
+  "head_estimated": false,
+  "lag_blocks": 6,
+  "changed_at": 1792807572.7258096,
+  "observed_at": 1792807603.8295078,
+  "stalled": false,
+  "stall": null,
+  "reason": null,
+  "stalls": 2,
+  "skipped_blocks_total": 40,
+  "last_skipped": [
+   26259255,
+   26259294
+  ],
+  "max_lag_blocks": 30,
+  "stall_after_s": 240
+ },
+ "open": [
+  {
+   "id": "m7-surplus-26259174",
+   "check_id": "m7",
+   "key": "surplus",
+   "severity": "info",
+   "title": "SSV solvency surplus unchanged: 1 SSV",
+   "opened_block": 26259174,
+   "last_seen_block": 26259353,
+   "alerts": 1
+  }
+ ]
+}
