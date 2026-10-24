@@ -1,6 +1,6 @@
 """Monitor progress watch (D20, soak-1 Monitor stall, event-0084).
 
-The OpenZeppelin Monitor runs the stateless rules (M8 events, M10, M11 info, M13, M15, the failed-tx inbox that feeds
+The OpenZeppelin Monitor runs the stateless rules (M8 events, M10, M11 info, M13, M15, transfers, DAO/Safe, the inbox that feeds
 M1/M2). A Monitor that processes no block sends nothing and writes nothing to the inbox, which reads exactly like "no
 failed transaction": the worker therefore reads the Monitor's last processed block
 (`<monitor data>/<network>_last_block.txt`, written after every successful Monitor cycle) at every step and raises
@@ -131,8 +131,9 @@ class MonitorWatch:
             self.alerts.health(
                 "monitor-stall",
                 f"The Monitor is not keeping up: {st['reason']}. Not positively known to keep up since "
-                f"{int(now - stall['since'])} s (stall {stall['n']}). Its rules (M8 events, M10, M11 info, M13, M15, "
-                f"the failed-tx inbox for M1/M2) evaluate nothing meanwhile; an empty inbox proves nothing. Blocks it "
+                f"{int(now - stall['since'])} s (stall {stall['n']}). None of its rules (M8 events, M10, M11 info, "
+                f"M13, M15, transfers, DAO/Safe, oracle transactions, the failed-tx inbox for M1/M2) evaluates "
+                f"anything meanwhile; an empty inbox proves nothing. Blocks it "
                 f"skips when it resumes (more than max_past_blocks {cfg['max_past_blocks']} behind) are announced as "
                 f"monitor-skipped.",
                 dedup=f"monitor-stall:{stall['n']}", realert=True)
