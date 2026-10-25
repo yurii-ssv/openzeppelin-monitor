@@ -2,8 +2,8 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-24T15:30Z (event-0092)
-- Last recorded event / last processed Orca delivery: event-0092 / delivery_327f47653270 / delivery_5f3d7440238f
+- Updated at: 2026-10-25T08:50Z (event-0093)
+- Last recorded event / last processed Orca delivery: event-0093 / delivery_327f47653270 / delivery_5f3d7440238f
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); QA worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` @ `9772b2d` (event-0010)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
@@ -28,9 +28,9 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 
 ## Next transition
 
-- Exact next authorized action and owner: at T24 (2026-10-25T08:34Z, D22) the coordinator runs the interim soak check without touching the stack and reports continue/stop to Marco; at T48 (2026-10-26T08:34Z) the coordinator collects soak-2 evidence from `ms-cp4r` (as workers/cp3/plan.md 'Soak handoff', project `ms-cp4r`, metrics port 9474, plus the Monitor last block and missed-blocks store) and dispatches CP4 part B (V4.2 review + part A delta re-check of `047e9ad..b681181`, fresh Opus QA); then the completion statement; then, with Marco's authorization, DT-18 repairs, NOTE follow-ups and cleanup (DT-16). Push and PR are Marco's.
+- Exact next authorized action and owner: T24 check done (event-0093: continue; hourly growth sampler pid 74092 → soak2/growth.log); at T48 (2026-10-26T08:34Z) the coordinator collects soak-2 evidence from `ms-cp4r` (as workers/cp3/plan.md 'Soak handoff', project `ms-cp4r`, metrics port 9474, plus the Monitor last block and missed-blocks store) and dispatches CP4 part B (V4.2 review + part A delta re-check of `047e9ad..b681181`, fresh Opus QA); then the completion statement; then, with Marco's authorization, DT-18 repairs, NOTE follow-ups and cleanup (DT-16). Push and PR are Marco's.
 - Ready work with no active dispatch: none.
-- Waiting for: soak 2 T24 (2026-10-25T08:34Z, 09:34 Madrid) and T48 (2026-10-26T08:34Z, 09:34 Madrid). The laptop must stay awake and online. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
+- Waiting for: soak 2 T48 (2026-10-26T08:34Z, 09:34 Madrid). The laptop must stay awake and online. Network-dependent rows run offline will be NOT RUN/stalled, never credited. Open owner items listed in event-0054.
 - Owner intent (2026-10-24, not yet a decision): after soak 2 passes, the company mainnet RPC (no rate limit, NOT archive) becomes the production primary via `MAINNET_RPC_URL` (env/secret only) for the Monitor and the worker; public endpoints stay as fallbacks (archive state for the worker's historical reads). Soak 2 stays on public endpoints. Before deploy: short smoke on the company node incl. a pruned-state probe (must error, never zero/empty) and worker failover to an archive fallback.
 - Next check/wake mechanism: attended; `orca orchestration check --wait` on the coordinator's Run (15 min) while workers run. Unattended recovery UNVERIFIED (DEF-4).
 - Context resume: verify HEAD/status/runtime, read this file, inspect the next task's latest attempt, continue the first unproven action. Do not reload whole history.
