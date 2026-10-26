@@ -2,14 +2,14 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-26T09:55Z (event-0097)
-- Last recorded event / last processed Orca delivery: event-0097 / delivery_327f47653270 / delivery_5f3d7440238f / delivery_0c2eb9cff119
-- Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); QA worktree `/Users/marco/orca/workspaces/ssv-network-monitor/ms-qa-cp0` @ `9772b2d` (event-0010)
+- Updated at: 2026-10-26T10:30Z (event-0098)
+- Last recorded event / last processed Orca delivery: event-0098 / delivery_327f47653270 / delivery_5f3d7440238f / delivery_0c2eb9cff119
+- Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); all Orca worktrees removed 2026-10-26 (DT-16, event-0098)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
 - Mode: attended; resumed by Marco (event-0055)
-- Overall acceptance: pending
-- Current checkpoint: CP4 — part B PASS WITH NOTES (QA attempt 2, code `b681181`, soak 2 A10 met), integrated; awaiting Marco's acceptance
+- Overall acceptance: ACCEPTED (CP4, Marco, 2026-10-26, event-0098)
+- Current checkpoint: CP4 ACCEPTED (code `b681181`); closure records and completion statement in plan §8–§10; plan complete, open items are the §9 DT rows
 - Coordinator: this Claude Code session, repo root, monitor-workspace tab
 
 | Task | State | Active dispatch / receipt | Frozen head | Owner | Evidence / next action |
@@ -22,17 +22,17 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 | CP2c Wallets (M12, M8 floor, M13 watch) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `dd9522b`), integrated | settled+released | `dd9522b` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2d Cluster integrity (M1, M2) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `24b1599`), integrated | settled+released | `24b1599` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure |
 | CP2e Legacy SSV (M6, M7) | VERIFIED — PASS WITH NOTES (QA 4, Opus; head `45cc774`), integrated | settled+released | `45cc774` | Claude Opus 5.5 high (QA) | notes to plan §8 at closure; N4 residual recorded |
-| CP3 Integration, compose, fork e2e | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `c3e1234`), integrated (`246b0e3`) | settled+released | `c3e1234` | Claude Opus 5.5 high (QA) | soak 1 FAILED (event-0084); stack `ms-cp3` stopped, volumes kept |
-| CP4 repair 1/2 (D20, D21 Monitor stall + filter failures) | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `eeefc58`), integrated (`b681181`) | settled+released | `eeefc58` | Claude Opus 5.5 high (QA) | soak 2 running (T0 2026-10-24T08:34Z, T48 2026-10-26T08:34Z); NOTEs N1–N8 to §8/§9 |
-| CP4 final QA part A + part B (V4.1–V4.4, soak 2) | PASS WITH NOTES (part A `047e9ad`; part B code `b681181`), integrated | settled+released (`ctx_b443ebead270`) | `b681181` | Claude Opus 5.5 high (QA) | awaiting Marco\'s acceptance; then §8/§9 corrections (report §4) and the completion statement |
+| CP3 Integration, compose, fork e2e | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `c3e1234`), integrated (`246b0e3`) | settled+released | `c3e1234` | Claude Opus 5.5 high (QA) | soak 1 FAILED (event-0084); stack `ms-cp3` stopped, volumes kept, evidence archived |
+| CP4 repair 1/2 (D20, D21 Monitor stall + filter failures) | VERIFIED — PASS WITH NOTES (QA 2, Opus; head `eeefc58`), integrated (`b681181`) | settled+released | `eeefc58` | Claude Opus 5.5 high (QA) | soak 2 done (A10 met, event-0096); NOTEs N1–N8 in §8 (CP4-R2-*), DT-21/22 |
+| CP4 final QA part A + part B (V4.1–V4.4, soak 2) | ACCEPTED by Marco 2026-10-26 (part A `047e9ad`; part B code `b681181`), integrated | settled+released (`ctx_b443ebead270`) | `b681181` | Claude Opus 5.5 high (QA) | done: §8/§9 corrections and completion statement (plan §10), event-0098 |
 | CP1B Worker framework | VERIFIED — PASS WITH NOTES (head `b07d2c6`, QA 4), integrated into `plan/monitoring-service` | QA-4 dispatch settled+released | `b07d2c6` | Codex gpt-6.1-sol high | done; CP2 packets must carry the reorg obligation; plan §6 amended |
 
 ## Next transition
 
-- Exact next authorized action and owner: Marco accepts CP4 (or not) on qa/cp4-attempt-2.md; on acceptance the coordinator applies the report §4 record corrections to plan §8/§9 and writes the completion statement. With Marco's authorization afterwards: DT-18 repairs, NOTE follow-ups, `ms-cp4r` stop and worktree cleanup (DT-16). Push and PR are Marco's.
+- Exact next authorized action and owner: Marco starts the production docker-compose himself with live routes, following `deploy/README.md` (configure → render `config/` → record → TEST_* → live; D22 company RPC with the pruned-state probe). Coordinator work only on Marco's request: DT-18 repairs, DT-21/22 NOTE follow-ups (DT-15 backlog). Push and PR are Marco's.
 - Ready work with no active dispatch: none.
-- Waiting for: Marco's CP4 acceptance.
-- Owner intent (2026-10-24, not yet a decision): after soak 2 passes, the company mainnet RPC (no rate limit, NOT archive) becomes the production primary via `MAINNET_RPC_URL` (env/secret only) for the Monitor and the worker; public endpoints stay as fallbacks (archive state for the worker's historical reads). Soak 2 stays on public endpoints. Before deploy: short smoke on the company node incl. a pruned-state probe (must error, never zero/empty) and worker failover to an archive fallback.
+- Waiting for: nothing in this plan. Open owner items: plan §9 DT rows (DT-1 fired; DT-16 residue: CP0.0 terminal `ctx_8a4b4362736e`, volumes `ms-cp4r_*`/`ms-cp3_*`, `caffeinate -is` pid 47355).
+- Owner intent (2026-10-24, D22, recorded in DT-3; soak 2 passed):  the company mainnet RPC (no rate limit, NOT archive) becomes the production primary via `MAINNET_RPC_URL` (env/secret only) for the Monitor and the worker; public endpoints stay as fallbacks (archive state for the worker's historical reads). Soak 2 stays on public endpoints. Before deploy: short smoke on the company node incl. a pruned-state probe (must error, never zero/empty) and worker failover to an archive fallback.
 - Next check/wake mechanism: attended; `orca orchestration check --wait` on the coordinator's Run (15 min) while workers run. Unattended recovery UNVERIFIED (DEF-4).
 - Context resume: verify HEAD/status/runtime, read this file, inspect the next task's latest attempt, continue the first unproven action. Do not reload whole history.
 
