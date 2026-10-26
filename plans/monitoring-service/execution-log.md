@@ -1013,3 +1013,7 @@ Append only. Use measured UTC; if time is unknown say unknown. Preserve an erron
 - Resources: Monitor memory 822–860 MiB over 24 hourly samples, no monotonic climb (848.6 MiB at T48); worker 181–184 MiB flat. SQLite 75.9 → 76.2 MB in 24 h; WAL flat 5.2 MB; Monitor `matches.jsonl` 1.2 → 2.8 MB in 24 h (≈ 1.3 MB/day, unrotated: retention NOTE). Volumes monitor-data 2.8 MB, watch-data 83.4 MB.
 - Laptop: no Sleep/Wake event in `pmset -g log` T0–T48; no gap.
 - Next: CP4 part B (V4.2 review + part A delta re-check `047e9ad..b681181`), fresh Opus QA, after Marco's go-ahead.
+
+## Event 0095 — CP4 part B dispatched (Marco: "yes, dispatch it")
+
+- Task `task_72cc96a65468`, dispatch `ctx_b443ebead270`, fresh child worktree `ms-qa-cp4-b` of `plan/monitoring-service` @ `4147788` (code = `b681181`). Claude Opus 5.5 high (D13); `launch.effective` = requested. Packet: V4.2 soak 2 review (evidence `ms-cp4-repair1/soak2/`, stack read-only), part A delta re-check of `047e9ad..b681181`, completion statement draft. Allowed writes: qa/cp4-attempt-2.md, CP4 Status line (`PART B …`), one event.
