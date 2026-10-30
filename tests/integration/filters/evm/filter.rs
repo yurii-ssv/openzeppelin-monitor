@@ -1445,3 +1445,65 @@ async fn test_filter_block_with_tuples_expression_equality() -> Result<(), Box<F
 
 	Ok(())
 }
+
+#[tokio::test]
+async fn test_failure_monitor_only_fetches_receipts_for_monitored_transactions(
+) -> Result<(), Box<FilterError>> {
+	let test_data = TestDataBuilder::new("evm").build();
+	let filter_service = FilterService::new();
+
+	let receipts_by_hash: HashMap<String, EVMTransactionReceipt> = test_data
+		.receipts
+		.iter()
+		.map(|receipt| (format!("{:#x}", receipt.transaction_hash), receipt.clone()))
+		.collect();
+	let fetched = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+	let fetched_in_mock = fetched.clone();
+
+	let mut mock_transport = MockEVMTransportClient::new();
+	mock_transport
+		.expect_send_raw_request()
+		.returning(move |method, params| match method {
+			"net_version" => Ok(json!({"result": "1"})),
+			"eth_getLogs" => Ok(json!({"result": []})),
+			"eth_getTransactionReceipt" => {
+				let hash = params.unwrap()[0].as_str().unwrap().to_string();
+				fetched_in_mock.lock().unwrap().push(hash.clone());
+				Ok(json!({"result": receipts_by_hash[&hash]}))
+			}
+			_ => Err(TransportError::http(
+				reqwest::StatusCode::METHOD_NOT_ALLOWED,
+				"random.url".to_string(),
+				"Unexpected method call".to_string(),
+				None,
+				None,
+			)),
+		});
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = test_data.monitor;
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.functions = vec![];
+	monitor.match_conditions.transactions = vec![TransactionCondition {
+		status: TransactionStatus::Failure,
+		expression: None,
+	}];
+
+	filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			None,
+		)
+		.await?;
+
+	// Block 0 has 3 transactions; only one is sent to a monitored address (USDC).
+	assert_eq!(
+		*fetched.lock().unwrap(),
+		vec!["0xd5069b22a3a89a36d592d5a1f72a281bc5d11d6d0bac6f0a878c13abb764b6d8".to_string()]
+	);
+
+	Ok(())
+}

@@ -1,0 +1,18 @@
+{
+  "telegram_dao_safe_failed": {
+    "name": "DAO Safe Failed Alert",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "FAILED DAO Safe Execution",
+        "body": "Safe: ${transaction.to}\nExecuted by: ${transaction.from}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})${events}"
+      }
+    }
+  }
+}

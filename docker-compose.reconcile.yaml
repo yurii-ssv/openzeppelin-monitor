@@ -1,0 +1,90 @@
+# SSV watch worker (plan §6): the stateful half of the monitoring service, grown from the #94775
+# EB reconciliation worker. Runs beside the Monitor; combine with either compose file:
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.reconcile.yaml up -d --build
+#   docker compose -f docker-compose.local.yaml -f docker-compose.reconcile.yaml up -d --build
+#
+# Runbook: deploy/README.md. Needs reconcile/config.json (copy reconcile/config.example.json; override the path
+# with WATCH_CONFIG) and, in the shell or ./.env (names only here, values never in a tracked file):
+#   MAINNET_RPC_URL        optional: replaces the first of the config's rpc_urls (default list: D16 public RPCs)
+#   TELEGRAM_TOKEN         page/warn route, only when alerts.mode is "live"
+#   TELEGRAM_CHAT_ID       page/warn route, only when alerts.mode is "live"
+#   DISCORD_WEBHOOK_INFO   info/digest route, only when alerts.mode is "live"
+# Development and QA keep alerts.mode "record" or point the *_env names of the config at TEST_*.
+#
+# Volumes (D18): `watch-data` holds the worker's SQLite database (+ WAL), status file and record-mode alerts;
+# `monitor-data` is the Monitor's data volume, mounted read-only twice: `inbox/` at /inbox (the failed-tx inbox) and
+# the whole volume at /monitor, where the worker reads the Monitor's last processed block (D20 stall watch,
+# config `monitor.last_block_path`).
+# `inbox-init` creates the empty inbox file before the worker starts (a missing inbox is a health alert).
+
+services:
+  inbox-init:
+    image: ssv-eb-reconcile:local
+    pull_policy: build
+    build:
+      context: ./reconcile
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    # Never truncates: an existing inbox keeps its lines (the worker keeps its read offset).
+    command: ["mkdir -p /monitor-data/inbox && touch /monitor-data/inbox/failed-tx.jsonl && chmod 755 /monitor-data/inbox && chmod 644 /monitor-data/inbox/failed-tx.jsonl"]
+    network_mode: none
+    restart: "no"
+    volumes:
+      - monitor-data:/monitor-data
+
+  eb-reconcile:
+    image: ssv-eb-reconcile:local
+    pull_policy: build
+    build:
+      context: ./reconcile
+    depends_on:
+      inbox-init:
+        condition: service_completed_successfully
+    environment:
+      MAINNET_RPC_URL: ${MAINNET_RPC_URL:-}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      DISCORD_WEBHOOK_INFO: ${DISCORD_WEBHOOK_INFO:-}
+      TEST_TELEGRAM_TOKEN: ${TEST_TELEGRAM_TOKEN:-}
+      TEST_TELEGRAM_CHAT_ID: ${TEST_TELEGRAM_CHAT_ID:-}
+      TEST_DISCORD_WEBHOOK: ${TEST_DISCORD_WEBHOOK:-}
+      LOG_LEVEL: ${EB_RECONCILE_LOG_LEVEL:-info}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    stop_grace_period: 60s
+    healthcheck:
+      # Healthy = the status file was written by a successful step in the last 10 minutes (a step that fails, an
+      # unreadable input or a pending reorg re-evaluation writes healthy: false). The backfill counts as healthy.
+      test: ["CMD", "python", "-c", "import json,time,sys; s=json.load(open('/data/eb-reconcile.status.json')); sys.exit(0 if s['healthy'] and time.time()-s['at']<600 else 1)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+    ports:
+      # /metrics (config metrics.port); bound to the host loopback only.
+      - "127.0.0.1:${WATCH_METRICS_PORT:-9464}:9464"
+    volumes:
+      - ${WATCH_CONFIG:-./reconcile/config.json}:/app/config.json:ro
+      # Durable state (SQLite + WAL, checkpoint, incidents, outbox, inbox offset, status file). Never /dev/null.
+      - watch-data:/data
+      # The Monitor's failed-transaction inbox (plan §6), read-only: <monitor-data>/inbox/failed-tx.jsonl.
+      - type: volume
+        source: monitor-data
+        target: /inbox
+        read_only: true
+        volume:
+          subpath: inbox
+      # The Monitor's data dir, read-only: its last processed block (<network>_last_block.txt) for the stall watch.
+      - type: volume
+        source: monitor-data
+        target: /monitor
+        read_only: true
+
+volumes:
+  watch-data: {}
+  monitor-data: {}

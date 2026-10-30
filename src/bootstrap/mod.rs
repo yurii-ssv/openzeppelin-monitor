@@ -30,6 +30,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
+		blockwatcher::report_unevaluated_block,
 		filter::{evm_helpers, handle_match, stellar_helpers, FilterService},
 		notification::NotificationService,
 		trigger::{
@@ -178,7 +179,7 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								)
 								.await
 							}
-							Err(_) => None,
+							Err(e) => client_unavailable(&network, &block, &e),
 						},
 						BlockChainType::Stellar => {
 							match client_pools.get_stellar_client(&network).await {
@@ -194,7 +195,7 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 									)
 									.await
 								}
-								Err(_) => None,
+								Err(e) => client_unavailable(&network, &block, &e),
 							}
 						}
 						BlockChainType::Midnight => {
@@ -211,7 +212,7 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 									)
 									.await
 								}
-								Err(_) => None,
+								Err(e) => client_unavailable(&network, &block, &e),
 							}
 						}
 						BlockChainType::Solana => {
@@ -230,7 +231,7 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								}
 								Err(e) => {
 									tracing::error!(error = %e, "Failed to get Solana client");
-									None
+									client_unavailable(&network, &block, &e)
 								}
 							}
 						}
@@ -245,7 +246,44 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 	)
 }
 
+/// Reports a block that cannot be evaluated because its network client is unavailable.
+fn client_unavailable(
+	network: &Network,
+	block: &BlockType,
+	error: &dyn std::fmt::Display,
+) -> Option<Vec<MonitorMatch>> {
+	unevaluated(network, block, error);
+	None
+}
+
+/// Logs a block that was not evaluated and reports it to the block watcher, which records it as a
+/// missed block for `recovery_config` instead of counting it as evaluated (D21).
+fn unevaluated(network: &Network, block: &BlockType, error: &dyn std::fmt::Display) {
+	match block.number() {
+		Some(block_number) => {
+			tracing::error!(
+				network = %network.slug,
+				block = block_number,
+				error = %error,
+				"Block {} was not evaluated: {}",
+				block_number,
+				error
+			);
+			report_unevaluated_block(block_number);
+		}
+		None => tracing::error!(
+			network = %network.slug,
+			error = %error,
+			"A block without a number was not evaluated: {}",
+			error
+		),
+	}
+}
+
 /// Processes a single block for all applicable monitors.
+///
+/// Returns `None` when the block was not evaluated: on a filter error (also logged and reported
+/// as unevaluated, see `report_unevaluated_block`) or on shutdown (nothing reported).
 ///
 /// # Arguments
 /// * `client` - The client to use to process the block
@@ -268,7 +306,13 @@ where
 {
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
-			result.ok()
+			match result {
+				Ok(matches) => Some(matches),
+				Err(e) => {
+					unevaluated(network, block, &e);
+					None
+				}
+			}
 		}
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");
@@ -1408,5 +1452,139 @@ print(result)
 		let matches = vec![match_item.clone()];
 		let filtered = run_trigger_filters(&matches, "solana_mainnet", &trigger_scripts).await;
 		assert_eq!(filtered.len(), 1); // Match should be kept because all conditions return false
+	}
+}
+
+#[cfg(test)]
+mod unevaluated_block_tests {
+	//! D21: a block whose filter fails is reported as not evaluated; a block without matches and a
+	//! shutdown are not.
+
+	use super::*;
+	use crate::{
+		services::{
+			blockwatcher::collect_unevaluated_blocks,
+			filter::{BlockFilter, FilterError},
+		},
+		utils::tests::network::NetworkBuilder,
+	};
+	use async_trait::async_trait;
+
+	const NO_MATCHES: u8 = 0;
+	const FILTER_ERROR: u8 = 1;
+	const NEVER_DONE: u8 = 2;
+
+	#[derive(Clone)]
+	struct TestClient<const MODE: u8>;
+
+	struct TestFilter<const MODE: u8>;
+
+	#[async_trait]
+	impl<const MODE: u8> BlockChainClient for TestClient<MODE> {
+		async fn get_latest_block_number(&self) -> std::result::Result<u64, anyhow::Error> {
+			Ok(0)
+		}
+
+		async fn get_blocks(
+			&self,
+			_start: u64,
+			_end: Option<u64>,
+		) -> std::result::Result<Vec<BlockType>, anyhow::Error> {
+			Ok(vec![])
+		}
+	}
+
+	#[async_trait]
+	impl<const MODE: u8> BlockFilter for TestFilter<MODE> {
+		type Client = TestClient<MODE>;
+
+		async fn filter_block(
+			&self,
+			_client: &Self::Client,
+			_network: &Network,
+			_block: &BlockType,
+			_monitors: &[Monitor],
+			_contract_specs: Option<&[(String, ContractSpec)]>,
+		) -> std::result::Result<Vec<MonitorMatch>, FilterError> {
+			match MODE {
+				NO_MATCHES => Ok(vec![]),
+				FILTER_ERROR => Err(FilterError::network_error(
+					"HTTP error: status 429 Too Many Requests",
+					None,
+					None,
+				)),
+				_ => std::future::pending().await,
+			}
+		}
+	}
+
+	impl<const MODE: u8> BlockFilterFactory<TestClient<MODE>> for TestClient<MODE> {
+		type Filter = TestFilter<MODE>;
+
+		fn filter() -> Self::Filter {
+			TestFilter
+		}
+	}
+
+	fn evm_block(block_number: u64) -> BlockType {
+		use crate::models::EVMBlock;
+		use alloy::rpc::types::{Block, Header};
+
+		let alloy_block = Block {
+			header: Header {
+				inner: alloy::consensus::Header {
+					number: block_number,
+					..Default::default()
+				},
+				..Default::default()
+			},
+			..Default::default()
+		};
+		let evm_block: EVMBlock = alloy_block.into();
+		BlockType::EVM(Box::new(evm_block))
+	}
+
+	async fn run<const MODE: u8>(
+		shutdown: bool,
+	) -> (Option<Vec<MonitorMatch>>, std::collections::BTreeSet<u64>) {
+		let network = NetworkBuilder::new().slug("test_network").build();
+		let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+		if shutdown {
+			shutdown_tx.send(true).unwrap();
+		}
+		collect_unevaluated_blocks(async {
+			process_block(
+				&TestClient::<MODE>,
+				&network,
+				&evm_block(1234),
+				&[],
+				None,
+				&FilterService::new(),
+				&mut shutdown_rx,
+			)
+			.await
+		})
+		.await
+	}
+
+	#[tokio::test]
+	async fn test_filter_error_reports_the_block_as_unevaluated() {
+		let (matches, unevaluated) = run::<FILTER_ERROR>(false).await;
+		assert!(matches.is_none());
+		assert_eq!(unevaluated.into_iter().collect::<Vec<_>>(), vec![1234]);
+	}
+
+	#[tokio::test]
+	async fn test_no_matches_is_evaluated() {
+		let (matches, unevaluated) = run::<NO_MATCHES>(false).await;
+		assert_eq!(matches.map(|m| m.len()), Some(0));
+		assert!(unevaluated.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_shutdown_reports_nothing() {
+		let (matches, unevaluated) = run::<NEVER_DONE>(true).await;
+		assert!(matches.is_none());
+		assert!(unevaluated.is_empty());
 	}
 }

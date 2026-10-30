@@ -19,6 +19,7 @@ target/
 # Ignore data files
 data/**/*.txt
 data/**/*.json
+data/**/*.sqlite*
 
 # Ignore actual config files but not examples
 !examples/config/**/*.json
@@ -53,3 +54,15 @@ node_modules
 
 # Ignore logs dir
 logs/
+
+# Local secrets and dry-run state (user-owned, never tracked)
+config.zip
+.local-dry/
+
+# Monitor/worker runtime data (inbox, record-mode alerts, SQLite + WAL)
+data/**/*.jsonl
+data/**/*.sqlite-wal
+data/**/*.sqlite-shm
+
+# Checkpointed plan and its records live in ssv-research (checkpointed-plans/monitor-service), not here
+plans/

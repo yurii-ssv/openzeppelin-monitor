@@ -16,6 +16,7 @@ use crate::{
 			error::BlockWatcherError,
 			storage::{BlockStorage, MissedBlockStatus},
 			tracker::BlockTrackerTrait,
+			unevaluated::collect_unevaluated_blocks,
 		},
 	},
 };
@@ -45,9 +46,11 @@ pub struct RecoveryResult {
 /// 4. Limit to `max_blocks_per_run`, sorted by block number (oldest first)
 /// 5. For each block:
 ///    - Mark as `Recovering`
-///    - Fetch via RPC
-///    - On success: process through handlers, mark `Recovered`, remove from file
-///    - On failure: increment `retry_count`, record error, apply `retry_delay_ms`
+///    - Fetch via RPC and process through the block handler
+///    - On success: run the trigger handler, mark `Recovered`, remove from file
+///    - On failure (fetch error, empty response, or the block handler reports the block as not
+///      evaluated because its filter failed): increment `retry_count`, record error, apply
+///      `retry_delay_ms`
 ///    - If `retry_count >= max_retries`: mark as `Failed`
 /// 6. Return statistics
 #[allow(clippy::too_many_arguments)]
@@ -154,17 +157,31 @@ where
 			);
 		}
 
-		// Attempt to fetch the block
-		match rpc_client
+		// Attempt to fetch and evaluate the block
+		let attempt = match rpc_client
 			.get_blocks(block_number, Some(block_number))
 			.await
 		{
 			Ok(blocks) if !blocks.is_empty() => {
 				let block = blocks.into_iter().next().unwrap();
 
-				// Process through block handler
-				let processed_block = (block_handler)(block, network.clone()).await;
+				// Process through block handler; a block the handler reports as not evaluated
+				// (filter failed) is not recovered
+				let (processed_block, unevaluated) =
+					collect_unevaluated_blocks((block_handler)(block, network.clone())).await;
+				if !unevaluated.is_empty() {
+					Err("Block filter failed: the block was not evaluated".to_string())
+				} else {
+					Ok(processed_block)
+				}
+			}
+			// Block not found (empty response)
+			Ok(_) => Err("Block not found in RPC response".to_string()),
+			Err(e) => Err(e.to_string()),
+		};
 
+		match attempt {
+			Ok(processed_block) => {
 				// Execute trigger handler
 				let _handle = (trigger_handler)(&processed_block);
 
@@ -195,62 +212,8 @@ where
 					"Successfully recovered missed block"
 				);
 			}
-			Ok(_) => {
-				// Block not found (empty response)
+			Err(error_msg) => {
 				let new_retry_count = entry.retry_count + 1;
-				let error_msg = "Block not found in RPC response".to_string();
-
-				let new_status = if new_retry_count >= recovery_config.max_retries {
-					MissedBlockStatus::Failed
-				} else {
-					MissedBlockStatus::Pending
-				};
-
-				if let Err(e) = block_storage
-					.update_missed_block_status(
-						&network.slug,
-						block_number,
-						new_status.clone(),
-						Some(error_msg.clone()),
-					)
-					.await
-				{
-					tracing::warn!(
-						network = %network.slug,
-						block = block_number,
-						error = %e,
-						"Failed to update block status after empty response"
-					);
-				}
-
-				if new_status == MissedBlockStatus::Failed {
-					result.failed += 1;
-					tracing::error!(
-						network = %network.slug,
-						block = block_number,
-						retries = new_retry_count,
-						"Block recovery failed after max retries: {}",
-						error_msg
-					);
-				} else {
-					tracing::warn!(
-						network = %network.slug,
-						block = block_number,
-						retry = new_retry_count,
-						"Block recovery attempt failed, will retry: {}",
-						error_msg
-					);
-				}
-
-				// Apply retry delay
-				tokio::time::sleep(tokio::time::Duration::from_millis(
-					recovery_config.retry_delay_ms,
-				))
-				.await;
-			}
-			Err(e) => {
-				let new_retry_count = entry.retry_count + 1;
-				let error_msg = e.to_string();
 
 				let new_status = if new_retry_count >= recovery_config.max_retries {
 					MissedBlockStatus::Failed
@@ -271,7 +234,7 @@ where
 						network = %network.slug,
 						block = block_number,
 						error = %update_err,
-						"Failed to update block status after RPC error"
+						"Failed to update block status after a failed attempt"
 					);
 				}
 
@@ -1100,5 +1063,230 @@ mod tests {
 		assert_eq!(entries.len(), 1);
 		assert_eq!(entries[0].block_number, 101);
 		assert_eq!(entries[0].status, MissedBlockStatus::Failed);
+	}
+
+	// ============ D21: blocks whose filter failed ============
+
+	fn evm_block(block_number: u64) -> BlockType {
+		use crate::models::EVMBlock;
+		use alloy::rpc::types::{Block, Header};
+
+		let alloy_block = Block {
+			header: Header {
+				inner: alloy::consensus::Header {
+					number: block_number,
+					..Default::default()
+				},
+				..Default::default()
+			},
+			..Default::default()
+		};
+		let evm_block: EVMBlock = alloy_block.into();
+		BlockType::EVM(Box::new(evm_block))
+	}
+
+	/// RPC client that returns the requested block with its number
+	#[derive(Clone)]
+	struct NumberedRpcClient {
+		latest_block: u64,
+	}
+
+	#[async_trait::async_trait]
+	impl BlockChainClient for NumberedRpcClient {
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
+			Ok(self.latest_block)
+		}
+
+		async fn get_blocks(
+			&self,
+			start: u64,
+			_end: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error> {
+			Ok(vec![evm_block(start)])
+		}
+	}
+
+	fn test_match() -> crate::models::MonitorMatch {
+		use crate::models::{EVMMonitorMatch, MatchConditions, MonitorMatch};
+		use crate::utils::tests::builders::evm::{
+			monitor::MonitorBuilder, transaction::TransactionBuilder,
+		};
+
+		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: MonitorBuilder::new().name("d21").build(),
+			transaction: TransactionBuilder::new().build(),
+			receipt: None,
+			logs: None,
+			network_slug: "test_network".to_string(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
+	}
+
+	/// Block handler whose filter fails for the first `fail_times` calls (it reports the block as
+	/// not evaluated, as the bootstrap handler does), then evaluates the block with one match.
+	fn flaky_filter_block_handler(
+		fail_times: usize,
+		calls: Arc<AtomicUsize>,
+	) -> Arc<
+		impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
+	> {
+		Arc::new(move |block: BlockType, network: Network| {
+			let calls = calls.clone();
+			Box::pin(async move {
+				let block_number = block.number().unwrap_or(0);
+				let processing_results = if calls.fetch_add(1, Ordering::SeqCst) < fail_times {
+					crate::services::blockwatcher::report_unevaluated_block(block_number);
+					vec![]
+				} else {
+					vec![test_match()]
+				};
+				ProcessedBlock {
+					network_slug: network.slug,
+					block_number,
+					processing_results,
+				}
+			}) as BoxFuture<'static, ProcessedBlock>
+		})
+	}
+
+	/// Trigger handler that records (block number, number of matches) of every call
+	fn recording_trigger_handler(
+		seen: Arc<std::sync::Mutex<Vec<(u64, usize)>>>,
+	) -> Arc<impl Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static> {
+		Arc::new(move |block: &ProcessedBlock| {
+			seen.lock()
+				.unwrap()
+				.push((block.block_number, block.processing_results.len()));
+			tokio::spawn(async move {})
+		})
+	}
+
+	async fn read_entries(dir: &std::path::Path) -> Vec<MissedBlockEntry> {
+		let content = tokio::fs::read_to_string(dir.join("test_network_missed_blocks.json"))
+			.await
+			.unwrap();
+		serde_json::from_str(&content).unwrap()
+	}
+
+	#[tokio::test]
+	async fn test_recovery_retries_an_unevaluated_block_and_delivers_its_matches() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let result = process_missed_blocks(
+			&create_test_network(),
+			&create_recovery_config(),
+			&NumberedRpcClient { latest_block: 1000 },
+			storage.clone(),
+			flaky_filter_block_handler(0, Arc::new(AtomicUsize::new(0))),
+			recording_trigger_handler(seen.clone()),
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(result.recovered, 1);
+		assert_eq!(*seen.lock().unwrap(), vec![(100, 1)]);
+		assert!(read_entries(temp_dir.path()).await.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_recovery_counts_a_filter_failure_as_failed_and_gives_up_after_max_retries() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.retry_delay_ms = 1;
+		let calls = Arc::new(AtomicUsize::new(0));
+		let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		for run in 1..=4u32 {
+			let result = process_missed_blocks(
+				&network,
+				&recovery_config,
+				&NumberedRpcClient { latest_block: 1000 },
+				storage.clone(),
+				flaky_filter_block_handler(usize::MAX, calls.clone()),
+				recording_trigger_handler(seen.clone()),
+				Arc::new(BlockTracker::new(100)),
+			)
+			.await
+			.unwrap();
+
+			assert_eq!(result.recovered, 0);
+			let entries = read_entries(temp_dir.path()).await;
+			assert_eq!(entries.len(), 1, "a failed block stays recorded");
+			assert!(entries[0]
+				.last_error
+				.as_deref()
+				.unwrap()
+				.contains("filter failed"));
+			if run < 3 {
+				assert_eq!(result.failed, 0);
+				assert_eq!(entries[0].status, MissedBlockStatus::Pending);
+				assert_eq!(entries[0].retry_count, run);
+			} else if run == 3 {
+				assert_eq!(result.failed, 1);
+				assert_eq!(entries[0].status, MissedBlockStatus::Failed);
+				assert_eq!(entries[0].retry_count, 3);
+			} else {
+				// Given up: no further attempt
+				assert_eq!(result.attempted, 0);
+				assert_eq!(entries[0].status, MissedBlockStatus::Failed);
+			}
+		}
+		assert_eq!(calls.load(Ordering::SeqCst), 3);
+		assert!(
+			seen.lock().unwrap().is_empty(),
+			"no trigger without evaluation"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_delivers_on_the_retry_after_a_filter_failure() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.retry_delay_ms = 1;
+		let calls = Arc::new(AtomicUsize::new(0));
+		let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		for expected_recovered in [0, 1] {
+			let result = process_missed_blocks(
+				&network,
+				&recovery_config,
+				&NumberedRpcClient { latest_block: 1000 },
+				storage.clone(),
+				flaky_filter_block_handler(1, calls.clone()),
+				recording_trigger_handler(seen.clone()),
+				Arc::new(BlockTracker::new(100)),
+			)
+			.await
+			.unwrap();
+			assert_eq!(result.recovered, expected_recovered);
+		}
+		assert_eq!(*seen.lock().unwrap(), vec![(100, 1)]);
+		assert!(read_entries(temp_dir.path()).await.is_empty());
 	}
 }

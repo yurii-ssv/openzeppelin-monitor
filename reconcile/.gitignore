@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+config.json
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.lock
+*.status.json
+.ruff_cache/

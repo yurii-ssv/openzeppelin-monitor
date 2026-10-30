@@ -1,0 +1,155 @@
+{
+  "_comment": "Mainnet template. Copy to config.json (gitignored). Secrets are read from the environment variables named here, never from this file. Development and QA name the TEST_* variables or keep alerts.mode 'record'. rpc_urls: failover order (URLs or env variable names); MAINNET_RPC_URL, when set, replaces the first. backfill: history from start_block is evaluated without alerts (D17).",
+  "chain_id": 1,
+  "proxy": "0xDD9BC35aE942eF0cFa76930954a156B3fF30a4E1",
+  "views": "0xafE830B6Ee262ba11cce5F32fDCd760FFE6a66e4",
+  "activation_block": 24920727,
+  "start_block": 24920727,
+  "rpc_url_env": "MAINNET_RPC_URL",
+  "rpc_urls": ["https://mainnet.gateway.tenderly.co", "https://rpc-eth.blockmachine.io", "https://gateway.tenderly.co/public/mainnet", "https://rpc.mevblocker.io"],
+  "rpc_primary_retry_s": 300,
+  "backfill": {"enabled": true, "live_within_blocks": 12, "blocks_per_step": 50000},
+  "confirmations": 12,
+  "poll_interval_s": 30,
+  "max_log_range": 5000,
+  "rpc_batch_size": 50,
+  "rpc_timeout_s": 30,
+  "rpc_retries": 4,
+  "lag_alert_blocks": 50,
+  "reorg_search_depth": 256,
+  "db_path": "/data/eb-reconcile.sqlite",
+  "alerts": {
+    "mode": "record",
+    "telegram_token_env": "TELEGRAM_TOKEN",
+    "telegram_chat_id_env": "TELEGRAM_CHAT_ID",
+    "discord_webhook_env": "DISCORD_WEBHOOK_INFO",
+    "label": "mainnet",
+    "explorer": "https://etherscan.io",
+    "realert_s": {"page": 21600, "warn": 86400},
+    "health_realert_s": 21600,
+    "digest_interval_s": 86400
+  },
+  "inbox": {
+    "path": "/inbox/failed-tx.jsonl",
+    "blockscout": "https://eth.blockscout.com"
+  },
+  "monitor": {
+    "_comment": "D20: the Monitor's last processed block (its data volume, mounted read-only). monitor-stall health when it is more than max_lag_blocks behind the head, unchanged, missing or unreadable, or the head is unknown, for stall_after_s; monitor-skipped names every block range it skips. max_past_blocks: never more than the Monitor network template's. D21: missed_blocks_path (default: next to last_block_path) holds the blocks whose filter failed; monitor-unevaluated names every block the recovery job gave up on, still waits after unevaluated_after_s, or that left the file without a provable retry; max_block_age = the template's recovery_config.max_block_age. Remove last_block_path only to switch the watch off.",
+    "last_block_path": "/monitor/evm_ethereum_mainnet_last_block.txt",
+    "missed_blocks_path": "/monitor/evm_ethereum_mainnet_missed_blocks.json",
+    "max_lag_blocks": 30,
+    "stall_after_s": 240,
+    "max_past_blocks": 50,
+    "cycle_s": 60,
+    "block_time_s": 12,
+    "unevaluated_after_s": 1200,
+    "max_block_age": 7200
+  },
+  "inventory": {
+    "api_url": "https://api.ssv.network/api/v4/mainnet",
+    "api_refresh_s": 600
+  },
+  "metrics": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 9464
+  },
+  "checks": {
+    "m3": {"n_blocks": 50, "n2_blocks": 7200, "full_sweep_interval_s": 600, "near_blocks": 300, "pre_alert_blocks": 7200},
+    "m4": {"interval_s": 86400},
+    "m14": {"window_s": 86400, "repeat_count": 3, "sweep_interval_s": 600},
+    "m5": {
+      "sweep_interval_s": 300,
+      "full_sweep_interval_s": 3600,
+      "pr614_guards_from": [25037749, 218],
+      "layout": {
+        "_comment": "Pin: ssv-network v2.0.0 + PR #614 (f7ac487), from ssv-network-triage/contracts.lock.json. A mismatch suspends M5 and raises a health alert.",
+        "implementation": "0xa72a8F31163d74D708664493d09167dfa13008E9",
+        "modules": {
+          "SSV_CLUSTERS": {
+            "address": "0x3611D36A7C052211D6f3B1a39326ad38A02832B4",
+            "codehash": "0x2711afb14d4a81c44ea925939951ba37c5b3dfd49dd78ed4b235eb3052332e90"
+          },
+          "SSV_VALIDATORS": {
+            "address": "0x9122Fded65Ed6b562243efDC9E55ff0bEF5E7499",
+            "codehash": "0x91b323fa83a049400037c0d0e04843850719c1598385c2780df8bfc2d1a0d2b1"
+          },
+          "SSV_DAO": {
+            "address": "0x94ef691dAa32cC2d31897aE8767e02988f1add4F",
+            "codehash": "0xd8d314f21c630ea5e35e8082dc307bb550bffc57c8003c18cbef0eb023379243"
+          }
+        }
+      }
+    },
+    "m6": {
+      "sweep_interval_s": 3600,
+      "warn_after_window_bps": 5000,
+      "digest_interval_s": 604800
+    },
+    "m7": {
+      "interval_s": 86400,
+      "surplus_floor_wei": 1000000000000000000,
+      "cssv": "0xe018D31F120A637828F46aFD6c64EC099d960546",
+      "unstake_history_from": 24920727
+    },
+    "m12": {
+      "oracle_wallet": "0x16A503C901615E6e21AA78cFcaFf11822fc2b617",
+      "liquidator_wallet": "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0",
+      "fallback_tip_wei": 1000000000
+    },
+    "m8": {
+      "cssv": "0xe018D31F120A637828F46aFD6c64EC099d960546",
+      "seed_holder": "0xb35096b074fdb9bBac63E3AdaE0Bbde512B2E6b6"
+    },
+    "m13": {
+      "addresses": {
+        "0x3A98EE5f80268Ed91F8A5880d93468b76a9F3bB4": "old oracle slot 4 + EB updater (key leaked 2026-10-05)",
+        "0x4BC656B34De23896fa6069C9862F355b740401aF": "old liquidator (drained 2026-10-06)"
+      }
+    },
+    "m1": {
+      "interval_s": 600,
+      "receipt_window_blocks": 1000,
+      "our_senders": ["0x16A503C901615E6e21AA78cFcaFf11822fc2b617", "0x0431371AD8eDA67BA2EF6489aB003B3A7F0d95E0"],
+      "inbox_functions": ["updateClusterBalance", "liquidate", "liquidateSSV"]
+    },
+    "m2": {
+      "interval_s": 600,
+      "early_headroom": 900,
+      "velocity_window_blocks": 7200,
+      "inbox_functions": ["migrateClusterToETH", "reactivate"]
+    },
+    "m9": {
+      "interval_s": 60,
+      "round_timeout_s": 1800,
+      "max_commit_gap_s": 32400,
+      "dissent_streak": 3,
+      "dissent_enabled": true,
+      "min_committing_slots": 3,
+      "absent_rounds": 6,
+      "seconds_per_block": 12,
+      "require_inbox": true
+    },
+    "m10": {
+      "interval_s": 300
+    },
+    "m11": {
+      "interval_s": 300,
+      "update_window_s": 3600,
+      "zero_rounds_page": 2,
+      "revert_rate": 0.1,
+      "updater": null,
+      "updater_slot": 4,
+      "history_rounds": 6,
+      "proof_api": "https://ssv-oracle.ssv.network/api/v1",
+      "proof_api_timeout_s": 15,
+      "proof_api_abort_after": 3,
+      "proof_api_run_budget_s": 600,
+      "full_state_interval_s": 604800,
+      "seconds_per_block": 12,
+      "require_inbox": true,
+      "revert_rate_enabled": true,
+      "zero_round_proof_enabled": true
+    }
+  }
+}

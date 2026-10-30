@@ -1,0 +1,16 @@
+{
+  "discord_dao_success": {
+    "name": "Discord Dao Success Alert",
+    "trigger_type": "discord",
+    "config": {
+      "discord_url": {
+        "type": "environment",
+        "value": "DISCORD_WEBHOOK_INFO"
+      },
+      "message": {
+        "title": "DAO Action",
+        "body": "Called by: ${transaction.from}\nTo: ${transaction.to}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})${functions}${events}"
+      }
+    }
+  }
+}
