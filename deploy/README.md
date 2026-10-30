@@ -115,6 +115,17 @@ When all fail, the step fails: after 3 consecutive failed steps a `rpc` health m
 100), and `rpc-recovered` when a step succeeds again. A scan window whose reads were answered by two different
 endpoints is re-read at the next step. Logs name endpoints by host or by the variable name, never by URL.
 
+Production RPC (2026-10-27, plan DT-3/DT-23/DT-24):
+
+- Only **keyless** URLs in `MAINNET_RPC_URL`/`MAINNET_RPC_URL_2`: the Monitor (upstream code) logs RPC URLs in full
+  on failed rotations and HTTP errors, so a key in a URL would reach the container logs. The worker does not.
+- The company node keeps state for about the newest 127 blocks: older state reads error and move to the public
+  archive fallbacks (`rpc_urls`), each with one WARNING. Expected; keep the fallbacks and their egress.
+- The host needs a direct, non-expiring route to the company node. Through an expiring session (Teleport VNet) the
+  node refuses connections when the login expires; both services then share the public endpoints and hit HTTP 429.
+  After the node is back, `docker compose restart monitor` (the Monitor does not rotate back by itself; the worker
+  retries its first endpoint every `rpc_primary_retry_s`).
+
 ### Monitor stall watch (D20)
 
 Soak 1 (event-0084) showed that a Monitor processing no block is silent: no rule fires and the failed-tx inbox stays

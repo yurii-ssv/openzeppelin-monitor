@@ -2,8 +2,8 @@
 
 This is the sole current-state summary. History: [execution-log.md](execution-log.md). Contract: [plan.md](plan.md).
 
-- Updated at: 2026-10-26T10:30Z (event-0098)
-- Last recorded event / last processed Orca delivery: event-0098 / delivery_327f47653270 / delivery_5f3d7440238f / delivery_0c2eb9cff119
+- Updated at: 2026-10-30 (event-0099)
+- Last recorded event / last processed Orca delivery: event-0099 / delivery_327f47653270 / delivery_5f3d7440238f / delivery_0c2eb9cff119
 - Repo/worktree/branch: `/Users/marco/ssv/repos/ssv-network-monitor` · `plan/monitoring-service` (created by CP0); all Orca worktrees removed 2026-10-26 (DT-16, event-0098)
 - Observed HEAD: integration branch carries the central test patch (ruling v2.1); see git log; uncommitted by design: `.dockerignore`, `Dockerfile.production`, `.env copy.example`
 - Runtime authority: Orca repo `316cdd8d-3d6f-4dd5-9b4b-34ac5792bf2a`. Run `run_96be3e0c7302` bound to this coordinator tab (monitor workspace, verified); old Run `run_6a94d8a4633c` retired. Workers use the full orca path if `orca` fails (F13)
@@ -29,7 +29,7 @@ This is the sole current-state summary. History: [execution-log.md](execution-lo
 
 ## Next transition
 
-- Exact next authorized action and owner: Marco starts the production docker-compose himself with live routes, following `deploy/README.md` (configure → render `config/` → record → TEST_* → live; D22 company RPC with the pruned-state probe). Coordinator work only on Marco's request: DT-18 repairs, DT-21/22 NOTE follow-ups (DT-15 backlog). Push and PR are Marco's.
+- Exact next authorized action and owner: DevOps handover (Marco): branch pushed and PR to `main` opened (event-0099); DevOps deploys on an always-on host with a direct route to the company node (DT-5, DT-24). Marco's laptop run (live since 2026-10-28) stops once DevOps runs, so alerts are not sent twice. Coordinator work only on Marco's request: DT-18 repairs, DT-21/22 NOTE follow-ups (DT-15 backlog). Push and PR are Marco's.
 - Ready work with no active dispatch: none.
 - Waiting for: nothing in this plan. Open owner items: plan §9 DT rows (DT-1 fired; DT-16 residue: CP0.0 terminal `ctx_8a4b4362736e`, volumes `ms-cp4r_*`/`ms-cp3_*`, `caffeinate -is` pid 47355).
 - Owner intent (2026-10-24, D22, recorded in DT-3; soak 2 passed):  the company mainnet RPC (no rate limit, NOT archive) becomes the production primary via `MAINNET_RPC_URL` (env/secret only) for the Monitor and the worker; public endpoints stay as fallbacks (archive state for the worker's historical reads). Soak 2 stays on public endpoints. Before deploy: short smoke on the company node incl. a pruned-state probe (must error, never zero/empty) and worker failover to an archive fallback.
