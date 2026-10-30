@@ -63,3 +63,6 @@ config.zip
 data/**/*.jsonl
 data/**/*.sqlite-wal
 data/**/*.sqlite-shm
+
+# Checkpointed plan and its records live in ssv-research (checkpointed-plans/monitor-service), not here
+plans/

@@ -1,6 +1,6 @@
 # SSV watch worker (grown from the #94775 EB reconciliation worker)
 
-The stateful half of the monitoring service ([plan §6](../plans/monitoring-service/plan.md)): it runs
+The stateful half of the monitoring service (plan §6, `plans/monitoring-service/plan.md`, kept in ssv-research `checkpointed-plans/monitor-service`): it runs
 next to the OpenZeppelin Monitor, not inside it, because its checks need cross-transaction state and
 storage reads that a per-transaction filter script cannot hold. One process hosts one check module
 per monitor family ([`checks/`](checks/README.md)) on a shared SQLite database, with an incident
@@ -53,7 +53,7 @@ The worker is read-only against the chain. Each step:
 ## M5 (#94775) — `checks/m5_eb_desync.py`
 
 Detects the register-after-root effective-balance collapse described in
-[`plans/94775-eb-collapse-monitoring.md`](../plans/94775-eb-collapse-monitoring.md). For each cluster,
+`plans/94775-eb-collapse-monitoring.md` (ssv-research `checkpointed-plans/monitor-service`). For each cluster,
 it takes the last `ClusterBalanceUpdated` (root reference block **S**, leaf value **E**), replays the
 validator changes after S (`reference`) and after the update (`replay`) with the pinned contract
 rules, reads `clusterEB[id]`, `ethClusters[id]` and `clusters[id]` at the same block B and classifies:
