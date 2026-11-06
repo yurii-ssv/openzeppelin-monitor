@@ -127,3 +127,10 @@ Decision: D15 (c) read as outcome-binding, mechanism free (stated in the QA-2 pa
 2026-11-06 · coordinator
 Outcome: `worker_done` (msg `msg_39e412656d29`, Dispatch `ctx_5ba74e966d55`): report on `cs/cp2-qa2` `95403b6`, copied to `qa/cp2-round-2.md` with evidence `qa/cp2-round-2/` (manifest `qa/cp2-round-2.manifest.txt`); sha256 equal to the commit (see manifest line count and hash in this event's commit). Verdict **FAIL**. Closed: QF1/NF1, QF2/NF2 global, QF3/NF3, DF1. Suite 2,505 passed, ruff clean, `test_backfill.py` unchanged, sweep oracle not weakened. New **QF4 BLOCKING** (missed page): with real M5, a disabled-then-re-enabled check whose condition is still true never sends its page — M5 keeps its own `m5_incidents` row open and re-proposes the old `incident_id`, which the framework row (now `disabled`) holds, so `Alerts._apply_one` raises "incident id … already exists" every attempt; the catch-up stays `pending`, only `check-error` health is sent. Present already on `718606c`. M5 is the only check proposing `incident_id`. **QN2 NOTE**: after an M5 silent repeat, M5's internal id and the framework id can diverge (no message impact observed). V1.6, V2.1, V2.8 FAIL (QF4); all other rows PASS.
 Decision: second failed QA round on CP2 → no third repair without Marco's decision (D2). CP2 PROVISIONAL.
+
+<a id="event-0019"></a>
+## Event 0019 — Marco: third CP2 repair, framework fix (D16)
+
+2026-11-06 · coordinator
+Outcome: Marco chose "3rd repair, framework fix" for QF4. New **D16**: a proposed incident id held only by `disabled` rows opens under the first free `<id>-<n>`; other collisions still raise; no `checks/m*.py` change. Repair-2 packet `workers/cp2/packet-repair-2.md` (base `ff3841f`, branch `cs/cp2-r2`, `alerts.py` `_apply_one` only, QA's real-M5 reproducer as oracle).
+Decision: CP2 REPAIR (third repair by Marco's decision); then composed QA round 3.
