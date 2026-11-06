@@ -1,0 +1,9 @@
+A	plans/check-switches/workers/cp2/repair-2/diffstat.txt
+A	plans/check-switches/workers/cp2/repair-2/falsifiers.txt
+A	plans/check-switches/workers/cp2/repair-2/handoff.md
+A	plans/check-switches/workers/cp2/repair-2/qa2-deep-on-candidate.txt
+A	plans/check-switches/workers/cp2/repair-2/red-on-ff3841f.txt
+A	plans/check-switches/workers/cp2/repair-2/suite.txt
+M	reconcile/alerts.py
+M	reconcile/checks/README.md
+A	reconcile/tests/test_switch_ids.py

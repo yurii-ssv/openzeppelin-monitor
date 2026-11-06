@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="10" time="0.451" timestamp="2026-11-06T15:52:12.022162+01:00" hostname="marcot-MacBook-Pro"><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_foreign_check_id_collision_does_not_suffix[open]" time="0.005" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_foreign_check_id_collision_does_not_suffix[resolved]" time="0.003" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_many_disabled_suffixes_and_partial_apply_rollback[2]" time="0.002" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_many_disabled_suffixes_and_partial_apply_rollback[5]" time="0.002" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_real_m5_reorg_around_suffixed_incident[True-silent]" time="0.020" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_real_m5_reorg_around_suffixed_incident[True-live]" time="0.021" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_real_m5_reorg_around_suffixed_incident[False-silent]" time="0.015" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_real_m5_reorg_around_suffixed_incident[False-live]" time="0.017"><failure message="AssertionError: assert [('page', 'open', 'EB94775-228316cb1e-1005-2')] == [('page', 'open', 'EB94775-228316cb1e-1005-2'), ('info', 'resolved', 'EB94775-228316cb1e-1005-2')]&#10;  &#10;  Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1005-2')&#10;  &#10;  Full diff:&#10;    [&#10;        (&#10;            'page',&#10;            'open',&#10;            'EB94775-228316cb1e-1005-2',&#10;        ),&#10;  -     (&#10;  -         'info',&#10;  -         'resolved',&#10;  -         'EB94775-228316cb1e-1005-2',&#10;  -     ),&#10;    ]">tmp_path = PosixPath('/private/tmp/cs-cp2-qa3-qa3-boundaries-4pwnjyhk/test-tmp/test_real_m5_reorg_around_suff3')
+stage = 'live', supported = False
+
+    @pytest.mark.parametrize('stage', ['silent', 'live'])
+    @pytest.mark.parametrize('supported', [True, False])
+    def test_real_m5_reorg_around_suffixed_incident(tmp_path, stage, supported):
+        chain, w, ssv, page = live_m5(tmp_path)
+        old = page['incident_id']
+        fork = row(w, old)['opened_block']  # the confirming removal; retained or orphaned below the re-enable pin
+        w = flip(w, chain, 'm5', False)
+        frozen = row(w, old)
+        chain.mine(3)
+        advance(w)
+        w = flip(w, chain, 'm5', True)
+        before = len(sent(w, 'm5'))
+        advance(w)
+        assert row(w, old+'-2')['notify'] == 0 and msgs(w,before) == []
+        if stage == 'live':
+            chain.mine()
+            advance(w)
+            assert msgs(w,before) == [('page','open',old+'-2')]
+        saved = snapshot(chain)
+        w = restart(w, chain)
+        replay(chain,saved,fork,None if supported else fork)
+        advance(w)
+        chain.mine()
+        advance(w)
+        w = restart(w,chain)
+        chain.mine()
+        advance(w)
+        actual = msgs(w,before)
+        expected = [('page','open',old+'-2')] if supported or stage == 'live' else []
+        if not supported and stage == 'live':
+            expected.append(('info','resolved',old+'-2'))
+        print({'stage':stage,'supported':supported,'messages':actual,'framework':[(r['id'],r['state']) for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id='m5'")]})
+&gt;       assert actual == expected
+E       AssertionError: assert [('page', 'open', 'EB94775-228316cb1e-1005-2')] == [('page', 'open', 'EB94775-228316cb1e-1005-2'), ('info', 'resolved', 'EB94775-228316cb1e-1005-2')]
+E         
+E         Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1005-2')
+E         
+E         Full diff:
+E           [
+E               (
+E                   'page',
+E                   'open',
+E                   'EB94775-228316cb1e-1005-2',
+E               ),
+E         -     (
+E         -         'info',
+E         -         'resolved',
+E         -         'EB94775-228316cb1e-1005-2',
+E         -     ),
+E           ]
+
+reconcile/tests/test_qa3_boundaries.py:87: AssertionError</failure></testcase><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_real_m5_disabled_reorg_unknown_allocates_suffix_and_recovers" time="0.019" /><testcase classname="reconcile.tests.test_qa3_boundaries" name="test_real_m5_candidate_reenable_then_confirmed_uses_framework_suffix" time="0.012" /></testsuite></testsuites>

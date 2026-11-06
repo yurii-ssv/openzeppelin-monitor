@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.336" timestamp="2026-11-06T15:50:27.552936+01:00" hostname="marcot-MacBook-Pro"><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_disabled_key_gets_new_id_and_first_live_page" time="0.017"><failure message="AssertionError: surviving M5 condition missed its first-live page&#10;assert (0 == 1)&#10; +  where 0 = len([])">tmp_path = PosixPath('/private/tmp/cs-cp2-qa3-qf4-red-fgwx7xu4/test-tmp/test_m5_real_disabled_key_gets0')
+
+    def test_m5_real_disabled_key_gets_new_id_and_first_live_page(tmp_path):
+        chain, w = make_m5(tmp_path, backfill={'enabled': True}, max_log_range=1)
+        ssv = MiniSSV(chain)
+        ssv.register(EB_OWNER, EB_OPS, pubkeys(1, 1))
+        ref = chain.number
+        chain.mine()
+        ssv.commit(ref)
+        ssv.update(EB_OWNER, EB_OPS, 2048)
+        advance(w)
+        chain.mine()
+        advance(w)
+        ref = chain.number
+        chain.mine()
+        dummy = pubkeys(63, 100)
+        ssv.register(EB_OWNER, EB_OPS, dummy)
+        ssv.commit(ref)
+        ssv.update(EB_OWNER, EB_OPS, 2048)
+        ssv.remove(EB_OWNER, EB_OPS, dummy)
+        advance(w)
+        (old_page,) = [m for m in sent(w, 'm5') if m['severity']=='page']
+        w = flip(w, chain, 'm5', False)
+        frozen = dict(w.db.conn.execute('SELECT * FROM incidents WHERE id=?', (old_page['incident_id'],)).fetchone())
+        assert frozen['state'] == 'disabled'
+        chain.mine()
+        advance(w)
+        w = flip(w, chain, 'm5', True)
+        before = len(sent(w, 'm5'))
+        advance(w)
+        silent_record = w.db.meta('catchup:m5')
+        chain.mine()
+        advance(w)
+        after_two_attempts = w.db.meta('catchup:m5')
+        w = restart(w, chain)  # a restart cannot repair the retained internal id
+        chain.mine()
+        advance(w)
+        assert w.db.meta('catchup:m5') == after_two_attempts
+        assert dict(w.db.conn.execute('SELECT * FROM incidents WHERE id=?', (old_page['incident_id'],)).fetchone()) == frozen
+        actual = [(m['severity'], m['kind'], m['incident_id']) for m in sent(w, 'm5', before)]
+        print({'m5_reenable_messages': actual, 'record_after_silent': silent_record,
+               'record_now': w.db.meta('catchup:m5'), 'run': w.db.meta('run:m5'),
+               'health': [m['text'] for m in outbox(w, "kind='health'")]})
+&gt;       assert len(actual) == 1 and actual[0][:2] == ('page', 'open'), 'surviving M5 condition missed its first-live page'
+E       AssertionError: surviving M5 condition missed its first-live page
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+reconcile/tests/test_qa2_deep.py:218: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,50 @@
+"""Confirm the missing M5 reorg resolution; no message oracle weakened."""
+import pytest
+import eb_model as M
+from harness import advance, outbox
+from test_switch_ids import live_m5, flip, restart, row, msgs, sent, heal
+from test_qa2_deep import snapshot, replay
+
+@pytest.mark.parametrize('with_flip',[True,False])
+def test_m5_live_page_becomes_latent_during_silent_repeat(tmp_path,with_flip):
+    chain,w,ssv,page=live_m5(tmp_path)
+    old=page['incident_id']
+    fork=row(w,old)['opened_block']
+    target=old
+    if with_flip:
+        w=flip(w,chain,'m5',False)
+        chain.mine(3)
+        advance(w)
+        w=flip(w,chain,'m5',True)
+        advance(w)
+        chain.mine()
+        advance(w)
+        target=old+'-2'
+    before=len(sent(w,'m5'))
+    saved=snapshot(chain)
+    w=restart(w,chain)
+    replay(chain,saved,fork,fork)
+    # No-flip control needs a deep repeat too; otherwise M5 emits its ordinary explicit resolution.
+    if not with_flip:
+        w.db.set_meta('silent:m5',w.checkpoint()['block'])
+    advance(w)
+    chain.mine()
+    advance(w)
+    w=restart(w,chain)
+    chain.mine()
+    advance(w)
+    evaluated=w.checks['m5'].last_evals
+    print({'flip':with_flip,'target':target,'evals':[(e.status,e.matched_keys) for e in evaluated],
+           'framework':[{k:r[k] for k in ('id','state','severity','notify','alerts','body')} for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id='m5'")],
+           'own':[dict(r) for r in w.db.conn.execute('SELECT id,state,kind FROM m5_incidents')],
+           'messages_after_reorg':msgs(w,before),'catchup':w.db.meta('catchup:m5'),'reorg':w.db.meta('reorg:m5')})
+    assert evaluated and evaluated[0].status==M.LATENT
+    w.clock.advance(7*3600)
+    chain.mine()
+    advance(w)
+    print({'after_7h':msgs(w,before),'target':row(w,target)})
+    assert not outbox(w,"check_id='m5' AND kind='realert'")
+    heal(chain,ssv)
+    advance(w)
+    print({'after_heal':msgs(w,before),'target':row(w,target)})
+    assert msgs(w,before)==[('info','resolved',target)], 'the canonical confirmed-to-latent transition must resolve the sent page once'

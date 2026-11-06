@@ -1,0 +1,27 @@
+reconcile.tests.test_qa3_boundaries::test_foreign_check_id_collision_does_not_suffix[open]: PASS
+reconcile.tests.test_qa3_boundaries::test_foreign_check_id_collision_does_not_suffix[resolved]: PASS
+reconcile.tests.test_qa3_boundaries::test_many_disabled_suffixes_and_partial_apply_rollback[2]: PASS
+reconcile.tests.test_qa3_boundaries::test_many_disabled_suffixes_and_partial_apply_rollback[5]: PASS
+reconcile.tests.test_qa3_boundaries::test_real_m5_reorg_around_suffixed_incident[True-silent]: PASS
+reconcile.tests.test_qa3_boundaries::test_real_m5_reorg_around_suffixed_incident[True-live]: PASS
+reconcile.tests.test_qa3_boundaries::test_real_m5_reorg_around_suffixed_incident[False-silent]: PASS
+reconcile.tests.test_qa3_boundaries::test_real_m5_reorg_around_suffixed_incident[False-live]: FAIL
+AssertionError: assert [('page', 'open', 'EB94775-228316cb1e-1005-2')] == [('page', 'open', 'EB94775-228316cb1e-1005-2'), ('info', 'resolved', 'EB94775-228316cb1e-1005-2')]
+  
+  Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1005-2')
+  
+  Full diff:
+    [
+        (
+            'page',
+            'open',
+            'EB94775-228316cb1e-1005-2',
+        ),
+  -     (
+  -         'info',
+  -         'resolved',
+  -         'EB94775-228316cb1e-1005-2',
+  -     ),
+    ]
+reconcile.tests.test_qa3_boundaries::test_real_m5_disabled_reorg_unknown_allocates_suffix_and_recovers: PASS
+reconcile.tests.test_qa3_boundaries::test_real_m5_candidate_reenable_then_confirmed_uses_framework_suffix: PASS

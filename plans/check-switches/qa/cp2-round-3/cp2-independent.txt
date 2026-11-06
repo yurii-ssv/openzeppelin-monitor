@@ -1,0 +1,48 @@
+revision=4205b00d510e3e2e84ccd370836473d2b20d7855
+scratch=/private/tmp/cs-cp2-qa3-cp2-independent-m7gnvrs1
+command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/reconcile/.venv/bin/python', '-m', 'pytest', '-vv', '-s', 'reconcile/tests/test_cp2_independent.py', '--junitxml', '/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/plans/check-switches/qa/cp2-round-3/cp2-independent.xml', '--basetemp', '/private/tmp/cs-cp2-qa3-cp2-independent-m7gnvrs1/test-tmp']
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp2-qa3-cp2-independent-m7gnvrs1
+collecting ... collected 21 items
+
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-0] {'cause': 'new', 'confirmations': 0, 'event': 1003, 'pin': 1006, 'old_checkpoint': 1007, 'ancestor': 1002, 'replayed_incident': 'cu_a-ev:1003-1006', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-2] {'cause': 'new', 'confirmations': 2, 'event': 1005, 'pin': 1008, 'old_checkpoint': 1009, 'ancestor': 1004, 'replayed_incident': 'cu_a-ev:1005-1008', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-12] {'cause': 'new', 'confirmations': 12, 'event': 1015, 'pin': 1018, 'old_checkpoint': 1019, 'ancestor': 1014, 'replayed_incident': 'cu_a-ev:1015-1018', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-0] {'cause': 'reenabled', 'confirmations': 0, 'event': 1003, 'pin': 1006, 'old_checkpoint': 1007, 'ancestor': 1002, 'replayed_incident': 'cu_a-ev:1003-1006', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-2] {'cause': 'reenabled', 'confirmations': 2, 'event': 1005, 'pin': 1008, 'old_checkpoint': 1009, 'ancestor': 1004, 'replayed_incident': 'cu_a-ev:1005-1008', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-12] {'cause': 'reenabled', 'confirmations': 12, 'event': 1015, 'pin': 1018, 'old_checkpoint': 1019, 'ancestor': 1014, 'replayed_incident': 'cu_a-ev:1015-1018', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0] {'cause': 'global', 'confirmations': 0, 'event': 1001, 'pin': 1005, 'old_checkpoint': 1006, 'ancestor': 1000, 'replayed_incident': 'cu_a-ev:1001-1005', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2] {'cause': 'global', 'confirmations': 2, 'event': 1001, 'pin': 1005, 'old_checkpoint': 1006, 'ancestor': 1000, 'replayed_incident': 'cu_a-ev:1001-1005', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12] {'cause': 'global', 'confirmations': 12, 'event': 1001, 'pin': 1005, 'old_checkpoint': 1006, 'ancestor': 1000, 'replayed_incident': 'cu_a-ev:1001-1005', 'notify': 0, 'alerts': 0, 'sent': []}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global] {'path': 'global', 'pin': 1004, 'history_event': 1004, 'live_event': 1005, 'sent': ['ev:1005'], 'runs': [{'block': 1004, 'reasons': {'interval', 'reorg', 'backfill', 'events', 'force'}, 'events': [1004], 'ancestor': 1003}, {'block': 1005, 'reasons': {'live', 'events', 'force'}, 'events': [1005], 'ancestor': None}]}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[percheck] {'path': 'percheck', 'pin': 1004, 'history_event': 1004, 'live_event': 1005, 'sent': ['ev:1005'], 'runs': [{'block': 1004, 'reasons': {'interval', 'reorg', 'backfill', 'events', 'force'}, 'events': [1004], 'ancestor': 1003}, {'block': 1005, 'reasons': {'live', 'events', 'force'}, 'events': [1005], 'ancestor': None}]}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[True] {'reenable_before_live': True, 'disabled_event': 1002, 'sent': [], 'phase': {'phase': 'backfill', 'since': 1800000000.0, 'evaluated': ['cu_a'], 'history_block': 1001, 'first_live': ['cu_a']}, 'catchup': None}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[False] {'reenable_before_live': False, 'disabled_event': 1002, 'sent': [], 'phase': {'phase': 'live', 'since': 1800010800.0, 'caught_up_block': 1003, 'history_block': 1001, 'first_live': []}, 'catchup': {'state': 'first_live', 'history_block': 1004, 'since': 1800010800.0, 'cause': 'reenabled'}}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[runtime-pending] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[runtime-first_live] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[rpc-pending] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[rpc-first_live] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[partial-pending] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[partial-first_live] PASSED
+reconcile/tests/test_cp2_independent.py::test_empty_success_is_silent_then_forces_live_and_removes_record PASSED
+reconcile/tests/test_cp2_independent.py::test_catchup_planning_and_d7_marker_clear_roll_back_together PASSED
+
+- generated xml file: /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/plans/check-switches/qa/cp2-round-3/cp2-independent.xml -
+============================== 21 passed in 0.36s ==============================
+
+exit=0

@@ -1,0 +1,236 @@
+revision=4205b00d510e3e2e84ccd370836473d2b20d7855
+scratch=/private/tmp/cs-cp2-qa3-m5-reorg-diagnostic-verified-ukf99gof
+command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/reconcile/.venv/bin/python', '-m', 'pytest', '-vv', '-s', 'reconcile/tests/test_qa3_diagnostic.py', '--junitxml', '/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/plans/check-switches/qa/cp2-round-3/m5-reorg-diagnostic-verified.xml', '--basetemp', '/private/tmp/cs-cp2-qa3-m5-reorg-diagnostic-verified-ukf99gof/test-tmp']
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp2-qa3-m5-reorg-diagnostic-verified-ukf99gof
+collecting ... collected 2 items
+
+reconcile/tests/test_qa3_diagnostic.py::test_m5_live_page_becomes_latent_during_silent_repeat[True] {'flip': True, 'target': 'EB94775-228316cb1e-1005-2', 'evals': [('latent', [])], 'framework': [{'id': 'EB94775-228316cb1e-1005', 'state': 'disabled', 'severity': 'page', 'notify': 1, 'alerts': 1, 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 1 · active: True · version: ETH\nRoot reference block S: 1005 · consumed in block 1008 with E = 2048 ETH\nUpdate sent by: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (clue only; updates are permissionless)\nKeys added after S and before the update: 63 (63 with empty shares)\nOf those, removed after the update: 63\nReference-adjusted: 640,000 vUnits (2048 ETH)\nStored (billed): 10,000 vUnits (32 ETH)\nShortfall: 630,000 vUnits (2016 ETH of fee weight)\nEvaluated at finalized block 1009\nTxs:\n  register https://etherscan.io/tx/0x00000000000000000000000000000000000000000000000000000000a0000004\n  update   https://etherscan.io/tx/0x00000000000000000000000000000000000000000000000000000000a0000006\n  remove   https://etherscan.io/tx/0x00000000000000000000000000000000000000000000000000000000a0000007'}, {'id': 'EB94775-228316cb1e-1005-2', 'state': 'open', 'severity': 'info', 'notify': 1, 'alerts': 1, 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 64 · active: True · version: ETH\nRoot reference block S: 1005; added keys still registered\nOverwritten baseline: 630,000 vUnits (2016 ETH) at block 1016'}], 'own': [{'id': 'EB94775-228316cb1e-1005', 'state': 'resolved', 'kind': 'confirmed'}, {'id': 'EB94775-228316cb1e-1005-3', 'state': 'open', 'kind': 'latent'}], 'messages_after_reorg': [], 'catchup': None, 'reorg': None}
+{'after_7h': [], 'target': {'id': 'EB94775-228316cb1e-1005-2', 'ikey': 'm5:228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'check_id': 'm5', 'key': '228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'severity': 'info', 'state': 'open', 'notify': 1, 'title': '#94775 latent overwritten baseline (not a confirmed collapse)', 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 64 · active: True · version: ETH\nRoot reference block S: 1005; added keys still registered\nOverwritten baseline: 630,000 vUnits (2016 ETH) at block 1017', 'subject': '{"cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}', 'evidence': '{"active": true, "add_txs": ["0x00000000000000000000000000000000000000000000000000000000a0000004"], "billed_vunits": 640000, "block": 1017, "cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "discrepancy_vunits": 630000, "eb_at_ref": 2048, "empty_shares_adds": 63, "matched_keys": 0, "observed_vunits": 640000, "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "reasons": [], "ref_block": 1005, "reference_vunits": 1270000, "remove_txs": [], "status": "latent", "update": {"block": 1008, "log_index": 0, "tx": "0x00000000000000000000000000000000000000000000000000000000a0000006"}, "validator_count": 64}', 'revision': None, 'opened_block': 1012, 'last_seen_block': 1017, 'resolved_block': None, 'opened_at': 1793977011.13765, 'updated_at': 1794002211.1446521, 'last_alert_at': 1793977011.138906, 'alerts': 1}}
+{'after_heal': [], 'target': {'id': 'EB94775-228316cb1e-1005-2', 'ikey': 'm5:228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'check_id': 'm5', 'key': '228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'severity': 'info', 'state': 'resolved', 'notify': 1, 'title': '#94775 latent overwritten baseline (not a confirmed collapse)', 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 64 · active: True · version: ETH\nRoot reference block S: 1005; added keys still registered\nOverwritten baseline: 630,000 vUnits (2016 ETH) at block 1017', 'subject': '{"cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}', 'evidence': '{"active": true, "add_txs": [], "billed_vunits": 640000, "block": 1020, "cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "discrepancy_vunits": 0, "eb_at_ref": 2048, "empty_shares_adds": 0, "matched_keys": 0, "observed_vunits": 640000, "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "reasons": [], "ref_block": 1018, "reference_vunits": 640000, "remove_txs": [], "status": "clean", "update": {"block": 1020, "log_index": 0, "tx": "0x00000000000000000000000000000000000000000000000000000000a0000009"}, "validator_count": 1}', 'revision': None, 'opened_block': 1012, 'last_seen_block': 1020, 'resolved_block': 1020, 'opened_at': 1793977011.13765, 'updated_at': 1794002211.1446521, 'last_alert_at': 1793977011.138906, 'alerts': 1}}
+FAILED
+reconcile/tests/test_qa3_diagnostic.py::test_m5_live_page_becomes_latent_during_silent_repeat[False] {'flip': False, 'target': 'EB94775-228316cb1e-1004', 'evals': [('latent', [])], 'framework': [{'id': 'EB94775-228316cb1e-1004', 'state': 'open', 'severity': 'info', 'notify': 1, 'alerts': 1, 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 64 · active: True · version: ETH\nRoot reference block S: 1004; added keys still registered\nOverwritten baseline: 630,000 vUnits (2016 ETH) at block 1012'}], 'own': [{'id': 'EB94775-228316cb1e-1004', 'state': 'resolved', 'kind': 'confirmed'}, {'id': 'EB94775-228316cb1e-1004-2', 'state': 'open', 'kind': 'latent'}], 'messages_after_reorg': [], 'catchup': None, 'reorg': None}
+{'after_7h': [], 'target': {'id': 'EB94775-228316cb1e-1004', 'ikey': 'm5:228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'check_id': 'm5', 'key': '228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'severity': 'info', 'state': 'open', 'notify': 1, 'title': '#94775 latent overwritten baseline (not a confirmed collapse)', 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 64 · active: True · version: ETH\nRoot reference block S: 1004; added keys still registered\nOverwritten baseline: 630,000 vUnits (2016 ETH) at block 1013', 'subject': '{"cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}', 'evidence': '{"active": true, "add_txs": ["0x00000000000000000000000000000000000000000000000000000000a0000004"], "billed_vunits": 640000, "block": 1013, "cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "discrepancy_vunits": 630000, "eb_at_ref": 2048, "empty_shares_adds": 63, "matched_keys": 0, "observed_vunits": 640000, "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "reasons": [], "ref_block": 1004, "reference_vunits": 1270000, "remove_txs": [], "status": "latent", "update": {"block": 1007, "log_index": 0, "tx": "0x00000000000000000000000000000000000000000000000000000000a0000006"}, "validator_count": 64}', 'revision': 'confirmed:1004', 'opened_block': 1007, 'last_seen_block': 1013, 'resolved_block': None, 'opened_at': 1793977011.1638012, 'updated_at': 1794002211.17377, 'last_alert_at': 1793977011.166875, 'alerts': 1}}
+{'after_heal': [], 'target': {'id': 'EB94775-228316cb1e-1004', 'ikey': 'm5:228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'check_id': 'm5', 'key': '228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2', 'severity': 'info', 'state': 'resolved', 'notify': 1, 'title': '#94775 latent overwritten baseline (not a confirmed collapse)', 'body': 'Cluster: 0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2\nOwner: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOperators: [11, 12, 13, 14]\nValidators now: 64 · active: True · version: ETH\nRoot reference block S: 1004; added keys still registered\nOverwritten baseline: 630,000 vUnits (2016 ETH) at block 1013', 'subject': '{"cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}', 'evidence': '{"active": true, "add_txs": [], "billed_vunits": 640000, "block": 1016, "cluster_id": "0x228316cb1eca4dea425ac388b80bbb6fdf9a7a55a123666150699af1a07dbfd2", "discrepancy_vunits": 0, "eb_at_ref": 2048, "empty_shares_adds": 0, "matched_keys": 0, "observed_vunits": 640000, "operator_ids": [11, 12, 13, 14], "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "reasons": [], "ref_block": 1014, "reference_vunits": 640000, "remove_txs": [], "status": "clean", "update": {"block": 1016, "log_index": 0, "tx": "0x00000000000000000000000000000000000000000000000000000000a0000009"}, "validator_count": 1}', 'revision': 'confirmed:1004', 'opened_block': 1007, 'last_seen_block': 1016, 'resolved_block': 1016, 'opened_at': 1793977011.1638012, 'updated_at': 1794002211.17377, 'last_alert_at': 1793977011.166875, 'alerts': 1}}
+FAILED
+
+=================================== FAILURES ===================================
+_________ test_m5_live_page_becomes_latent_during_silent_repeat[True] __________
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa3-m5-reorg-diagnostic-verified-ukf99gof/test-tmp/test_m5_live_page_becomes_late0')
+with_flip = True
+
+    @pytest.mark.parametrize('with_flip',[True,False])
+    def test_m5_live_page_becomes_latent_during_silent_repeat(tmp_path,with_flip):
+        if with_flip:
+            chain,w,ssv,page=live_m5(tmp_path)
+            fork=row(w,page['incident_id'])['opened_block']
+        else:
+            # Public global path, latent at its historical pin and a live confirming removal.
+            chain,w=make_m5(tmp_path,backfill={'enabled':True},max_log_range=1)
+            ssv=MiniSSV(chain)
+            ssv.register(OWNER,OPS,pubkeys(1,1))
+            ref=chain.number
+            chain.mine()
+            ssv.commit(ref)
+            ssv.update(OWNER,OPS,2048)
+            fork=chain.number
+            ref=chain.number
+            chain.mine()
+            dummy=pubkeys(63,100)
+            ssv.register(OWNER,OPS,dummy)
+            ssv.commit(ref)
+            ssv.update(OWNER,OPS,2048)
+            advance(w)
+            chain.mine()
+            advance(w)
+            drop=chain.number
+            ssv.remove(OWNER,OPS,dummy)
+            advance(w)
+            (page,)=[m for m in sent(w,'m5') if m['severity']=='page']
+        old=page['incident_id']
+        target=old
+        if with_flip:
+            w=flip(w,chain,'m5',False)
+            frozen=row(w,old)
+            chain.mine(3)
+            advance(w)
+            w=flip(w,chain,'m5',True)
+            advance(w)
+            chain.mine()
+            advance(w)
+            target=old+'-2'
+        before=len(sent(w,'m5'))
+        saved=snapshot(chain)
+        w=restart(w,chain)
+        replay(chain,saved,fork,fork if with_flip else drop)
+        advance(w)
+        chain.mine()
+        advance(w)
+        w=restart(w,chain)
+        chain.mine()
+        advance(w)
+        evaluated=w.checks['m5'].last_evals
+        print({'flip':with_flip,'target':target,'evals':[(e.status,e.matched_keys) for e in evaluated],
+               'framework':[{k:r[k] for k in ('id','state','severity','notify','alerts','body')} for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id='m5'")],
+               'own':[dict(r) for r in w.db.conn.execute('SELECT id,state,kind FROM m5_incidents')],
+               'messages_after_reorg':msgs(w,before),'catchup':w.db.meta('catchup:m5'),'reorg':w.db.meta('reorg:m5')})
+        assert evaluated and evaluated[0].status==M.LATENT
+        now=w.clock()
+        w.clock=w.alerts.clock=lambda: now+7*3600
+        chain.mine()
+        advance(w)
+        print({'after_7h':msgs(w,before),'target':row(w,target)})
+        assert not outbox(w,"check_id='m5' AND kind='realert'")
+        heal(chain,ssv)
+        advance(w)
+        print({'after_heal':msgs(w,before),'target':row(w,target)})
+        keys=[m['key'] for m in outbox(w)]
+        assert len(keys)==len(set(keys))
+        if with_flip:
+            assert row(w,old)==frozen
+        assert (w.db.meta('run:m5') or {}).get('errors',0)==0
+>       assert msgs(w,before)==[('info','resolved',target)], 'the canonical confirmed-to-latent transition must resolve the sent page once'
+E       AssertionError: the canonical confirmed-to-latent transition must resolve the sent page once
+E       assert [] == [('info', 'resolved', 'EB94775-228316cb1e-1005-2')]
+E         
+E         Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1005-2')
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     (
+E         -         'info',
+E         -         'resolved',
+E         -         'EB94775-228316cb1e-1005-2',
+E         -     ),
+E         - ]
+
+reconcile/tests/test_qa3_diagnostic.py:80: AssertionError
+_________ test_m5_live_page_becomes_latent_during_silent_repeat[False] _________
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa3-m5-reorg-diagnostic-verified-ukf99gof/test-tmp/test_m5_live_page_becomes_late1')
+with_flip = False
+
+    @pytest.mark.parametrize('with_flip',[True,False])
+    def test_m5_live_page_becomes_latent_during_silent_repeat(tmp_path,with_flip):
+        if with_flip:
+            chain,w,ssv,page=live_m5(tmp_path)
+            fork=row(w,page['incident_id'])['opened_block']
+        else:
+            # Public global path, latent at its historical pin and a live confirming removal.
+            chain,w=make_m5(tmp_path,backfill={'enabled':True},max_log_range=1)
+            ssv=MiniSSV(chain)
+            ssv.register(OWNER,OPS,pubkeys(1,1))
+            ref=chain.number
+            chain.mine()
+            ssv.commit(ref)
+            ssv.update(OWNER,OPS,2048)
+            fork=chain.number
+            ref=chain.number
+            chain.mine()
+            dummy=pubkeys(63,100)
+            ssv.register(OWNER,OPS,dummy)
+            ssv.commit(ref)
+            ssv.update(OWNER,OPS,2048)
+            advance(w)
+            chain.mine()
+            advance(w)
+            drop=chain.number
+            ssv.remove(OWNER,OPS,dummy)
+            advance(w)
+            (page,)=[m for m in sent(w,'m5') if m['severity']=='page']
+        old=page['incident_id']
+        target=old
+        if with_flip:
+            w=flip(w,chain,'m5',False)
+            frozen=row(w,old)
+            chain.mine(3)
+            advance(w)
+            w=flip(w,chain,'m5',True)
+            advance(w)
+            chain.mine()
+            advance(w)
+            target=old+'-2'
+        before=len(sent(w,'m5'))
+        saved=snapshot(chain)
+        w=restart(w,chain)
+        replay(chain,saved,fork,fork if with_flip else drop)
+        advance(w)
+        chain.mine()
+        advance(w)
+        w=restart(w,chain)
+        chain.mine()
+        advance(w)
+        evaluated=w.checks['m5'].last_evals
+        print({'flip':with_flip,'target':target,'evals':[(e.status,e.matched_keys) for e in evaluated],
+               'framework':[{k:r[k] for k in ('id','state','severity','notify','alerts','body')} for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id='m5'")],
+               'own':[dict(r) for r in w.db.conn.execute('SELECT id,state,kind FROM m5_incidents')],
+               'messages_after_reorg':msgs(w,before),'catchup':w.db.meta('catchup:m5'),'reorg':w.db.meta('reorg:m5')})
+        assert evaluated and evaluated[0].status==M.LATENT
+        now=w.clock()
+        w.clock=w.alerts.clock=lambda: now+7*3600
+        chain.mine()
+        advance(w)
+        print({'after_7h':msgs(w,before),'target':row(w,target)})
+        assert not outbox(w,"check_id='m5' AND kind='realert'")
+        heal(chain,ssv)
+        advance(w)
+        print({'after_heal':msgs(w,before),'target':row(w,target)})
+        keys=[m['key'] for m in outbox(w)]
+        assert len(keys)==len(set(keys))
+        if with_flip:
+            assert row(w,old)==frozen
+        assert (w.db.meta('run:m5') or {}).get('errors',0)==0
+>       assert msgs(w,before)==[('info','resolved',target)], 'the canonical confirmed-to-latent transition must resolve the sent page once'
+E       AssertionError: the canonical confirmed-to-latent transition must resolve the sent page once
+E       assert [] == [('info', 'resolved', 'EB94775-228316cb1e-1004')]
+E         
+E         Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1004')
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     (
+E         -         'info',
+E         -         'resolved',
+E         -         'EB94775-228316cb1e-1004',
+E         -     ),
+E         - ]
+
+reconcile/tests/test_qa3_diagnostic.py:80: AssertionError
+- generated xml file: /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/plans/check-switches/qa/cp2-round-3/m5-reorg-diagnostic-verified.xml -
+=========================== short test summary info ============================
+FAILED reconcile/tests/test_qa3_diagnostic.py::test_m5_live_page_becomes_latent_during_silent_repeat[True] - AssertionError: the canonical confirmed-to-latent transition must resolve the sent page once
+assert [] == [('info', 'resolved', 'EB94775-228316cb1e-1005-2')]
+  
+  Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1005-2')
+  
+  Full diff:
+  + []
+  - [
+  -     (
+  -         'info',
+  -         'resolved',
+  -         'EB94775-228316cb1e-1005-2',
+  -     ),
+  - ]
+FAILED reconcile/tests/test_qa3_diagnostic.py::test_m5_live_page_becomes_latent_during_silent_repeat[False] - AssertionError: the canonical confirmed-to-latent transition must resolve the sent page once
+assert [] == [('info', 'resolved', 'EB94775-228316cb1e-1004')]
+  
+  Right contains one more item: ('info', 'resolved', 'EB94775-228316cb1e-1004')
+  
+  Full diff:
+  + []
+  - [
+  -     (
+  -         'info',
+  -         'resolved',
+  -         'EB94775-228316cb1e-1004',
+  -     ),
+  - ]
+============================== 2 failed in 0.36s ===============================
+
+exit=1

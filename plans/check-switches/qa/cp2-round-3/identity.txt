@@ -1,0 +1,11 @@
+candidate=4205b00d510e3e2e84ccd370836473d2b20d7855
+initial_status=clean (measured before writes)
+platform=macOS-26.7.1-arm64-arm-64bit-Mach-O
+ec15481953f5defa91e6da9089b51a7e7ed53a8a54d8554ac6f970ba64c35cbf plans/check-switches/agents/checkpoint-qa.md
+7daa55f69bdd3218f83283a0bd752075a84141888196869977c046819def5876 plans/check-switches/qa/DEFECT-CLASSES.md
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35 reconcile/tests/test_backfill.py
+a026b88f340108db8d43aaf7342fedf31548df11967391f8ec4c64c4e70ef9e8 plan/check-switches:plans/check-switches/qa/cp2-round-2.md
+Python 3.12.15
+pytest 9.1.1
+ruff 0.17.1
+uv 0.13.4 (7456b60bc 2026-10-20 aarch64-apple-darwin)
