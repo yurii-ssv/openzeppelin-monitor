@@ -1,0 +1,12 @@
+# full suite on cs/cp2-r2 working tree (base ff3841f + repair 2), 2026-11-06T14:45:04Z, Python 3.12.15
+........................................................................ [ 97%]
+.......................................................................  [100%]
+2519 passed in 63.36s (0:01:03)
+# ruff
+ruff 0.17.1
+All checks passed!
+exit 0
+# targeted: switches, catchup, history-silence, backfill (frozen), switch-ids
+273 passed in 3.13s
+# test_backfill.py sha256
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35  reconcile/tests/test_backfill.py

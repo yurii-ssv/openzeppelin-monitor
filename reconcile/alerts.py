@@ -128,7 +128,16 @@ class Alerts:
         if row is None:
             if f.incident_id:
                 inc_id = f.incident_id
-                if self._id_taken(inc_id):
+                held = self._id_state(inc_id)
+                if held == "disabled":
+                    # D16: the check's own bookkeeping still holds the id of an incident closed when the check was
+                    # switched off (checks keep their state while disabled); the key re-found after re-enable is a
+                    # new incident, under the first free deterministic suffix.
+                    n = 2
+                    while self._id_taken(f"{inc_id}-{n}"):
+                        n += 1
+                    inc_id = f"{inc_id}-{n}"
+                elif held is not None:
                     raise ValueError(f"incident id {inc_id} already exists; a check must propose unique ids")
             else:  # the block may repeat: a key reopened at a block number reused by a reorganised chain
                 base = inc_id = f"{f.check}-{_short(f.key)}-{block}"
@@ -170,7 +179,12 @@ class Alerts:
                                 f.check, inc_id, unique=True))
 
     def _id_taken(self, inc_id: str) -> bool:
-        return self.db.conn.execute("SELECT 1 FROM incidents WHERE id=?", (inc_id,)).fetchone() is not None
+        return self._id_state(inc_id) is not None
+
+    def _id_state(self, inc_id: str) -> str | None:
+        """The state of the incident holding `inc_id` (`id` is the primary key: at most one row), or None."""
+        row = self.db.conn.execute("SELECT state FROM incidents WHERE id=?", (inc_id,)).fetchone()
+        return row["state"] if row is not None else None
 
     def resolve_absent(self, check: str, seen_keys: set[str], block: int) -> int:
         """`resolve_on_absence`: close the check's open incidents that this run did not report."""
