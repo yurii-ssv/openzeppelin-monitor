@@ -153,12 +153,14 @@ class Worker:
         self.rpc_outage_since = None  # clock of the first failed step of the current outage
         self.head_read = None  # (head, clock) of the last eth_blockNumber answer, for the Monitor watch
         self.bootstrapped = False
+        # Switched off by `checks.<id>.enabled: false` (D6; a check that is merely not built is not disabled, a
+        # built one never is): bootstrap() closes their open incidents as `disabled`, status and the digest list them.
+        # First, before anything touches the database: a non-boolean `enabled` is a configuration error (D14).
+        switched_off = disabled_ids(cfg.raw)
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
         self.checks = {c.id: c for c in built}
-        # Switched off by `checks.<id>.enabled: false` (D6; a check that is merely not built is not disabled, a
-        # built one never is): bootstrap() closes their open incidents as `disabled`, status and the digest list them.
-        self.disabled = [cid for cid in disabled_ids(cfg.raw) if cid not in self.checks]
+        self.disabled = [cid for cid in switched_off if cid not in self.checks]
         if not getattr(db, "readonly", False):
             with self.db.tx():
                 for c in self.checks.values():

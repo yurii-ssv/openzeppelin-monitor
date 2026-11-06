@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import random
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
@@ -327,6 +328,146 @@ def test_example_config_with_a_disabled_check_lists_it_in_status(tmp_path):
     assert w.status()["disabled"] == ["m7"]
 
 
+# ---------------------------------------------------------------- D14 `enabled` must be a boolean (CP1-QA1 QF1)
+
+MALFORMED = [0, None, "", "false", 1]
+
+
+class _Stopped(Exception):
+    """Ends `main(["run"])` after one step on a revision that does not reject the configuration."""
+
+
+def _dump(db_path: str) -> dict:
+    """Every table's rows, through a separate plain connection (no `DB()` side effects)."""
+    conn = sqlite3.connect(db_path)
+    try:
+        tables = [t for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        return {t: sorted(map(repr, conn.execute(f'SELECT * FROM "{t}"'))) for t in tables}
+    finally:
+        conn.close()
+
+
+def _states(db_path: str, check: str) -> list[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        return [r[0] for r in conn.execute("SELECT state FROM incidents WHERE check_id=? ORDER BY rowid", (check,))]
+    finally:
+        conn.close()
+
+
+def _switch_cfg(env: Env, value) -> Config:
+    raw = env.raw()
+    raw["checks"] = {"sw_a": {"enabled": value}}
+    return Config({**DEFAULTS, **raw})
+
+
+@pytest.mark.parametrize("value", MALFORMED, ids=repr)
+def test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing(tmp_path, plan, value):
+    """D14: `checks.sw_a.enabled` = 0, null, "", "false" or 1 → `Worker()` raises, naming the check; the database
+    is unchanged (no row closed, no marker, no outbox row, no run). On the base revision 0/null/"" close the four
+    rows as `disabled` and "false"/1 build and run the check."""
+    env = Env(tmp_path)
+    open_four(env)
+    db_path = env.w.cfg.db_path
+    before = _dump(db_path)
+    cfg = _switch_cfg(env, value)
+    error = None
+    try:
+        built = registry.build(cfg.raw, only=["sw_a"])
+        w = Worker(cfg, FakeRpc(env.chain), DB(cfg.db_path), env.notifier, clock=env.clock, checks=built)
+        w.bootstrap()
+        env.clock.advance(3600)
+        env.chain.mine()
+        advance(w)
+    except SystemExit as e:
+        error = e
+    # behavioural assertions first (red on the base revision: the rows are closed, or the check runs)
+    assert _states(db_path, "sw_a") == ["open"] * 4
+    after = _dump(db_path)
+    assert after["incidents"] == before["incidents"]
+    assert not [r for r in after["meta"] if "'disabled:" in r] and after["outbox"] == before["outbox"]
+    assert after == before
+    assert error is not None and str(error) == f"checks.sw_a.enabled: must be true or false, got {json.dumps(value)}"
+
+
+@pytest.mark.parametrize("command", ["run", "once", "verify-layout", "status"])
+@pytest.mark.parametrize("value", MALFORMED, ids=repr)
+def test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker(tmp_path, plan, monkeypatch, command,
+                                                                         value):
+    """D14 through `main()`: the three start commands and the read-only `status` raise the configuration error
+    before touching the database (`export` and `audit` build no `Worker` and read no switch)."""
+    import eb_reconcile
+
+    env = Env(tmp_path)
+    open_four(env)
+    db_path = env.w.cfg.db_path
+    before = _dump(db_path)
+    cfg = _switch_cfg(env, value)
+    real_build, real_step = registry.build, Worker.step
+    only = ["sw_a", "m5"] if command == "verify-layout" else ["sw_a"]
+
+    def one_step(self, *args, **kwargs):
+        real_step(self, *args, **kwargs)
+        if command == "run":
+            raise _Stopped
+
+    monkeypatch.setattr(eb_reconcile, "load_config", lambda _: cfg)
+    monkeypatch.setattr(eb_reconcile, "make_rpc", lambda _: FakeRpc(env.chain))
+    monkeypatch.setattr(eb_reconcile, "make_notifier", lambda _: env.notifier)
+    monkeypatch.setattr(eb_reconcile.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(registry, "build", lambda settings, only_=None: real_build(settings, only=only))
+    monkeypatch.setattr(registry.REGISTRY["m5"], "verify_layout", lambda *a, **k: [])
+    monkeypatch.setattr(Worker, "step", one_step)
+    env.clock.advance(3600)
+    env.chain.mine()
+    error = None
+    try:
+        eb_reconcile.main([command, "--config", "unused"])
+    except SystemExit as e:
+        error = e
+    except _Stopped:
+        pass
+    # behavioural assertions first (red on the base revision for the start commands: the rows are closed or the
+    # check runs; `status` is read-only there and red on the missing error only)
+    assert _states(db_path, "sw_a") == ["open"] * 4
+    assert _dump(db_path) == before
+    assert error is not None and "checks.sw_a.enabled" in str(error)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_boolean_enabled_controls_are_unchanged(tmp_path, plan, value):
+    """Controls for D14: `true` keeps the check built and its rows open; `false` disables it as before."""
+    env = Env(tmp_path)
+    open_four(env)
+    before = env.n_outbox()
+    cfg = _switch_cfg(env, value)
+    built = registry.build(cfg.raw, only=["sw_a"])
+    w = Worker(cfg, FakeRpc(env.chain), DB(cfg.db_path), env.notifier, clock=env.clock, checks=built)
+    w.bootstrap()
+    assert _states(cfg.db_path, "sw_a") == (["disabled"] * 4 if value is False else ["open"] * 4)
+    assert list(w.checks) == ([] if value is False else ["sw_a"])
+    assert w.disabled == (["sw_a"] if value is False else [])
+    assert w.db.meta("disabled:sw_a") == ({"block": w.checkpoint()["block"], "at": env.clock(), "closed": 4}
+                                          if value is False else None)
+    assert env.n_outbox() == before
+
+
+def test_validate_switches_rejects_every_non_boolean_and_names_the_id(plan):
+    from checks.registry import disabled, validate_switches
+
+    for value in [*MALFORMED, "true", 0.0, [], {}]:
+        with pytest.raises(SystemExit, match=r"checks\.sw_b\.enabled: must be true or false"):
+            disabled({"checks": {"sw_a": {"enabled": False}, "sw_b": {"enabled": value}}})
+    with pytest.raises(SystemExit, match=r"checks\.retired\.enabled"):  # an unregistered id too
+        validate_switches({"checks": {"retired": {"enabled": 0}}})
+    with pytest.raises(SystemExit, match=r"checks\.sw_a: must be an object"):
+        validate_switches({"checks": {"sw_a": False}})
+    validate_switches({})
+    ok = {"checks": {"sw_a": {}, "sw_b": {"enabled": True}, "sw_c": {"enabled": False}}}
+    validate_switches(ok)
+    assert disabled(ok) == ["sw_c"] and [c.id for c in registry.build(ok, only=list(IDS))] == ["sw_a", "sw_b"]
+
+
 # ---------------------------------------------------------------- V1.4 reorg while disabled (D11)
 
 
@@ -520,6 +661,47 @@ def test_metrics_open_count_excludes_disabled_rows(tmp_path, plan):
     env.start_worker(only=("sw_a",), disabled=("sw_a",))
     open_lines = [ln for ln in render(env.w.db.conn, []).splitlines() if ln.startswith("ssv_watch_open_incidents")]
     assert open_lines and not [ln for ln in open_lines if 'check="sw_a"' in ln]
+
+
+def test_m1_reported_counts_a_message_of_a_disabled_incident(tmp_path):
+    """V1.6 reader `m1_stale_tuple.py` `_reported` (outbox JOIN incidents, any state), by design: a transient
+    poisoning (poisoned and repaired between two runs) sent while M1 was enabled, its incident then closed as
+    `disabled`, a reorg while M1 is off re-including the same two transactions: the re-enabled M1 re-detects it from
+    the new chain and sends nothing, because the message naming the transaction was already sent (whatever the
+    incident's later state). Matching only open/resolved incidents would send that warn a second time."""
+    from fixtures_cluster import OPS, OWNER, deposit, m1_config, make_m1, poison
+    from harness import VIEWS, make_worker
+    from test_m1 import detections, incidents, kinds, restart
+
+    chain, w, ssv = make_m1(tmp_path)
+    deposit(ssv, value=10**18)
+    advance(w)
+    saved = dict(ssv._get(OWNER, OPS)[1])
+    fork = chain.number
+    tx, _, _ = poison(ssv)
+    rep, _ = deposit(ssv)
+    advance(w)
+    assert kinds(w) == [("warn", "open")] and incidents(w, "open")  # reported once, still open
+    _, off = make_worker(tmp_path, only=[], chain=chain, clock=w.clock, views=VIEWS, start_block=w.cfg.start_block,
+                         activation_block=w.cfg.activation_block, checks={"m1": {**m1_config(), "enabled": False}})
+    off.bootstrap()
+    (old,) = incidents(off)
+    assert old["state"] == "disabled"
+    chain.reorg(fork)
+    ssv._get(OWNER, OPS)[1].update(saved)
+    new_tx, hashes = chain.new_tx, iter([tx, rep])
+    chain.new_tx = lambda sender: next(hashes)
+    poison(ssv)
+    deposit(ssv)
+    chain.new_tx = new_tx
+    chain.mine()
+    advance(off)
+    assert off.db.meta("reorg:m1") is not None  # D11: rewound while disabled
+    on = restart(tmp_path, chain, w)
+    advance(on)
+    assert on.db.meta("reorg:m1") is None and [d["kind"] for d in detections(on)] == ["poison", "repair"]
+    assert kinds(on) == [("warn", "open")]  # nothing new: the poisoning was already sent
+    assert incidents(on) == [old]
 
 
 # ---------------------------------------------------------------- adversarial sweep (DEFECT-CLASSES)

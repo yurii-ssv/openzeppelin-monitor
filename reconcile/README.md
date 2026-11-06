@@ -101,14 +101,17 @@ Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --con
 - `status`: phase (`backfill` with progress, or `live`), checkpoint, per-check last run, open incidents,
   undelivered alerts, `disabled` (the checks the config switches off, sorted) (read-only: answers while a check runs)
 
-Disabling a check (`checks.<id>.enabled: false`, read at start): the next `run`/`once` start closes the check's open
-incidents as state `disabled` in one transaction, with no message of any kind (no resolution, no notice), and records
-`disabled:<id>` in `meta`; they are never re-alerted, leave `status.open_incidents`/`open`, the digest's open counts
-and `ssv_watch_open_incidents`, and `export` prints them with `state: disabled`. A message queued before the
-closure is still delivered. `status` lists the check under `disabled` (also before the closing start) and the daily
-digest adds `Disabled checks: <ids>` after "Open incidents". A check absent from `checks` is enabled. While the check
-is off, a reorg still rewinds its event cursor and records its pending reorg ancestor (replayed when it is enabled
-again). The start that enables it again clears `disabled:<id>`; a key it finds again opens a new incident.
+Disabling a check (`checks.<id>.enabled: false`, read at start; any value other than `true`/`false` is a
+configuration error that stops every command building a worker, `status` included, before it touches the database):
+the next start, i.e. the next `run`, `once` **or `verify-layout`** (each bootstraps the worker), closes the check's
+open incidents as state `disabled` in one transaction, with no message of any kind (no resolution, no notice), and
+records `disabled:<id>` in `meta` (the read-only `status` and `export` never close anything). The closed incidents
+are never re-alerted, leave `status.open_incidents`/`open`, the digest's open counts and `ssv_watch_open_incidents`,
+and `export` prints them with `state: disabled`. A message queued before the closure is still delivered. `status`
+lists the check under `disabled` (also before the closing start) and the daily digest adds `Disabled checks: <ids>`
+after "Open incidents". A check absent from `checks` is enabled. While the check is off, a reorg still rewinds its
+event cursor and records its pending reorg ancestor (replayed when it is enabled again). The start that enables it
+again clears `disabled:<id>`; a key it finds again opens a new incident.
 - `export`: every incident and outbox message as JSON (soak evidence)
 - `audit`: M5 event-only history of every root window with post-S additions and matched removals
 - `verify-layout`: implementation, module addresses and codehashes against the pin

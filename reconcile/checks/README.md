@@ -144,9 +144,13 @@ open incident closed as `disabled` by the next worker start (`bootstrap`, one tr
 **no message of any kind** (no resolution, no disable notice; a message queued before is still delivered). A
 `disabled` row is neither open nor resolved: never re-alerted, absent from the open counts (status, digest, metrics),
 never re-evaluated by the reorg re-find rule or `resolve_on_absence`, and never re-opened: a key found again once the
-check is re-enabled opens a new incident with a new id. Checks that read `incidents` themselves select `state='open'`
-(or `'resolved'`), so they ignore `disabled` rows. A check that is merely not built (tests' `only=`, stub instances)
-is not disabled: nothing happens to its incidents (they are not re-alerted while it does not run).
+check is re-enabled opens a new incident with a new id. Most checks that read `incidents` themselves select
+`state='open'` (or `'resolved'`), so they ignore `disabled` rows; two match any state on purpose: M1's "already
+reported" test (`_reported`: a message naming the transaction was sent, whatever its incident's state later became, so
+a re-detected transient poisoning is not sent twice) and M5's incident-id uniqueness (a `disabled` id stays taken).
+`checks.<id>.enabled`, when present, must be `true` or `false`; any other value stops the worker at construction. A
+check that is merely not built (tests' `only=`, stub instances) is not disabled: nothing happens to its incidents
+(they are not re-alerted while it does not run).
 Restart idempotency: incidents and outbox keys are durable; an open incident re-found after a restart
 sends nothing before its re-alert is due (V1B.4). Use `revision` for "escalate on repetition" rules
 (e.g. M1 re-poison) instead of new keys, so the incident id stays stable.
