@@ -121,7 +121,7 @@ Common to both CPs: the handoff includes the DEFECT-CLASSES **state table** for 
 <a id="cp1"></a>
 ## CP1 — Clean disable
 
-Status: AWAITING QA
+Status: REPAIR
 Goal: a check with `enabled: false` leaves no open incident, no re-alert and no stale cursor behind, and is visible as disabled.
 Required inputs: Global rules; D3, D6–D8, D11, D12 (D3: no notice); F2, F3, F5, F7, F8; `reconcile/checks/registry.py`, `reconcile/alerts.py`, `reconcile/eb_reconcile.py` (`bootstrap` `:194-217`, `check_reorg` `:289-342`, `status` `:738-760`, CLI `:834-876`), `reconcile/db.py:33-40`, `reconcile/checks/README.md` §4, `reconcile/tests/harness.py`, `reconcile/tests/test_framework.py` (`Stub`, `registered_stub`).
 Allowed writes: `reconcile/checks/registry.py` (disabled-ids helper; `build` unchanged), `reconcile/eb_reconcile.py` (closure in `bootstrap`, D11 rewind, `status`), `reconcile/alerts.py` (state `disabled`, D8 filter, digest line), `reconcile/tests/test_switches.py` (new), `reconcile/tests/harness.py` (additive keyword only, if needed), `reconcile/checks/README.md` §4 (state `disabled`), `reconcile/README.md` (`status` fields), `plans/check-switches/workers/cp1/**`. Not: `db.py` (D7: coordinator decision first), `checks/m*.py`, `tests/test_m*.py`, `tests/test_backfill.py`, `metrics.py`.
