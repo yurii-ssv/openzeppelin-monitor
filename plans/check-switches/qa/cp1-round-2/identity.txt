@@ -1,0 +1,14 @@
+candidate=62ed4c243edf451915b7c652d571b8294a315285
+initial_status=
+platform=macOS-26.7.1-arm64-arm-64bit
+python=3.12.15 (main, Oct 14 2026, 00:55:37) [Clang 23.1.3 ]
+ec15481953f5defa91e6da9089b51a7e7ed53a8a54d8554ac6f970ba64c35cbf  plans/check-switches/agents/checkpoint-qa.md
+7daa55f69bdd3218f83283a0bd752075a84141888196869977c046819def5876  plans/check-switches/qa/DEFECT-CLASSES.md
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35  reconcile/tests/test_backfill.py
+c63de8729ed96e6349cb48bfe30daf70a34770a59fd7685b2407914f9f5f7781  plan/check-switches:plans/check-switches/qa/cp1-round-1.md
+8a529f8c51a7438c5f22e2f46d1800f32cefd84b9cef2c0f3c2112e216b3f318  plan/check-switches:plans/check-switches/qa/cp1-round-1/test_cp1_independent.py
+git version 2.39.5 (Apple Git-154)
+uv 0.13.4 (7456b60bc 2026-10-20 aarch64-apple-darwin)
+ruff 0.17.1
+pytest 9.1.1
+Orca 1.4.250 (orca --version; exit 0)

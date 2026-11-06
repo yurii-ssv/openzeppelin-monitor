@@ -1,0 +1,15 @@
+ plans/check-switches/workers/cp1/falsifiers.txt    |  66 ++
+ plans/check-switches/workers/cp1/handoff.md        | 104 +++
+ plans/check-switches/workers/cp1/red-on-base.txt   | 172 +++++
+ .../check-switches/workers/cp1/repair-1/handoff.md | 225 ++++++
+ .../workers/cp1/repair-1/red-on-7639cff.txt        |  58 ++
+ .../check-switches/workers/cp1/repair-1/suite.txt  |  21 +
+ plans/check-switches/workers/cp1/suite.txt         |  32 +
+ reconcile/README.md                                |  17 +-
+ reconcile/alerts.py                                |  17 +-
+ reconcile/checks/README.md                         |  16 +-
+ reconcile/checks/registry.py                       |  26 +-
+ reconcile/eb_reconcile.py                          |  48 +-
+ reconcile/tests/test_switches.py                   | 765 +++++++++++++++++++++
+ 13 files changed, 1556 insertions(+), 11 deletions(-)
+exit=0

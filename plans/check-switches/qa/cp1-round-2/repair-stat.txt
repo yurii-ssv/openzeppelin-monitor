@@ -1,0 +1,10 @@
+ .../check-switches/workers/cp1/repair-1/handoff.md | 225 +++++++++++++++++++++
+ .../workers/cp1/repair-1/red-on-7639cff.txt        |  58 ++++++
+ .../check-switches/workers/cp1/repair-1/suite.txt  |  21 ++
+ reconcile/README.md                                |  19 +-
+ reconcile/checks/README.md                         |  10 +-
+ reconcile/checks/registry.py                       |  25 ++-
+ reconcile/eb_reconcile.py                          |   8 +-
+ reconcile/tests/test_switches.py                   | 182 +++++++++++++++++
+ 8 files changed, 529 insertions(+), 19 deletions(-)
+exit=0

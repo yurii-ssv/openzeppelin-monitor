@@ -1,0 +1,5 @@
+independent: 107 cases; 10 failed; 0 errors; 0 skipped
+independent-final: 107 cases; 9 failed; 0 errors; 0 skipped
+repair-red: 28 cases; 26 failed; 0 errors; 0 skipped
+frozen-base-red: 82 cases; 80 failed; 0 errors; 0 skipped
+code-base-red: 82 cases; 80 failed; 0 errors; 0 skipped

@@ -1,0 +1,2 @@
+plans/check-switches/workers/cp1/falsifiers.txt:66: new blank line at EOF.
+exit=2

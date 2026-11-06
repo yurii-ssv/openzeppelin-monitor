@@ -1,0 +1,199 @@
+repair-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[0]
+AssertionError: assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+  
+  At index 0 diff: 'disabled' != 'open'
+  
+  Full diff:
+    [
+  -     'open',
+  -     'open',
+  -     'open',
+  -     'open',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+    ]
+
+repair-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[None]
+AssertionError: assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+  
+  At index 0 diff: 'disabled' != 'open'
+  
+  Full diff:
+    [
+  -     'open',
+  -     'open',
+  -     'open',
+  -     'open',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+    ]
+
+repair-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['']
+AssertionError: assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+  
+  At index 0 diff: 'disabled' != 'open'
+  
+  Full diff:
+    [
+  -     'open',
+  -     'open',
+  -     'open',
+  -     'open',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+    ]
+
+repair-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['false']
+assert ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1003, None, 1800000120.0, 1800003720.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, None, 0)", "('sw_a-kwarn-1001', 'sw_a:kwarn', 'sw_a', 'kwarn', 'warn', 'open', 1, 'sw_a kwarn', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)"] == ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1002, None, 1800000120.0, 1800000120.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1002, None, 1800000060.0, 1800000120.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1002, N
+
+repair-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[1]
+assert ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1003, None, 1800000120.0, 1800003720.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, None, 0)", "('sw_a-kwarn-1001', 'sw_a:kwarn', 'sw_a', 'kwarn', 'warn', 'open', 1, 'sw_a kwarn', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)"] == ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1002, None, 1800000120.0, 1800000120.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1002, None, 1800000060.0, 1800000120.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1002, N
+
+repair-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-status]
+assert (None is not None)
+
+repair-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-status]
+assert (None is not None)
+
+repair-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-status]
+assert (None is not None)
+
+repair-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-status]
+assert (None is not None)
+
+repair-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-status]
+assert (None is not None)
+
+frozen-base-red test_disabled_check_closes_its_incidents_and_is_never_realerted[False]
+AssertionError: assert [{'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800021720.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:2', 'created_at': 1800043320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800043320.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:3', 'created_at': 1800064920.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064920.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:re
+
+frozen-base-red test_disabled_check_closes_its_incidents_and_is_never_realerted[True]
+AssertionError: assert [{'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800021720.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:2', 'created_at': 1800043320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800043320.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:3', 'created_at': 1800064920.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064920.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:re
+
+frozen-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[0]
+assert (not [] and ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, 1800003720.0, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', 'captured')", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001', 'open', 'captured')"] == ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, None, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', None)", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001'
+
+frozen-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[None]
+assert (not [] and ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, 1800003720.0, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', 'captured')", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001', 'open', 'captured')"] == ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, None, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', None)", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001'
+
+frozen-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['']
+assert (not [] and ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, 1800003720.0, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', 'captured')", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001', 'open', 'captured')"] == ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, None, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', None)", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001'
+
+frozen-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['false']
+assert ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1003, None, 1800000120.0, 1800003720.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, None, 0)", "('sw_a-kwarn-1001', 'sw_a:kwarn', 'sw_a', 'kwarn', 'warn', 'open', 1, 'sw_a kwarn', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)"] == ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1002, None, 1800000120.0, 1800000120.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1002, None, 1800000060.0, 1800000120.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1002, N
+
+frozen-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[1]
+assert ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1003, None, 1800000120.0, 1800003720.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, None, 0)", "('sw_a-kwarn-1001', 'sw_a:kwarn', 'sw_a', 'kwarn', 'warn', 'open', 1, 'sw_a kwarn', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)"] == ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1002, None, 1800000120.0, 1800000120.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1002, None, 1800000060.0, 1800000120.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1002, N
+
+frozen-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-status]
+assert (None is not None)
+
+frozen-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-status]
+assert (None is not None)
+
+frozen-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-status]
+assert (None is not None)
+
+frozen-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-status]
+assert (None is not None)
+
+frozen-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-status]
+assert (None is not None)
+
+frozen-base-red test_reorg_while_disabled_rewinds_the_disabled_cursor[1]
+assert [1004, 2147483648] == [1002, 2147483648]
+  
+  At index 0 diff: 1004 != 1002
+  
+  Full diff:
+    [
+  -     1002,
+  ?        ^
+  +     1004,
+  ?        ^
+        2147483648,
+    ]
+
+frozen-base-red test_reorg_while_disabled_rewinds_the_disabled_cursor[4]
+assert [1007, 2147483648] == [1005, 2147483648]
+  
+  At index 0 diff: 1007 != 1005
+  
+  Full diff:
+    [
+  -     1005,
+  ?        ^
+  +     1007,
+  ?        ^
+        2147483648,
+    ]
+
+code-base-red test_disabled_check_closes_its_incidents_and_is_never_realerted[False]
+AssertionError: assert [{'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800021720.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:2', 'created_at': 1800043320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800043320.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:3', 'created_at': 1800064920.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064920.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:re
+
+code-base-red test_disabled_check_closes_its_incidents_and_is_never_realerted[True]
+AssertionError: assert [{'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800021720.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:2', 'created_at': 1800043320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800043320.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:3', 'created_at': 1800064920.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064920.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:re
+
+code-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[0]
+assert (not [] and ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, 1800003720.0, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', 'captured')", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001', 'open', 'captured')"] == ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, None, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', None)", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001'
+
+code-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[None]
+assert (not [] and ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, 1800003720.0, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', 'captured')", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001', 'open', 'captured')"] == ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, None, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', None)", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001'
+
+code-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['']
+assert (not [] and ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, 1800003720.0, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', 'captured')", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001', 'open', 'captured')"] == ["('sw_a-kinfo-1002:open', 1800000120.0, 'info', 'ℹ️ [INFO] sw_a kinfo — test\\nbody\\nIncident: sw_a-kinfo-1002', 0, 0.0, None, 'discord', None, 'sw_a', 'sw_a-kinfo-1002', 'open', None)", "('sw_a-kpage-1001:open', 1800000060.0, 'page', '🚨 [PAGE] sw_a kpage — test\\nbody\\nIncident: sw_a-kpage-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kpage-1001', 'open', 'captured')", "('sw_a-kwarn-1001:open', 1800000060.0, 'warn', '⚠️ [WARN] sw_a kwarn — test\\nbody\\nIncident: sw_a-kwarn-1001', 0, 0.0, 1800000060.0, 'telegram', None, 'sw_a', 'sw_a-kwarn-1001'
+
+code-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['false']
+assert ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1003, None, 1800000120.0, 1800003720.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, None, 0)", "('sw_a-kwarn-1001', 'sw_a:kwarn', 'sw_a', 'kwarn', 'warn', 'open', 1, 'sw_a kwarn', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)"] == ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1002, None, 1800000120.0, 1800000120.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1002, None, 1800000060.0, 1800000120.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1002, N
+
+code-base-red test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[1]
+assert ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1003, None, 1800000120.0, 1800003720.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, None, 0)", "('sw_a-kwarn-1001', 'sw_a:kwarn', 'sw_a', 'kwarn', 'warn', 'open', 1, 'sw_a kwarn', 'body', '{}', '{}', None, 1001, 1003, None, 1800000060.0, 1800003720.0, 1800000060.0, 1)"] == ["('sw_a-kinfo-1002', 'sw_a:kinfo', 'sw_a', 'kinfo', 'info', 'open', 1, 'sw_a kinfo', 'body', '{}', '{}', None, 1002, 1002, None, 1800000120.0, 1800000120.0, 1800000120.0, 1)", "('sw_a-kpage-1001', 'sw_a:kpage', 'sw_a', 'kpage', 'page', 'open', 1, 'sw_a kpage', 'body', '{}', '{}', None, 1001, 1002, None, 1800000060.0, 1800000120.0, 1800000060.0, 1)", "('sw_a-ksilent-1001', 'sw_a:ksilent', 'sw_a', 'ksilent', 'warn', 'open', 0, 'sw_a ksilent', 'body', '{}', '{}', None, 1001, 1002, N
+
+code-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-status]
+assert (None is not None)
+
+code-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-status]
+assert (None is not None)
+
+code-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-status]
+assert (None is not None)
+
+code-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-status]
+assert (None is not None)
+
+code-base-red test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-status]
+assert (None is not None)
+
+code-base-red test_reorg_while_disabled_rewinds_the_disabled_cursor[1]
+assert [1004, 2147483648] == [1002, 2147483648]
+  
+  At index 0 diff: 1004 != 1002
+  
+  Full diff:
+    [
+  -     1002,
+  ?        ^
+  +     1004,
+  ?        ^
+        2147483648,
+    ]
+
+code-base-red test_reorg_while_disabled_rewinds_the_disabled_cursor[4]
+assert [1007, 2147483648] == [1005, 2147483648]
+  
+  At index 0 diff: 1007 != 1005
+  
+  Full diff:
+    [
+  -     1005,
+  ?        ^
+  +     1007,
+  ?        ^
+        2147483648,
+    ]

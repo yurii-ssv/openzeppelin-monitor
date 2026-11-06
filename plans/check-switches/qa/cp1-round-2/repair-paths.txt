@@ -1,0 +1,9 @@
+A	plans/check-switches/workers/cp1/repair-1/handoff.md
+A	plans/check-switches/workers/cp1/repair-1/red-on-7639cff.txt
+A	plans/check-switches/workers/cp1/repair-1/suite.txt
+M	reconcile/README.md
+M	reconcile/checks/README.md
+M	reconcile/checks/registry.py
+M	reconcile/eb_reconcile.py
+M	reconcile/tests/test_switches.py
+exit=0
