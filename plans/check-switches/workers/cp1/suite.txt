@@ -1,0 +1,32 @@
+# CP1 candidate evidence — suite, ruff, oracle hash, changed files (worktree /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1, branch cs/cp1)
+# measured 2026-11-06T11:32Z; BASE=61307dd (code identical to 9e94a1a); Python 3.12.15, uv 0.13.4
+
+## pytest -q reconcile/tests (base F1: 2,313 passed)
+2366 passed in 56.44s
+exit=0
+
+## pytest -v reconcile/tests/test_switches.py (new tests)
+============================== 53 passed in 0.61s ==============================
+
+## pytest reconcile/tests/test_backfill.py
+67 passed in 0.73s
+
+## ruff check reconcile
+All checks passed!
+exit=0
+
+## sha256 reconcile/tests/test_backfill.py (A4 oracle 28da7d49…)
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35  reconcile/tests/test_backfill.py
+
+## changed vs BASE (tracked + untracked, before the commit)
+ M reconcile/README.md
+ M reconcile/alerts.py
+ M reconcile/checks/README.md
+ M reconcile/checks/registry.py
+ M reconcile/eb_reconcile.py
+?? plans/check-switches/workers/cp1/red-on-base.txt
+?? plans/check-switches/workers/cp1/suite.txt
+?? reconcile/tests/test_switches.py
+
+## guarded paths changed vs 9e94a1a (db.py, metrics.py, checks/m*.py, tests/test_m*.py, tests/test_backfill.py, checks/__init__.py, harness.py):
+  (none above = none changed)

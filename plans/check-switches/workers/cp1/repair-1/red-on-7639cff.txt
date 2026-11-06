@@ -1,0 +1,58 @@
+# CP1 repair 1 — the new tests on the faulty revision 7639cff (red) — 2026-11-06
+#
+# Method: `git archive 7639cffb4991ce6bd536cfc607b27ce1aa78032d | tar -x -C /private/tmp/cs-cp1-r1-red`, the repair's
+# reconcile/tests/test_switches.py copied in (nothing else), run with the repair venv:
+#   python -m pytest -p no:cacheprovider -q -rfE --tb=no reconcile/tests/test_switches.py \
+#     -k "non_boolean or boolean_enabled_controls or validate_switches or m1_reported"
+# The scratch copy was removed afterwards. Expected on the repair tree: all 29 pass (suite.txt).
+#
+# Reading:
+# - 0 / None / "" (direct construction and run/once/verify-layout through main()): the first assertion,
+#   `_states(...) == ['open'] * 4`, fails with ['disabled', ...]: the malformed value CLOSED the four rows (QF1).
+# - "false" / 1 (truthy non-booleans): the check is built and runs; the direct test fails on the unchanged
+#   `incidents` rows (last_seen_block / updated_at moved: the check ran), the CLI start commands on the unchanged
+#   database dump (blocks scanned, run recorded). The value is silently treated as enabled.
+# - `status` (read-only on 7639cff too): closes nothing there, so it fails only on the missing configuration error
+#   (`error is not None`); the behavioural red for status is that it lists 0/None/"" as `disabled`.
+# - test_validate_switches_rejects_every_non_boolean_and_names_the_id: ImportError (new API symbol; not counted as
+#   behavioural evidence).
+# - Pass on 7639cff (no regression claim): test_boolean_enabled_controls_are_unchanged[True/False] (controls) and
+#   test_m1_reported_counts_a_message_of_a_disabled_incident (pins existing M1 behaviour, see falsifier below).
+#
+FFFFFFFFFFFFFFFFFFFFFFFFF..F.
+===================================================================================================================== short test summary info ============================================================================================================
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[0] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[None] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[''] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing['false'] - assert ["('sw_a-kinf...000060.0, 1)"] == ["('sw_a-kinf...000060.0, 1)"]
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_is_a_configuration_error_and_changes_nothing[1] - assert ["('sw_a-kinf...000060.0, 1)"] == ["('sw_a-kinf...000060.0, 1)"]
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-run] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-once] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-verify-layout] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[0-status] - assert (None is not None)
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-run] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-once] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-verify-layout] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[None-status] - assert (None is not None)
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-run] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-once] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-verify-layout] - AssertionError: assert ['disabled', ...', 'disabled'] == ['open', 'ope...open', 'open']
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[''-status] - assert (None is not None)
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-run] - assert {'blocks': ["...ogs': [], ...} == {'blocks': ["...ogs': [], ...}
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-once] - assert {'blocks': ["...ogs': [], ...} == {'blocks': ["...ogs': [], ...}
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-verify-layout] - assert {'blocks': ["....0, 1)"], ...} == {'blocks': ["...ogs': [], ...}
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker['false'-status] - assert (None is not None)
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-run] - assert {'blocks': ["...ogs': [], ...} == {'blocks': ["...ogs': [], ...}
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-once] - assert {'blocks': ["...ogs': [], ...} == {'blocks': ["...ogs': [], ...}
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-verify-layout] - assert {'blocks': ["....0, 1)"], ...} == {'blocks': ["...ogs': [], ...}
+FAILED reconcile/tests/test_switches.py::test_non_boolean_enabled_stops_every_cli_command_that_builds_a_worker[1-status] - assert (None is not None)
+FAILED reconcile/tests/test_switches.py::test_validate_switches_rejects_every_non_boolean_and_names_the_id - ImportError: cannot import name 'validate_switches' from 'checks.registry' (reconcile/checks/registry.py)
+26 failed, 3 passed, 53 deselected in 0.45s
+
+# Falsifier for test_m1_reported_counts_a_message_of_a_disabled_incident (scratch copy of the repair tree under
+# /private/tmp, removed afterwards): M1 `_reported` restricted to `i.state IN ('open', 'resolved')`:
+#   FAILED ... test_m1_reported_counts_a_message_of_a_disabled_incident
+#   E   AssertionError: assert [('warn', 'op...arn', 'open')] == [('warn', 'open')]
+#   1 failed
+# i.e. a filter that ignores disabled rows would send the already-reported transient poisoning a second time; the
+# test pins the any-state join (by design, QF2).

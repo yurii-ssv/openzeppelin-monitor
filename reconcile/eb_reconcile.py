@@ -47,6 +47,7 @@ import checks as registry
 from alerts import Alerts
 from checks.base import Ctx, Every, NearSetEveryBlock, OnEvents, OnInbox
 from checks.m5_eb_desync import audit  # noqa: F401 - re-exported (CLI, tests)
+from checks.registry import disabled as disabled_ids
 from db import DB  # noqa: F401 - re-exported
 from eb_events import PARAM_KINDS, TOPIC0, decode_log
 from inbox import Inbox, InboxUnavailable
@@ -152,9 +153,14 @@ class Worker:
         self.rpc_outage_since = None  # clock of the first failed step of the current outage
         self.head_read = None  # (head, clock) of the last eth_blockNumber answer, for the Monitor watch
         self.bootstrapped = False
+        # Switched off by `checks.<id>.enabled: false` (D6; a check that is merely not built is not disabled, a
+        # built one never is): bootstrap() closes their open incidents as `disabled`, status and the digest list them.
+        # First, before anything touches the database: a non-boolean `enabled` is a configuration error (D14).
+        switched_off = disabled_ids(cfg.raw)
         self.alerts = Alerts(db, cfg.alerts, clock, cfg.alerts.get("label", f"chain {cfg.chain_id}"))
         built = registry.build(cfg.raw) if checks is None else checks
         self.checks = {c.id: c for c in built}
+        self.disabled = [cid for cid in switched_off if cid not in self.checks]
         if not getattr(db, "readonly", False):
             with self.db.tx():
                 for c in self.checks.values():
@@ -208,6 +214,7 @@ class Worker:
                     self.db.set_meta("phase", {"phase": "backfill", "since": self.clock(), "evaluated": []})
             if self.db.meta("phase") is None:  # backfill disabled, or a database that was already alerting
                 self.db.set_meta("phase", {"phase": "live", "since": self.clock(), "first_live": []})
+            self._apply_switches()
         known = self.db.meta("topics")
         new = sorted(set(self.topics) - set(known or []))
         if known is not None and new:
@@ -215,6 +222,33 @@ class Worker:
         with self.db.tx():
             self.db.set_meta("topics", self.topics)
         self.bootstrapped = True
+
+    def _apply_switches(self) -> None:
+        """Per-check switches at start (D7), inside bootstrap's transaction (the incidents and the marker commit
+        together or not at all). A disabled check's open incidents become `disabled` (neither open nor resolved:
+        never re-alerted, absent from the open counts; a key re-found after a re-enable opens a new incident),
+        `resolved_block` = the checkpoint, with no message of any kind (D3); the durable marker `disabled:<id>`
+        records the disabled state. A second start with the same config closes nothing and keeps the marker. A
+        built check's marker is cleared (the re-enabling start)."""
+        block, now = self.checkpoint()["block"], self.clock()
+        for cid in self.disabled:
+            rows = self.db.conn.execute("SELECT id, evidence FROM incidents WHERE check_id=? AND state='open'",
+                                        (cid,)).fetchall()
+            for r in rows:
+                evidence = {**json.loads(r["evidence"]), "disabled": {"block": block, "at": now}}
+                self.db.conn.execute(
+                    "UPDATE incidents SET state='disabled', resolved_block=?, updated_at=?, evidence=? WHERE id=?",
+                    (block, now, json.dumps(evidence, sort_keys=True), r["id"]))
+            marker = self.db.meta(f"disabled:{cid}")
+            if marker is None:
+                self.db.set_meta(f"disabled:{cid}", {"block": block, "at": now, "closed": len(rows)})
+                log.info("check %s disabled: %d open incident(s) closed as disabled at block %d", cid, len(rows),
+                         block)
+            elif rows:  # rows opened while the marker stood (not by this worker): closed too, counted
+                self.db.set_meta(f"disabled:{cid}", {**marker, "closed": marker.get("closed", 0) + len(rows)})
+                log.info("check %s disabled: %d more open incident(s) closed as disabled", cid, len(rows))
+        for cid in self.checks:
+            self.db.conn.execute("DELETE FROM meta WHERE key=?", (f"disabled:{cid}",))
 
     def checkpoint(self) -> dict:
         return self.db.meta("checkpoint")
@@ -316,7 +350,13 @@ class Worker:
             self.db.conn.execute("DELETE FROM blocks WHERE number>?", (ancestor[0],))
             self.db.conn.execute("UPDATE inbox SET canonical=NULL WHERE block>?", (ancestor[0],))
             self.db.set_meta("checkpoint", {"block": ancestor[0], "hash": ancestor[1]})
-            for cid in self.checks:
+            # The built checks, and every check with event state of its own (a disabled one, D11): its cursor and
+            # marker are rewound too, so a re-enabled check replays the new chain and runs with `reorg_ancestor`.
+            # No row is created for an id without state.
+            stateful = {key.removeprefix(p) for (key,) in self.db.conn.execute(
+                "SELECT key FROM meta WHERE key GLOB 'cursor:events:*' OR key GLOB 'reorg:*'")
+                for p in ("cursor:events:", "reorg:") if key.startswith(p)}
+            for cid in sorted(set(self.checks) | stateful):
                 if self._cursor(cid)[0] > ancestor[0]:
                     self.db.set_meta(f"cursor:events:{cid}", [ancestor[0], END_OF_BLOCK])
                 prev = self.db.meta(f"reorg:{cid}")
@@ -649,10 +689,10 @@ class Worker:
         """Re-alerts of open incidents and the daily digest."""
         block = self.checkpoint()["block"]
         with self.db.tx():
-            self.alerts.realert()
+            self.alerts.realert(set(self.checks))  # D8: only the incidents of the checks this worker runs
             if self.alerts.digest_due() and block >= self.cfg.start_block and not self.backfilling:
                 sections = {c.id: self._digest(c, block) for c in self.checks.values()}
-                self.alerts.digest(block, sections)
+                self.alerts.digest(block, sections, disabled=self.disabled)
 
     def _digest(self, check, block: int) -> list[str]:
         try:
@@ -743,7 +783,7 @@ class Worker:
         return {
             "identity": self.db.meta("identity"), "schema_version": self.db.meta("schema_version"),
             "checkpoint": self.checkpoint(), "lag_blocks": self.db.meta("lag_blocks"),
-            "phase": self._phase_progress(),
+            "phase": self._phase_progress(), "disabled": self.disabled,
             "checks": {c: {**self.db.meta(f"run:{c}", {}), "state": self.db.meta(f"check:{c}:last_sweep")}
                        for c in self.checks},
             "params_block": self.params.block,

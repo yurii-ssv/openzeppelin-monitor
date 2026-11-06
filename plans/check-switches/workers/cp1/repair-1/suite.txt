@@ -1,0 +1,21 @@
+# CP1 repair 1 — suite and ruff on the repair tree (base 7639cff + repair), 2026-11-06T11:58:56Z
+# python 3.12.15, pytest 9.1.1, ruff 0.17.1
+$ reconcile/.venv/bin/python -m pytest -q reconcile/tests
+...................                                                      [100%]
+2395 passed in 58.87s
+exit=0
+$ reconcile/.venv/bin/ruff check reconcile
+All checks passed!
+exit=0
+$ reconcile/.venv/bin/python -m pytest -q reconcile/tests/test_switches.py reconcile/tests/test_backfill.py
+149 passed in 1.57s
+$ sha256 reconcile/tests/test_backfill.py
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35  reconcile/tests/test_backfill.py
+$ sha256 of registry.build() source (9e94a1a, 7639cff, repair)
+780527301867463fd7ca1e0bcc52272a637100d163fb9f4ad1c8690f59fceb0b  9e94a1a
+780527301867463fd7ca1e0bcc52272a637100d163fb9f4ad1c8690f59fceb0b  7639cff
+780527301867463fd7ca1e0bcc52272a637100d163fb9f4ad1c8690f59fceb0b  repair
+$ git diff 7639cff -- guarded paths (test_backfill, test_m*, checks/m*, db.py, metrics.py, harness.py, alerts.py, config.example.json, deploy/) | wc -l
+       0
+$ git diff 7639cff -- plans/check-switches/workers/cp1/handoff.md suite.txt red-on-base.txt falsifiers.txt | wc -l  (original records immutable)
+       0

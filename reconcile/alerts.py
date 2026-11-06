@@ -13,7 +13,11 @@ Lifecycle, keyed by (check, key):
     in a run with reason `reorg`, an open incident last seen above the reorg's common ancestor that the run
     does not report again is resolved as "evidence left the canonical chain" (`resolve_not_refound`);
   - while open, page re-alerts every 6 h and warn every 24 h; info is sent once plus the digest. An incident
-    last seen above a pending reorg's ancestor is not re-alerted until the check's reorg run commits.
+    last seen above a pending reorg's ancestor is not re-alerted until the check's reorg run commits; one of a
+    check the worker does not run is never re-alerted;
+  - a check switched off (`checks.<id>.enabled: false`) has its open incidents closed as `disabled` at the next
+    start, silently (the worker's bootstrap): a third state, neither open nor resolved, never re-alerted or counted
+    as open; a key re-found after the check is re-enabled opens a new incident.
 Restart idempotency: incidents and outbox keys are durable, so an open incident re-found after a
 restart produces nothing new before its re-alert is due.
 """
@@ -202,12 +206,17 @@ class Alerts:
                                          evidence=evidence, resolve=True), block)
         return n
 
-    def realert(self) -> int:
+    def realert(self, check_ids=None) -> int:
+        """Re-send the open, notified incidents whose cadence elapsed. `check_ids`: only the incidents of these
+        checks (the worker passes the checks it runs: an open incident of a check that is not built is never
+        re-alerted, D8); None: every check."""
         now = self.clock()
         n = 0
         reorg: dict[str, int | None] = {}
         for r in self.db.conn.execute(
                 "SELECT * FROM incidents WHERE state='open' AND notify=1 AND last_alert_at IS NOT NULL").fetchall():
+            if check_ids is not None and r["check_id"] not in check_ids:
+                continue
             every = self.realert_s.get(r["severity"])
             if not every or now - r["last_alert_at"] < every:
                 continue
@@ -235,12 +244,14 @@ class Alerts:
     def digest_due(self) -> bool:
         return bool(self.digest_interval_s) and self.clock() - (self.db.meta("last_digest") or 0) >= self.digest_interval_s
 
-    def digest(self, block: int, sections: dict[str, list[str]]) -> bool:
+    def digest(self, block: int, sections: dict[str, list[str]], disabled=()) -> bool:
         counts = self.db.conn.execute(
             "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity "
             "ORDER BY check_id, severity").fetchall()
         lines = [self.head("digest", f"{self.name} daily digest"), f"Block {block}."]
         lines.append("Open incidents: " + (", ".join(f"{c} {s} {n}" for c, s, n in counts) if counts else "none"))
+        if disabled:
+            lines.append("Disabled checks: " + ", ".join(sorted(disabled)))
         for check, extra in sections.items():
             if extra:
                 lines.append(f"[{check}]")
