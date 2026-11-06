@@ -1,0 +1,19 @@
+## ssv-network-monitor_watch-data
+59417a7186495caebbdadc25a8fb52c9edd8987ee41708cec2c185a8524448db  ./eb-reconcile.sqlite
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./eb-reconcile.sqlite.lock
+f23fbd7133023b920ffccdf69eed78e991b5709e75b02f9434bff0423c0383b3  ./eb-reconcile.status.json
+
+drwxr-xr-x 2 10001 10001     4096 1793353782 .
+-rw-r--r-- 1 10001 10001 78598144 1793353782 ./eb-reconcile.sqlite
+-rw-r--r-- 1 10001 10001        0 1793269128 ./eb-reconcile.sqlite.lock
+-rw-r--r-- 1 10001 10001     5436 1793353764 ./eb-reconcile.status.json
+## ssv-network-monitor_monitor-data
+02bf74ebd537397f62616a4cbc6d20a8e4a5bf89031bb2eaccdc6abb83645bf0  ./evm_ethereum_mainnet_last_block.txt
+4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945  ./evm_ethereum_mainnet_missed_blocks.json
+2ea33f3690778c91438097fa7f2a451fd43d24628e4bf892338c9a8a71c1f748  ./inbox/failed-tx.jsonl
+
+drwxr-xr-x 3 root root 4096 1793063943 .
+-rw-r--r-- 1 root root    8 1793353742 ./evm_ethereum_mainnet_last_block.txt
+-rw-r--r-- 1 root root    2 1793298511 ./evm_ethereum_mainnet_missed_blocks.json
+drwxr-xr-x 2 root root 4096 1793063573 ./inbox
+-rw-r--r-- 1 root root 2225 1793347515 ./inbox/failed-tx.jsonl

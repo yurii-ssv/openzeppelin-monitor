@@ -1,0 +1,71 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 724B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 231B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 690.14kB 0.0s done
+#4 DONE 0.0s
+
+#5 [1/7] FROM docker.io/library/python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+#5 resolve docker.io/library/python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54 done
+#5 extracting sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef
+#5 extracting sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 0.4s done
+#5 DONE 0.4s
+
+#5 [1/7] FROM docker.io/library/python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+#5 extracting sha256:0373269344dc260a94623aecbafee3cf336984ad3bbe8a49ac047d85aa69be9b 0.0s done
+#5 extracting sha256:0ba3a3e89cd986f09d548ebfd13261fd4ad86bb310bb69923010538e0c5ce222
+#5 extracting sha256:0ba3a3e89cd986f09d548ebfd13261fd4ad86bb310bb69923010538e0c5ce222 0.2s done
+#5 DONE 0.6s
+
+#5 [1/7] FROM docker.io/library/python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+#5 extracting sha256:70b4f81c82dc6ea2a5fc08c59c75940cc3f45dad8e2038b7773cd1b6ac24c7a0 done
+#5 DONE 0.6s
+
+#6 [2/7] RUN useradd --uid 10001 --create-home reconcile  && mkdir -p /data && chown reconcile:reconcile /data
+#6 DONE 0.3s
+
+#7 [3/7] WORKDIR /app
+#7 DONE 0.0s
+
+#8 [4/7] COPY requirements.txt .
+#8 DONE 0.0s
+
+#9 [5/7] RUN pip install --no-cache-dir -r requirements.txt
+#9 0.831 Collecting pycryptodome==3.24.0 (from -r requirements.txt (line 2))
+#9 0.958   Downloading pycryptodome-3.24.0-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl.metadata (3.4 kB)
+#9 0.971 Downloading pycryptodome-3.24.0-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl (2.2 MB)
+#9 1.030    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 46.1 MB/s eta 0:00:00
+#9 1.040 Installing collected packages: pycryptodome
+#9 1.241 Successfully installed pycryptodome-3.24.0
+#9 1.241 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#9 1.283 
+#9 1.283 [notice] A new release of pip is available: 25.0.1 -> 26.3
+#9 1.283 [notice] To update, run: pip install --upgrade pip
+#9 DONE 1.3s
+
+#10 [6/7] COPY *.py ./
+#10 DONE 0.0s
+
+#11 [7/7] COPY checks ./checks
+#11 DONE 0.0s
+
+#12 exporting to image
+#12 exporting layers
+#12 exporting layers 0.3s done
+#12 exporting manifest sha256:7c2f326a27a31982f2e4dffc085eddc6d6155271c3a55edc4e55f5828bdebf68 done
+#12 exporting config sha256:aeecc823a9322204497783eca5127ef685f2f0578d09f2cd91bf011bc8490a16 done
+#12 exporting attestation manifest sha256:9ee6301233f8573aa2942d6b3d22e275e0356859b1f4a7a901183b2b68a151c7 done
+#12 exporting manifest list sha256:0d237749a673078d92bf2c8805b5349035ab611e123f9d15aeb7b191925f403e done
+#12 naming to docker.io/library/cs-smoke-reconcile:333de80 done
+#12 unpacking to docker.io/library/cs-smoke-reconcile:333de80 0.1s done
+#12 DONE 0.5s

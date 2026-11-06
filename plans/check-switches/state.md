@@ -1,7 +1,7 @@
 # Current state — check-switches
 
 Contract: [plan.md](plan.md) · History: [execution-log.md](execution-log.md)
-Updated: 2026-11-06 · Last transition: [event-0023](execution-log.md#event-0023)
+Updated: 2026-11-06 · Last transition: [event-0024](execution-log.md#event-0024)
 Mode: executing (plan READY, sha256 c396a859a965…); Run `run_3869f8caafaa`
 Observed candidate: `/Users/marco/orca/workspaces/ssv-network-monitor/check-switches`, branch `plan/check-switches`, plan commit `00fe823`, CP1 frozen base `61307dd` (run directory tracked via the `.gitignore` exception)
 Accepted candidate: CP1 + CP2 → `plan/check-switches` merge `333de80` (both ACCEPTED WITH DEFERRALS: DF1 closed; DF2–DF4 open, owner Marco/follow-up)
@@ -19,8 +19,8 @@ Status: ACCEPTED WITH DEFERRALS (Marco; merge `333de80`, suite 2,519 passed, ruf
 
 ### Delivery smoke
 
-Status: NOT STARTED — needs Marco's go (Docker, public RPCs, a copy of a live worker volume)
-Next: on go, run plan § Delivery checks (1)–(3) with `cs-smoke_*` volume/image names, evidence under `evidence/smoke/`; then closure (move run dir to ssv-research, restore `.gitignore`, memory notes).
+Status: PASS (record mode on a copy of `ssv-network-monitor_watch-data`, 2026-11-06; [evidence/smoke/report.md](evidence/smoke/report.md)); zero m3 rows, so closure/send-once paths ran trivially
+Next: closure (move run dir to ssv-research, restore `.gitignore`, memory notes). Kept until Marco decides: `cs-smoke_*` volumes, image `cs-smoke-reconcile:333de80`, worker worktrees.
 
 ## Resume
 

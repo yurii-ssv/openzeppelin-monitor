@@ -1,0 +1,9 @@
+## cs-smoke_watch-data
+59417a7186495caebbdadc25a8fb52c9edd8987ee41708cec2c185a8524448db  ./eb-reconcile.sqlite
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./eb-reconcile.sqlite.lock
+f23fbd7133023b920ffccdf69eed78e991b5709e75b02f9434bff0423c0383b3  ./eb-reconcile.status.json
+## cs-smoke_monitor-data
+02bf74ebd537397f62616a4cbc6d20a8e4a5bf89031bb2eaccdc6abb83645bf0  ./evm_ethereum_mainnet_last_block.txt
+4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945  ./evm_ethereum_mainnet_missed_blocks.json
+2ea33f3690778c91438097fa7f2a451fd43d24628e4bf892338c9a8a71c1f748  ./inbox/failed-tx.jsonl
+COPY_IDENTICAL
