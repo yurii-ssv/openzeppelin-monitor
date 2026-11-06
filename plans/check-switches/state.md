@@ -1,10 +1,10 @@
 # Current state — check-switches
 
 Contract: [plan.md](plan.md) · History: [execution-log.md](execution-log.md)
-Updated: 2026-11-06 · Last transition: [event-0022](execution-log.md#event-0022)
+Updated: 2026-11-06 · Last transition: [event-0023](execution-log.md#event-0023)
 Mode: executing (plan READY, sha256 c396a859a965…); Run `run_3869f8caafaa`
 Observed candidate: `/Users/marco/orca/workspaces/ssv-network-monitor/check-switches`, branch `plan/check-switches`, plan commit `00fe823`, CP1 frozen base `61307dd` (run directory tracked via the `.gitignore` exception)
-Accepted candidate: CP1 → `plan/check-switches` merge `16432ad` (ACCEPTED WITH DEFERRALS: DF1 → CP2)
+Accepted candidate: CP1 + CP2 → `plan/check-switches` merge `333de80` (both ACCEPTED WITH DEFERRALS: DF1 closed; DF2–DF4 open, owner Marco/follow-up)
 Effective policy: plan.md Global rules (D1 models, D2 QA policy: decided by Marco 2026-11-06); role documents `6548b79b…` / `ec154819…`; DEFECT-CLASSES `7daa55f6…`
 
 ## Active work
@@ -15,9 +15,12 @@ Status: ACCEPTED WITH DEFERRALS (Marco, option A; merge `16432ad`, suite 2,395 p
 
 ### CP2
 
-Status: PROVISIONAL — composed QA round 3 FAIL with NOTE-only findings (QF4 closed; QN2, QN3, QN4 NOTE). Candidate `4205b00` (`cs/cp2-r2`), report `qa/cp2-round-3.md` `14fb1e3a…`.
-Assignment: none (waiting for Marco)
-Next: Marco decides: accept CP2 with deferrals (QN2–QN4 owners/triggers) → merge `cs/cp2-r2`, suite + ruff, delivery smoke go; or a further repair.
+Status: ACCEPTED WITH DEFERRALS (Marco; merge `333de80`, suite 2,519 passed, ruff clean)
+
+### Delivery smoke
+
+Status: NOT STARTED — needs Marco's go (Docker, public RPCs, a copy of a live worker volume)
+Next: on go, run plan § Delivery checks (1)–(3) with `cs-smoke_*` volume/image names, evidence under `evidence/smoke/`; then closure (move run dir to ssv-research, restore `.gitignore`, memory notes).
 
 ## Resume
 
