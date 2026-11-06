@@ -57,3 +57,10 @@ Decision: CP1 REPAIR in progress. Next: on `worker_done`, scope check, then Code
 2026-11-06 · coordinator
 Outcome: `worker_done` (msg `msg_b2007470e692`, Dispatch `ctx_0c5ee82f133b`): the QA-1 worker got past its approval prompt and committed its report on `cs/cp1-qa1` as `11e08ee` (25 files, additions only on top of `7639cff`). The committed report is byte-identical to the coordinator's copy (sha256 `c63de872…`) and every evidence file matches `qa/cp1-round-1.manifest.txt`. Verdict unchanged: FAIL.
 Decision: none new (repair 1 in progress, event 0007). QA-1 worktree `cs-cp1-qa1` releasable (report preserved in `qa/` and on `cs/cp1-qa1`).
+
+<a id="event-0009"></a>
+## Event 0009 — CP1 repair 1 done; QA round 2 dispatched
+
+2026-11-06 · coordinator
+Outcome: `worker_done` (msg `msg_351106e0ba65`, Dispatch `ctx_7a0b9bf65c45`): repair commit `62ed4c2` on `cs/cp1-r1` (parent `7639cff`), tree clean; diff `7639cff..62ed4c2` 8 files, all in CP1 Allowed writes (`registry.py`, `eb_reconcile.py`, `test_switches.py`, both READMEs, `workers/cp1/repair-1/**`). Claims: `validate_switches` (D14) called first in `Worker.__init__`; reader table re-derived (28 rows incl. M1 `_reported`, `fork_e2e` `sent`, by design + real-M1 pinning test); README names `run`/`once`/`verify-layout`; suite 2,395 passed (2,366 + 29), ruff clean, `test_backfill.py` unchanged; 26/29 new tests red on `7639cff`. Disclosed deviation: `export`/`audit` construct no `Worker`, so they do not validate `enabled` (they close nothing). Coordinator check: shipped configs have boolean `enabled` and object `checks.<id>` entries. QA-2 packet `workers/cp1/packet-qa-2.md` (`41b588c8…`). Codex config (Marco, 2026-11-06): `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `approvals_reviewer = "auto_review"` (top level of `~/.codex/config.toml`). Start: Task `task_735c4657683a`, Dispatch `ctx_bdf99c2be3a3`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1-qa2`, HEAD `62ed4c2` = candidate; codex/gpt-6.1-sol/high = `launch.effective`.
+Decision: CP1 AWAITING QA (round 2). A second FAIL → decision by Marco (D2).
