@@ -1,0 +1,2 @@
+cp1-independent: exit=0; cases=107; failures=0; errors=0
+cp2-independent: exit=1; cases=21; failures=11; errors=0

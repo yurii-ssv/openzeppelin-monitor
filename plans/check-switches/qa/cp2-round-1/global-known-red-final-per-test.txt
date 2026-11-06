@@ -1,0 +1,45 @@
+reconcile.tests.test_cp2_independent::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0]: FAIL
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+reconcile.tests.test_cp2_independent::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2]: FAIL
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+reconcile.tests.test_cp2_independent::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12]: FAIL
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+reconcile.tests.test_cp2_independent::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global]: FAIL
+AssertionError: history replay escaped silence: ['ev:1004', 'ev:1005']
+assert ['ev:1004', 'ev:1005'] == ['ev:1005']
+  
+  At index 0 diff: 'ev:1004' != 'ev:1005'
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+    [
+  +     'ev:1004',
+        'ev:1005',
+    ]

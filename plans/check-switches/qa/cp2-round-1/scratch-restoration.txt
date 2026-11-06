@@ -1,0 +1,9 @@
+/private/tmp/cs-cp2-qa1-cp1-independent-x38ty1jd: removed=True
+/private/tmp/cs-cp2-qa1-cp2-independent-l1wtghe3: removed=True
+/private/tmp/cs-cp2-qa1-cp2-red-on-cp1-i7akavio: removed=True
+/private/tmp/cs-cp2-qa1-cp1-red-on-code-base-bizzk8yz: removed=True
+/private/tmp/cs-cp2-qa1-global-known-red-9pgcrxb_: removed=True
+/private/tmp/cs-cp2-qa1-cp2-independent-final-6m3xjylb: removed=True
+/private/tmp/cs-cp2-qa1-global-known-red-final-7omwyy2i: removed=True
+/private/tmp/cs-cp2-qa1-real-check-composition-z47kymyg: removed=True
+/private/tmp/cs-cp2-qa1-real-check-composition-final-vc6gwkqs: removed=True

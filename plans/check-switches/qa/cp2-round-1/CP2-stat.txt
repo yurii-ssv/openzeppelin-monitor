@@ -1,0 +1,12 @@
+ deploy/README.md                                   |  64 ++
+ plans/check-switches/workers/cp2/docs-checklist.md |  75 ++
+ plans/check-switches/workers/cp2/falsifiers.txt    | 275 ++++++
+ plans/check-switches/workers/cp2/handoff.md        | 165 ++++
+ plans/check-switches/workers/cp2/red-on-cp1.txt    | 244 +++++
+ plans/check-switches/workers/cp2/suite.txt         |  60 ++
+ reconcile/README.md                                |  12 +-
+ reconcile/checks/README.md                         |  17 +-
+ reconcile/config.example.json                      |   2 +-
+ reconcile/eb_reconcile.py                          |  94 +-
+ reconcile/tests/test_catchup.py                    | 991 +++++++++++++++++++++
+ 11 files changed, 1984 insertions(+), 15 deletions(-)

@@ -1,0 +1,24 @@
+candidate=718606c5ee2d43c260240101c06642340cabc1a0
+CP2 base=d7b3da6a353b2e5f54ff95af00d099cacf291e4c
+code base=9e94a1a
+initial HEAD=candidate; initial git status --short empty
+initial branch=mtabasco/cs-cp2-qa1; QA branch=cs/cp2-qa1
+platform=macOS-26.7.1-arm64-arm-64bit; machine=arm64; Python=3.12.15
+PATH prefixed with $HOME/.foundry/bin for every shell
+Requested QA identity=Codex GPT Sol 6.1 high; coordinator owns launch.effective receipt (not independently queried by worker)
+['git', '--version']: exit=0; stdout=git version 2.39.5 (Apple Git-154)
+['uv', '--version']: exit=0; stdout=uv 0.13.4 (7456b60bc 2026-10-20 aarch64-apple-darwin)
+['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa1/reconcile/.venv/bin/python', '-m', 'pytest', '--version']: exit=0; stdout=pytest 9.1.1
+['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa1/reconcile/.venv/bin/ruff', '--version']: exit=0; stdout=ruff 0.17.1
+['/Applications/Orca.app/Contents/Resources/bin/orca', '--version']: exit=0; stdout=1.4.250
+plans/check-switches/workers/cp2/docs-checklist.md: sha256=b2e708c26dd546e4605edf02eb3af6a4bb2f360221709a88711659694a89327d
+plans/check-switches/workers/cp2/handoff.md: sha256=5f3f9d9c98db6a22dd044395e7caabfbe1f46ec84227c4474f947e405e46e26a
+plans/check-switches/workers/cp2/packet-implementer-1.md: sha256=81d101017fedb7b81993478bd7b007afb0f48e3f5b1ce45853f95ec09fb1faee
+plans/check-switches/workers/cp2/falsifiers.txt: sha256=62ab8ad11c1236c348e8f2d46e6d7efa419925a5868dec70b73a5c1f0ea5fbf2
+plans/check-switches/workers/cp2/red-on-cp1.txt: sha256=5d34c19f810612e7a20579e2188f62a39c4a48523cba7881ea33127e4591d8a0
+plans/check-switches/workers/cp2/suite.txt: sha256=ea9be9df5529df4d0aa9e7e3636e41b49e292f4ac31ee9d215341d4f4f5f07aa
+plans/check-switches/workers/cp1/handoff.md: sha256=2ed58054358a55b2ecc63a67ce1b41fd4153f505d3ab7f53678ee1e1d984a991
+plans/check-switches/workers/cp1/repair-1/handoff.md: sha256=3737e1c3223f01314f75aead53ac1f54e0187557b42f60cc6e8d924d2bda5d05
+plans/check-switches/qa/cp1-round-1.md: sha256=c63de8729ed96e6349cb48bfe30daf70a34770a59fd7685b2407914f9f5f7781
+plans/check-switches/qa/cp1-round-2.md: sha256=98ed5e0987a0a073efb5bf4b5cffc55d3ea88a8d699f32cc99bd4f6843a70d55
+plans/check-switches/qa/cp1-round-2/test_cp1_siblings.py: sha256=97c1020fcd133755eeb2af0a86a2ea3ad0f650544b87fb3e811b556ba397ad97

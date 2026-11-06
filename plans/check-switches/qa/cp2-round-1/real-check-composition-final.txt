@@ -1,0 +1,16 @@
+revision=718606c5ee2d43c260240101c06642340cabc1a0
+scratch=/private/tmp/cs-cp2-qa1-real-check-composition-final-vc6gwkqs
+command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa1/reconcile/.venv/bin/python', '-m', 'pytest', '-vv', '-s', 'reconcile/tests/test_cp2_real.py', '--junitxml', '/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa1/plans/check-switches/qa/cp2-round-1/real-check-composition-final.xml', '--basetemp', '/private/tmp/cs-cp2-qa1-real-check-composition-final-vc6gwkqs/test-tmp']
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa1/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp2-qa1-real-check-composition-final-vc6gwkqs
+collecting ... collected 2 items
+
+reconcile/tests/test_cp2_real.py::test_real_m1_orphaned_repair_is_silent_then_live_once PASSED
+reconcile/tests/test_cp2_real.py::test_real_m2_empty_api_persisted_hard_condition_is_silent_then_live_once PASSED
+
+- generated xml file: /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa1/plans/check-switches/qa/cp2-round-1/real-check-composition-final.xml -
+============================== 2 passed in 0.20s ===============================
+
+exit=0

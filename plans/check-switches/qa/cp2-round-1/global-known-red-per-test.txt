@@ -1,0 +1,8 @@
+reconcile.tests.test_cp2_independent::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0]: FAIL
+SystemExit: reorg deeper than 256 recorded blocks below 1006
+reconcile.tests.test_cp2_independent::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2]: FAIL
+SystemExit: reorg deeper than 256 recorded blocks below 1006
+reconcile.tests.test_cp2_independent::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12]: FAIL
+SystemExit: reorg deeper than 256 recorded blocks below 1006
+reconcile.tests.test_cp2_independent::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global]: FAIL
+SystemExit: reorg deeper than 256 recorded blocks below 1004
