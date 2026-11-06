@@ -194,7 +194,7 @@ Round 1 `qa/cp1-round-1.md` (`c63de872…`): FAIL — QF1 BLOCKING (falsy `enabl
 <a id="cp2"></a>
 ## CP2 — Silent catch-up for re-enabled and new checks; docs; composed QA
 
-Status: PROVISIONAL
+Status: ACCEPTED WITH DEFERRALS
 Goal: a re-enabled or newly added check on a live database is caught up silently and then alerts, the global D17 backfill is unchanged, and the runbook tells DevOps how to flip a monitor.
 Required inputs: Global rules; D3, D4, D5, D9–D13; F4, F5, F7, F9; CP1 handoff and QA report; `reconcile/eb_reconcile.py` (`bootstrap`, `phase` helpers `:222-277`, `due` `:488-510`, `run_checks` `:543-580`, `run_check` `:582-636`, `status`), `reconcile/checks/README.md` §3, §4, §7, `reconcile/tests/test_backfill.py` (as the model for the scenarios and as the frozen oracle), `deploy/README.md` "Backfill phase (D17)", `reconcile/README.md`, `reconcile/config.example.json`.
 Allowed writes: `reconcile/eb_reconcile.py` (catch-up record, pinned silent run, forced first live run, `status.checks.<id>.catchup`), `reconcile/tests/test_switches.py` (extend) and/or `reconcile/tests/test_catchup.py` (new), `reconcile/tests/harness.py` (additive keyword only), `deploy/README.md`, `reconcile/checks/README.md` §3/§4/§7, `reconcile/README.md`, `reconcile/config.example.json` (`_comment` only), `plans/check-switches/workers/cp2/**`. Not: `tests/test_backfill.py`, `tests/test_m*.py`, `checks/m*.py`, `checks/registry.py`, `db.py`, `metrics.py`.
@@ -264,9 +264,15 @@ QA report destination: `plans/check-switches/qa/cp2-round-N.md`
 
 ### Implementer handoff
 
+`workers/cp2/handoff.md` (candidate `718606c`); repair 1 `workers/cp2/repair-1/handoff.md` (`ff3841f`, D15); repair 2 `workers/cp2/repair-2/handoff.md` (`4205b00`, D16).
+
 ### QA evidence
 
+Composed Codex QA (V2.9): round 1 `qa/cp2-round-1.md` (`6d23504a…`) FAIL — NF1/NF2 global/NF3 BLOCKING, DF1 closed; round 2 `qa/cp2-round-2.md` (`a026b88f…`) FAIL — round-1 findings closed, QF4 BLOCKING (M5 re-enable missed page), QN2 NOTE; round 3 `qa/cp2-round-3.md` (`14fb1e3a…`) FAIL with NOTE-only findings — QF4 closed, QN3/QN4 NOTE, QN2 open. Round 3: suite 2,519 passed, ruff clean, `test_backfill.py` `28da7d49…`; V2.4/V2.8 FAIL on QN3, every other V1/V2 row PASS.
+
 ### Coordinator decision
+
+2026-11-06, Marco: third repair authorized after round 2 (D16); after round 3 (NOTE-only): **ACCEPTED WITH DEFERRALS** (DF2–DF4 below). QA verdicts stay FAIL as measured (invariant 2). Integration: see event 0023.
 
 ## Dispatch and recovery
 
@@ -289,6 +295,9 @@ Findings, NOTEs and deferrals are added here by the coordinator with ID, evidenc
 - **DF1 (QF3, CP1-QA2, NOTE)** — `main()` opens the writable `DB` (migration: `schema_version` upsert, or a new file with its schema) before `Worker` validates `enabled` (D14), so `run`/`once`/`verify-layout` with a malformed switch write schema bookkeeping before the config error; no incident/marker/outbox change. Evidence `qa/cp1-round-2.md` QF3, reproducer `qa/cp1-round-2/test_cp1_siblings.py`. Affected: A1 (D14 sibling paths), V1.3, V1.6. Authority: Marco, 2026-11-06 (option A). Owner: CP2 implementer — validate the switches before the writable `DB` is opened (or created) in `main()`; correct `reconcile/README.md`'s "before it touches the database" wording and the D14 state-table cell. Trigger: CP2 composed QA (V2.9) re-runs the QF3 reproducer; DF1 closes only on its PASS.
 - **D14 clarification (QA-2 judgment)** — `export` and `audit` construct no `Worker` and open the database read-only; they do not validate `enabled` and need not (they never close or evaluate). D14's "`status`/`export` CLI alike" reads as "every command that constructs a `Worker`".
 - **QN1 (CP2-QA1, NOTE)** — the composed diff includes `.gitignore` (`plans/` → `plans/*` + `!plans/check-switches/`, commit `00fe823`): coordinator plan provisioning, outside both CPs' Allowed writes by design. Disposition: accepted as a plan-provisioning exception; reverted at closure (`plans/` restored). Owner: coordinator; trigger: closure commit.
+- **DF2 (QN3, CP2-QA3, NOTE)** — after a reorg deeper than `confirmations` that turns an already-sent live M5 confirmed page into latent through a D15 silent repeat, the info resolution of that page is never sent (the deferred-key filter in `run_check` suppresses the framework resolution while M5's own state moves on); predates D16 (also on `ff3841f`). Evidence `qa/cp2-round-3.md` QN3, reproducers `qa/cp2-round-3/test_qa3_boundaries.py`, `test_qa3_diagnostic.py`. Affected A2, A5 (V2.4, V2.8). Authority: Marco, 2026-11-06 (accept with deferrals). Owner: Marco / follow-up plan (M5 lifecycle with the D15 deferral; may need `checks/m5_eb_desync.py`). Trigger: first deep (> confirmations) reorg observed in production, or the next change to D15/M5.
+- **DF3 (QN2, CP2-QA2/QA3, NOTE)** — M5's own `m5_incidents` id and the framework incident id can differ after a silent repeat and after a D16 re-enable (`<id>-2`); messages use the framework id; no message impact measured except DF2. Owner: Marco / the same follow-up as DF2. Trigger: any tool or runbook step that joins `m5_incidents` and `incidents` by id, or DF2's fix.
+- **DF4 (QN4, CP2-QA3, NOTE)** — wording: `checks/README.md` §6.1 still says a proposed id "must still be unique" without the D16 exception; the M5 module docstring says the two rows share the id. Owner: the DF2 follow-up (the docstring is a check file). Trigger: DF2's fix or the next `checks/README.md` edit.
 
 Delivery checks (after CP2 ACCEPTED, before closure; coordinator, Marco's go needed because it uses Docker and the public RPCs): a **record-mode upgrade smoke** on a copy of a live worker volume (never the original; `cs-smoke_*` names, own image tag `cs-smoke-reconcile:<head>`, plain `docker run`, ≤ 2 h): (1) record the copy's config `backfill.enabled` (must be true for D9 to apply; the production `config.example.json` has it true) and start the candidate on the copy → expected no catch-up record for any check, no message (A3 upgrade rule, D10); (2) restart with `m3` disabled → closure of its open incidents, no message, `status.disabled == ["m3"]`; (3) restart with `m3` enabled → `catchup` in `status`, no message, then at the next step at most the still-true M3 conditions sent once. Evidence under `evidence/smoke/`; source volume hashes before and after. Local evidence only (Docker on the Mac, public RPCs); the production Kubernetes deployment is DevOps' (DT-11 precedent).
 
