@@ -22,3 +22,10 @@ Decision: readiness READY; Marco to answer D1–D5 (models, QA policy, disable/e
 2026-11-06 · coordinator (Claude Opus 5.5 medium) · plan.md `7cf0bad9…` → `c396a859a9651e44cd7479a391a12df777d9f53e6c1b338043308a5becf23464`
 Outcome: Marco answered: D1 coordinator Opus 5.5 medium, implementers Opus 5.5 high, QA Codex gpt-6.1-sol high; D2 policy carried over; D3 **no disable/enable notice at all**; D4 as proposed; D5 this plan first, independently of M17; plan commit may stay in history. D3, D7 (marker without counter), D9, V1.1, V1.2, V1.5, V2.1, V2.2, V2.6 and the delivery smoke revised; review 1's B1 no longer applies. No second review (the change removes behaviour).
 Decision: plan READY, open decisions none. Next: Marco starts a new session to execute (plan commit with the gitignore exception, Orca guides, Run, CP1).
+
+<a id="event-0004"></a>
+## Event 0004 — plan commit, Run, CP1 dispatched
+
+2026-11-06 · coordinator (Claude Opus 5.5 medium, execution session) · plan.md `c396a859…` (unchanged)
+Outcome: `.gitignore` `plans/` → `plans/*` + `!plans/check-switches/`; plan commit `00fe823`. Orca guides loaded (orca-cli, orchestration, coordinator-loop, placement-and-remote; CLI 1.4.250); `ORCA_WORKSPACE_ID` = F6 value. Run `run_3869f8caafaa`. CP1 packet `workers/cp1/packet-implementer-1.md` (sha256 `a35734a7…`) committed as `61307dd` (frozen CP1 base). Start: Task `task_1068470b2829`, Dispatch `ctx_ef35412e7186`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1` (Orca branch `mtabasco/cs-cp1`; the packet tells the worker to commit on `cs/cp1`), HEAD `61307dd` = frozen base; requested claude/opus/high = `launch.effective` claude/opus/high; state ready, turn started.
+Decision: CP1 IN PROGRESS. Next: wait for `worker_done`; then check head, diff scope, start Codex QA in a fresh `new-child` of the candidate head.

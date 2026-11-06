@@ -120,7 +120,7 @@ Common to both CPs: the handoff includes the DEFECT-CLASSES **state table** for 
 <a id="cp1"></a>
 ## CP1 — Clean disable
 
-Status: NOT STARTED
+Status: IN PROGRESS
 Goal: a check with `enabled: false` leaves no open incident, no re-alert and no stale cursor behind, and is visible as disabled.
 Required inputs: Global rules; D3, D6–D8, D11, D12 (D3: no notice); F2, F3, F5, F7, F8; `reconcile/checks/registry.py`, `reconcile/alerts.py`, `reconcile/eb_reconcile.py` (`bootstrap` `:194-217`, `check_reorg` `:289-342`, `status` `:738-760`, CLI `:834-876`), `reconcile/db.py:33-40`, `reconcile/checks/README.md` §4, `reconcile/tests/harness.py`, `reconcile/tests/test_framework.py` (`Stub`, `registered_stub`).
 Allowed writes: `reconcile/checks/registry.py` (disabled-ids helper; `build` unchanged), `reconcile/eb_reconcile.py` (closure in `bootstrap`, D11 rewind, `status`), `reconcile/alerts.py` (state `disabled`, D8 filter, digest line), `reconcile/tests/test_switches.py` (new), `reconcile/tests/harness.py` (additive keyword only, if needed), `reconcile/checks/README.md` §4 (state `disabled`), `reconcile/README.md` (`status` fields), `plans/check-switches/workers/cp1/**`. Not: `db.py` (D7: coordinator decision first), `checks/m*.py`, `tests/test_m*.py`, `tests/test_backfill.py`, `metrics.py`.
@@ -185,7 +185,7 @@ QA report destination: `plans/check-switches/qa/cp1-round-N.md`
 <a id="cp2"></a>
 ## CP2 — Silent catch-up for re-enabled and new checks; docs; composed QA
 
-Status: NOT STARTED
+Status: IN PROGRESS
 Goal: a re-enabled or newly added check on a live database is caught up silently and then alerts, the global D17 backfill is unchanged, and the runbook tells DevOps how to flip a monitor.
 Required inputs: Global rules; D3, D4, D5, D9–D13; F4, F5, F7, F9; CP1 handoff and QA report; `reconcile/eb_reconcile.py` (`bootstrap`, `phase` helpers `:222-277`, `due` `:488-510`, `run_checks` `:543-580`, `run_check` `:582-636`, `status`), `reconcile/checks/README.md` §3, §4, §7, `reconcile/tests/test_backfill.py` (as the model for the scenarios and as the frozen oracle), `deploy/README.md` "Backfill phase (D17)", `reconcile/README.md`, `reconcile/config.example.json`.
 Allowed writes: `reconcile/eb_reconcile.py` (catch-up record, pinned silent run, forced first live run, `status.checks.<id>.catchup`), `reconcile/tests/test_switches.py` (extend) and/or `reconcile/tests/test_catchup.py` (new), `reconcile/tests/harness.py` (additive keyword only), `deploy/README.md`, `reconcile/checks/README.md` §3/§4/§7, `reconcile/README.md`, `reconcile/config.example.json` (`_comment` only), `plans/check-switches/workers/cp2/**`. Not: `tests/test_backfill.py`, `tests/test_m*.py`, `checks/m*.py`, `checks/registry.py`, `db.py`, `metrics.py`.
