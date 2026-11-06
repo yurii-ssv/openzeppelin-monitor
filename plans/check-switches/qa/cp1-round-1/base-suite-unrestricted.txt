@@ -1,0 +1,98 @@
+base=61307dd
+exit=1
+........................................................................ [  3%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 15%]
+........................................................................ [ 18%]
+........................................................................ [ 21%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 49%]
+........................................................................ [ 52%]
+........................................................................ [ 56%]
+........................................................................ [ 59%]
+........................................................................ [ 62%]
+........................................................................ [ 65%]
+........................................................................ [ 68%]
+........................................................................ [ 71%]
+........................................................................ [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+...............F.......................F................................ [ 90%]
+........................................................................ [ 93%]
+........................................................................ [ 96%]
+........................................................................ [ 99%]
+.........                                                                [100%]
+=================================== FAILURES ===================================
+____________ test_example_config_template_and_recovery_tuning_agree ____________
+
+    def test_example_config_template_and_recovery_tuning_agree():
+>       net = json.loads((ROOT / "deploy/config/networks/evm_ethereum_mainnet.json").read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_monitor_unevaluated.py:406: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/marco/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/tmp/cs-cp1-base-suite-p56sqm2c/deploy/config/networks/evm_ethereum_mainnet.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/cs-cp1-base-suite-p56sqm2c/deploy/config/networks/evm_ethereum_mainnet.json'
+
+/Users/marco/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/pathlib.py:1013: FileNotFoundError
+___________________ test_example_config_and_templates_agree ____________________
+
+    def test_example_config_and_templates_agree():
+>       net = json.loads((ROOT / "deploy/config/networks/evm_ethereum_mainnet.json").read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_monitor_watch.py:365: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/marco/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/tmp/cs-cp1-base-suite-p56sqm2c/deploy/config/networks/evm_ethereum_mainnet.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/cs-cp1-base-suite-p56sqm2c/deploy/config/networks/evm_ethereum_mainnet.json'
+
+/Users/marco/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/pathlib.py:1013: FileNotFoundError
+=========================== short test summary info ============================
+FAILED reconcile/tests/test_monitor_unevaluated.py::test_example_config_template_and_recovery_tuning_agree
+FAILED reconcile/tests/test_monitor_watch.py::test_example_config_and_templates_agree
+2 failed, 2311 passed in 61.69s (0:01:01)

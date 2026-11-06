@@ -1,0 +1,179 @@
+$ /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1-qa1/reconcile/.venv/bin/python -m pytest -vv reconcile/tests/test_cp1_independent.py
+exit=1
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1-qa1/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp1-qa1-11vx0rjz/candidate
+collecting ... collected 11 items
+
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[0] FAILED [  9%]
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[None] FAILED [ 18%]
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[] FAILED [ 27%]
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[False] PASSED [ 36%]
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[True] PASSED [ 45%]
+reconcile/tests/test_cp1_independent.py::test_partial_closure_bad_evidence_rolls_back_all_checks PASSED [ 54%]
+reconcile/tests/test_cp1_independent.py::test_resolved_rows_and_times_are_preserved PASSED [ 63%]
+reconcile/tests/test_cp1_independent.py::test_marker_only_unregistered_id_is_rewound_and_persists_restart PASSED [ 72%]
+reconcile/tests/test_cp1_independent.py::test_identity_failure_closes_nothing PASSED [ 81%]
+reconcile/tests/test_cp1_independent.py::test_cli_bootstrap_callers_close_silently[once] PASSED [ 90%]
+reconcile/tests/test_cp1_independent.py::test_cli_bootstrap_callers_close_silently[verify-layout] PASSED [100%]
+
+=================================== FAILURES ===================================
+___________________ test_d6_only_literal_false_may_close[0] ____________________
+
+tmp_path = PosixPath('/private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5223/test_d6_only_literal_false_may0')
+value = 0
+
+    @pytest.mark.parametrize('value', [0, None, '', False, True])
+    def test_d6_only_literal_false_may_close(tmp_path, value):
+        env = Env(tmp_path)
+        open_four(env)
+        raw = env.raw()
+        raw['checks'] = {'sw_a': {'enabled': value}}
+        cfg = Config({**DEFAULTS, **raw})
+        built = registry.build(cfg.raw, only=['sw_a'])
+        w = Worker(cfg, FakeRpc(env.chain), DB(cfg.db_path), env.notifier, clock=env.clock, checks=built)
+        w.bootstrap()
+        rows = list(w.db.conn.execute("SELECT state FROM incidents WHERE check_id='sw_a'"))
+        expected = 'disabled' if value is False else 'open'
+>       assert [r[0] for r in rows] == [expected] * 4, f'D6: enabled={value!r} must yield {expected}, actual={[r[0] for r in rows]}'
+E       AssertionError: D6: enabled=0 must yield open, actual=['disabled', 'disabled', 'disabled', 'disabled']
+E       assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+E         
+E         At index 0 diff: 'disabled' != 'open'
+E         
+E         Full diff:
+E           [
+E         -     'open',
+E         -     'open',
+E         -     'open',
+E         -     'open',
+E         +     'disabled',
+E         +     'disabled',
+E         +     'disabled',
+E         +     'disabled',
+E           ]
+
+reconcile/tests/test_cp1_independent.py:37: AssertionError
+__________________ test_d6_only_literal_false_may_close[None] __________________
+
+tmp_path = PosixPath('/private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5223/test_d6_only_literal_false_may1')
+value = None
+
+    @pytest.mark.parametrize('value', [0, None, '', False, True])
+    def test_d6_only_literal_false_may_close(tmp_path, value):
+        env = Env(tmp_path)
+        open_four(env)
+        raw = env.raw()
+        raw['checks'] = {'sw_a': {'enabled': value}}
+        cfg = Config({**DEFAULTS, **raw})
+        built = registry.build(cfg.raw, only=['sw_a'])
+        w = Worker(cfg, FakeRpc(env.chain), DB(cfg.db_path), env.notifier, clock=env.clock, checks=built)
+        w.bootstrap()
+        rows = list(w.db.conn.execute("SELECT state FROM incidents WHERE check_id='sw_a'"))
+        expected = 'disabled' if value is False else 'open'
+>       assert [r[0] for r in rows] == [expected] * 4, f'D6: enabled={value!r} must yield {expected}, actual={[r[0] for r in rows]}'
+E       AssertionError: D6: enabled=None must yield open, actual=['disabled', 'disabled', 'disabled', 'disabled']
+E       assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+E         
+E         At index 0 diff: 'disabled' != 'open'
+E         
+E         Full diff:
+E           [
+E         -     'open',
+E         -     'open',
+E         -     'open',
+E         -     'open',
+E         +     'disabled',
+E         +     'disabled',
+E         +     'disabled',
+E         +     'disabled',
+E           ]
+
+reconcile/tests/test_cp1_independent.py:37: AssertionError
+____________________ test_d6_only_literal_false_may_close[] ____________________
+
+tmp_path = PosixPath('/private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5223/test_d6_only_literal_false_may2')
+value = ''
+
+    @pytest.mark.parametrize('value', [0, None, '', False, True])
+    def test_d6_only_literal_false_may_close(tmp_path, value):
+        env = Env(tmp_path)
+        open_four(env)
+        raw = env.raw()
+        raw['checks'] = {'sw_a': {'enabled': value}}
+        cfg = Config({**DEFAULTS, **raw})
+        built = registry.build(cfg.raw, only=['sw_a'])
+        w = Worker(cfg, FakeRpc(env.chain), DB(cfg.db_path), env.notifier, clock=env.clock, checks=built)
+        w.bootstrap()
+        rows = list(w.db.conn.execute("SELECT state FROM incidents WHERE check_id='sw_a'"))
+        expected = 'disabled' if value is False else 'open'
+>       assert [r[0] for r in rows] == [expected] * 4, f'D6: enabled={value!r} must yield {expected}, actual={[r[0] for r in rows]}'
+E       AssertionError: D6: enabled='' must yield open, actual=['disabled', 'disabled', 'disabled', 'disabled']
+E       assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+E         
+E         At index 0 diff: 'disabled' != 'open'
+E         
+E         Full diff:
+E           [
+E         -     'open',
+E         -     'open',
+E         -     'open',
+E         -     'open',
+E         +     'disabled',
+E         +     'disabled',
+E         +     'disabled',
+E         +     'disabled',
+E           ]
+
+reconcile/tests/test_cp1_independent.py:37: AssertionError
+=========================== short test summary info ============================
+FAILED reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[0] - AssertionError: D6: enabled=0 must yield open, actual=['disabled', 'disabled', 'disabled', 'disabled']
+assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+  
+  At index 0 diff: 'disabled' != 'open'
+  
+  Full diff:
+    [
+  -     'open',
+  -     'open',
+  -     'open',
+  -     'open',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+    ]
+FAILED reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[None] - AssertionError: D6: enabled=None must yield open, actual=['disabled', 'disabled', 'disabled', 'disabled']
+assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+  
+  At index 0 diff: 'disabled' != 'open'
+  
+  Full diff:
+    [
+  -     'open',
+  -     'open',
+  -     'open',
+  -     'open',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+    ]
+FAILED reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[] - AssertionError: D6: enabled='' must yield open, actual=['disabled', 'disabled', 'disabled', 'disabled']
+assert ['disabled', 'disabled', 'disabled', 'disabled'] == ['open', 'open', 'open', 'open']
+  
+  At index 0 diff: 'disabled' != 'open'
+  
+  Full diff:
+    [
+  -     'open',
+  -     'open',
+  -     'open',
+  -     'open',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+  +     'disabled',
+    ]
+========================= 3 failed, 8 passed in 0.23s ==========================

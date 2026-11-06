@@ -1,0 +1,81 @@
+reconcile/alerts.py:98:            "SELECT * FROM incidents WHERE ikey=? AND state='open'", (incident_key(check, key),)
+reconcile/alerts.py:173:        return self.db.conn.execute("SELECT 1 FROM incidents WHERE id=?", (inc_id,)).fetchone() is not None
+reconcile/alerts.py:180:            "SELECT * FROM incidents WHERE check_id=? AND state='open'", (check,)).fetchall()
+reconcile/alerts.py:217:                "SELECT * FROM incidents WHERE state='open' AND notify=1 AND last_alert_at IS NOT NULL").fetchall():
+reconcile/alerts.py:249:            "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity "
+reconcile/metrics.py:47:        "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity").fetchall()
+reconcile/checks/m5_eb_desync.py:310:        while db.conn.execute("SELECT 1 FROM m5_incidents WHERE id=? UNION SELECT 1 FROM incidents WHERE id=?",
+reconcile/checks/m4_conservation_deficit.py:231:        return ctx.db.conn.execute("SELECT 1 FROM incidents WHERE check_id=? AND key=? AND state='open'",
+reconcile/checks/m1_stale_tuple.py:380:        return {r[0] for r in db.conn.execute("SELECT key FROM incidents WHERE check_id = ? AND state = 'open'",
+reconcile/checks/m1_stale_tuple.py:384:        return {r[0] for r in db.conn.execute("SELECT DISTINCT key FROM incidents WHERE check_id = ? AND state = "
+reconcile/checks/m1_stale_tuple.py:388:        return db.conn.execute("SELECT * FROM incidents WHERE check_id = ? AND key = ? AND state = 'open'",
+reconcile/checks/m2_operator_capacity.py:123:                "SELECT DISTINCT key FROM incidents WHERE check_id = ? AND state = 'resolved' AND resolved_block > ?",
+reconcile/checks/m2_operator_capacity.py:135:        open_keys = {r[0] for r in db.conn.execute("SELECT key FROM incidents WHERE check_id = ? AND state = 'open'",
+reconcile/checks/m2_operator_capacity.py:179:                    row = db.conn.execute("SELECT * FROM incidents WHERE check_id = ? AND key = ? AND state = 'open'",
+reconcile/checks/m6_legacy_coverage.py:109:        "SELECT key, severity, title, body, subject, evidence, revision FROM incidents "
+reconcile/checks/m3_liquidation_zone.py:310:        inc = ctx.db.conn.execute("SELECT subject FROM incidents WHERE check_id=? AND key=? AND state='open'",
+reconcile/tests/test_switches.py:107:        return [dict(r) for r in self.w.db.conn.execute(f"SELECT * FROM incidents {where} ORDER BY rowid", args)]
+reconcile/tests/test_switches.py:582:            "SELECT ikey, COUNT(*) FROM incidents WHERE state='open' GROUP BY ikey HAVING COUNT(*) > 1").fetchall()
+reconcile/tests/test_m2.py:46:    return sorted(r[0] for r in w.db.conn.execute("SELECT key FROM incidents WHERE check_id='m2' AND state='open'"))
+reconcile/tests/test_m2.py:286:    state = w.db.conn.execute("SELECT state FROM incidents WHERE key='velocity:1'").fetchone()[0]
+reconcile/tests/test_reorg_state.py:273:    ids = [r["id"] for r in w.db.conn.execute("SELECT id FROM incidents ORDER BY opened_at, rowid")]
+reconcile/tests/test_m1_receipts.py:122:    inc = w.db.conn.execute("SELECT * FROM incidents WHERE check_id='m1'").fetchone()
+reconcile/tests/test_m6.py:27:        "SELECT * FROM incidents WHERE check_id='m6' AND state=? ORDER BY opened_block", (state,))]
+reconcile/tests/test_m6.py:863:            "SELECT id, key, state FROM incidents WHERE check_id='m6'")}
+reconcile/tests/test_qa3_appendix_b.py:78: assert w.db.conn.execute("SELECT count(*) FROM incidents WHERE state='open'").fetchone()[0]==1
+reconcile/tests/test_qa3_appendix_b.py:80: rows=[dict(r) for r in w.db.conn.execute('SELECT id,state,opened_block,last_seen_block FROM incidents')]
+reconcile/tests/qa3_orphan_repro.py:16:result={'checkpoint':w.checkpoint(),'status':w.status(),'healthy':json.loads((p/'eb.status.json').read_text())['healthy'],'logs':w.db.conn.execute('SELECT COUNT(*) FROM logs').fetchone()[0], 'incidents':[dict(r) for r in w.db.conn.execute('SELECT id,state,severity,alerts FROM incidents')], 'm5_incidents':[dict(r) for r in w.db.conn.execute('SELECT id,state,kind FROM m5_incidents')], 'evaluations':[dict(r) for r in w.db.conn.execute('SELECT block,status,ref_block FROM evaluations')],'outbox':[dict(r) for r in w.db.conn.execute('SELECT key,kind,severity FROM outbox')]}
+reconcile/tests/test_m7.py:30:        "SELECT * FROM incidents WHERE check_id='m7' AND state=?", (state,))}
+reconcile/tests/test_m7.py:799:            "SELECT * FROM incidents WHERE check_id='m7' ORDER BY rowid")}
+reconcile/tests/test_m9_m10_m11_sweep.py:433:        row = u.w.db.conn.execute("SELECT evidence FROM incidents WHERE check_id='m11' AND key='state-mismatch' "
+reconcile/tests/test_m8.py:43:    return [dict(r) for r in w.db.conn.execute("SELECT * FROM incidents WHERE state='open'")]
+reconcile/tests/test_m8.py:136:    assert w4.db.conn.execute("SELECT COUNT(*) FROM incidents WHERE state='open'").fetchone()[0] == 1
+reconcile/tests/test_m8.py:149:    assert alerts(w) == [] and w.db.conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+reconcile/tests/test_m8.py:312:    assert alerts(w) == [] and w.db.conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+reconcile/tests/test_reorg_sweep.py:266:                "SELECT * FROM incidents WHERE state='open'")}
+reconcile/tests/test_reorg_sweep.py:272:                inc = w.db.conn.execute("SELECT id FROM incidents WHERE state='open' AND check_id=? AND key=?",
+reconcile/tests/test_reorg_sweep.py:298:        fw_open = {r[0] for r in w.db.conn.execute("SELECT id FROM incidents WHERE state='open' AND check_id='m5'")}
+reconcile/tests/test_m12.py:64:    row = w.db.conn.execute("SELECT key FROM incidents WHERE id=?", (inc_id,)).fetchone()
+reconcile/tests/test_m12.py:69:    return {r["key"]: r["severity"] for r in w.db.conn.execute("SELECT * FROM incidents WHERE state='open'")}
+reconcile/tests/test_m12.py:74:    row = w.db.conn.execute("SELECT evidence FROM incidents WHERE key=? ORDER BY rowid DESC", (key,)).fetchone()
+reconcile/tests/test_m12.py:477:    assert alerts(w) == [] and w.db.conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+reconcile/tests/test_m12.py:1003:            incidents = [tuple(r) for r in self.w.db.conn.execute("SELECT * FROM incidents ORDER BY id")]
+reconcile/tests/test_m12.py:1015:            assert [tuple(r) for r in self.w.db.conn.execute("SELECT * FROM incidents ORDER BY id")] == incidents
+reconcile/tests/test_m12.py:1017:        keys = {r[0]: r[1] for r in self.w.db.conn.execute("SELECT id, key FROM incidents")}
+reconcile/tests/test_m12.py:1144:    keys = {r[0]: r[1] for r in w.db.conn.execute("SELECT id, key FROM incidents")}
+reconcile/tests/test_m12.py:1257:    inc = w.db.conn.execute("SELECT evidence FROM incidents WHERE key=?", (f"{ORACLE}:runway",)).fetchone()
+reconcile/tests/test_m13.py:56:    keys = {r["id"]: r["key"] for r in w.db.conn.execute("SELECT id, key FROM incidents")}
+reconcile/tests/test_m13.py:65:    return sorted(r[0] for r in w.db.conn.execute("SELECT key FROM incidents WHERE state='open'"))
+reconcile/tests/test_m13.py:464:    (seen,) = [r[0] for r in w.db.conn.execute("SELECT last_seen_block FROM incidents WHERE state='open'")]
+reconcile/tests/test_m13.py:695:    inc_key = {r[0]: r[1] for r in w.db.conn.execute("SELECT id, key FROM incidents")}
+reconcile/tests/test_m13.py:709:    for k, state, ev in w.db.conn.execute("SELECT key, state, evidence FROM incidents ORDER BY rowid"):
+reconcile/tests/test_m13.py:916:    (ev,) = w.db.conn.execute("SELECT evidence FROM incidents WHERE key=?", (key,)).fetchone()
+reconcile/tests/test_m13.py:1247:    ev = json.loads(w.db.conn.execute('SELECT evidence FROM incidents WHERE key=?', (f'{RETIRED_SLOT4}:{b}',)).fetchone()[0])
+reconcile/tests/fixtures_liquidation.py:320:    return [dict(r) for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id=? ORDER BY rowid", (check,))]
+reconcile/tests/fixtures_oracle.py:269:    return [dict(r) for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id=? ORDER BY rowid", (check,))]
+reconcile/tests/test_m9.py:382:    assert w2.db.conn.execute("SELECT COUNT(*) FROM incidents WHERE check_id='m9'").fetchone()[0] == len(
+reconcile/tests/test_worker.py:138:    assert [r["state"] for r in w.db.conn.execute("SELECT state FROM incidents")] == ["resolved"]
+reconcile/tests/test_worker.py:152:    incidents = w.db.conn.execute("SELECT * FROM incidents").fetchall()
+reconcile/tests/test_worker.py:375:    ids = {r["id"] for r in w2.db.conn.execute("SELECT id FROM incidents")}
+reconcile/tests/test_m1_m2_sweep.py:65:    return {r["id"]: dict(r) for r in w.db.conn.execute("SELECT * FROM incidents WHERE check_id = ?", (check,))}
+reconcile/tests/test_m11.py:1665:        "SELECT severity, state FROM incidents WHERE check_id='m11' AND key=?", (key,)).fetchall()]
+reconcile/tests/test_framework.py:189:    assert w2.db.conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 1
+reconcile/tests/test_framework.py:201:    inc = w.db.conn.execute("SELECT check_id, ikey FROM incidents ORDER BY check_id").fetchall()
+reconcile/tests/test_framework.py:225:    inc = w.db.conn.execute("SELECT * FROM incidents").fetchone()
+reconcile/tests/test_framework.py:640:    inc = db.conn.execute("SELECT * FROM incidents").fetchone()
+reconcile/tests/test_framework.py:664:        w.db.conn.execute("DELETE FROM incidents")
+reconcile/tests/test_framework.py:678:    assert w2.db.conn.execute("SELECT COUNT(*) FROM incidents WHERE state='open'").fetchone()[0] == 1
+reconcile/tests/test_backfill.py:101:    opened = w.db.conn.execute("SELECT key, notify, alerts FROM incidents WHERE state='open'").fetchall()
+reconcile/tests/test_backfill.py:219:    assert w.db.conn.execute("SELECT state FROM incidents WHERE key='level'").fetchall() == []  # resolve of nothing
+reconcile/tests/test_backfill.py:374:    keys = sorted(w.db.conn.execute("SELECT key FROM incidents WHERE id=?", (r["incident_id"],)).fetchone()[0]
+reconcile/tests/test_backfill.py:479:    assert outbox(w, "severity='page'"), w.db.conn.execute("SELECT key, notify, state FROM incidents").fetchall()
+reconcile/tests/test_backfill.py:718:    inc = w.db.conn.execute("SELECT notify, alerts FROM incidents WHERE key='level' AND state='open'").fetchone()
+reconcile/tests/test_m1.py:54:    q = "SELECT * FROM incidents WHERE check_id='m1'" + (" AND state=?" if state else "") + " ORDER BY rowid"
+reconcile/tests/test_m1.py:59:    return json.loads(w.db.conn.execute("SELECT evidence FROM incidents WHERE check_id='m1' AND key=? "
+reconcile/tests/test_reorg_refind.py:56:    q = "SELECT * FROM incidents" + (" WHERE check_id=?" if check else "") + " ORDER BY opened_at, rowid"
+reconcile/scripts/fork_e2e.py:160:        r = self.w.db.conn.execute("SELECT * FROM incidents WHERE check_id=? AND key=? ORDER BY opened_at DESC",
+reconcile/eb_reconcile.py:233:            rows = self.db.conn.execute("SELECT id, evidence FROM incidents WHERE check_id=? AND state='open'",
+reconcile/eb_reconcile.py:632:                "SELECT key FROM incidents WHERE check_id=? AND state='open' AND last_seen_block>?",
+reconcile/eb_reconcile.py:795:                "SELECT check_id, severity, COUNT(*) FROM incidents WHERE state='open' GROUP BY check_id, severity")},
+reconcile/eb_reconcile.py:894:            "incidents": [dict(r) for r in db.conn.execute("SELECT * FROM incidents ORDER BY opened_at, rowid")],
+reconcile/eb_reconcile.py:911:            "SELECT id, check_id, key, severity, title, opened_block, last_seen_block, alerts FROM incidents "

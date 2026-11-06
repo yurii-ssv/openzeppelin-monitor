@@ -1,0 +1,233 @@
+FAIL test_disabled_check_closes_its_incidents_and_is_never_realerted[False]
+AssertionError: assert [{'key': 'sw_...n-1001', ...}] == []
+  
+  Left contains 5 more items, first extra item: {'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', ...}
+  Use -v to get more diff
+FAIL test_disabled_check_closes_its_incidents_and_is_never_realerted[True]
+AssertionError: assert [{'key': 'sw_...n-1001', ...}] == []
+  
+  Left contains 5 more items, first extra item: {'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', ...}
+  Use -v to get more diff
+FAIL test_a_check_that_is_merely_not_built_is_not_disabled
+AssertionError: assert ([{'key': 'sw_...e-1001', ...}] == []
+  
+  Left contains one more item: {'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800025320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', ...}
+  Use -v to get more diff)
+PASS test_digest_has_no_disabled_line_without_disabled_checks
+FAIL test_disable_enable_disable_round_trip_sends_nothing_at_start[False]
+AssertionError: assert ['open', 'open'] == ['disabled', 'disabled']
+  
+  At index 0 diff: 'open' != 'disabled'
+  Use -v to get more diff
+FAIL test_disable_enable_disable_round_trip_sends_nothing_at_start[True]
+AssertionError: assert ['open', 'open'] == ['disabled', 'disabled']
+  
+  At index 0 diff: 'open' != 'disabled'
+  Use -v to get more diff
+FAIL test_disabled_with_no_open_incident_writes_a_zero_marker
+assert (None, None) == (0, 1001)
+  
+  At index 0 diff: None != 0
+  Use -v to get more diff
+FAIL test_disabled_on_a_brand_new_database_anchors_at_start_block_minus_one
+assert ((None, None) == (999, 0)
+  
+  At index 0 diff: None != 999
+  Use -v to get more diff)
+FAIL test_reopened_key_at_the_closure_block_gets_a_new_incident_id
+AssertionError: assert ['open'] == ['disabled', 'open']
+  
+  At index 0 diff: 'open' != 'disabled'
+  Right contains one more item: 'open'
+  Use -v to get more diff
+FAIL test_enabled_check_realerts_and_resolves_beside_a_disabled_one
+AssertionError: assert ['sw_a', 'sw_b'] == ['sw_b']
+  
+  At index 0 diff: 'sw_a' != 'sw_b'
+  Left contains one more item: 'sw_b'
+  Use -v to get more diff
+FAIL test_build_order_unchanged_and_disabled_ids
+ImportError: cannot import name 'disabled' from 'checks.registry' (/private/tmp/cs-cp1-qa1-11vx0rjz/base/reconcile/checks/registry.py)
+FAIL test_built_check_with_the_same_id_is_never_disabled
+AttributeError: 'Worker' object has no attribute 'disabled'
+FAIL test_example_config_with_a_disabled_check_lists_it_in_status
+ImportError: cannot import name 'disabled' from 'checks.registry' (/private/tmp/cs-cp1-qa1-11vx0rjz/base/reconcile/checks/registry.py)
+FAIL test_reorg_while_disabled_rewinds_the_disabled_cursor[1]
+assert [1004, 2147483648] == [1002, 2147483648]
+  
+  At index 0 diff: 1004 != 1002
+  Use -v to get more diff
+FAIL test_reorg_while_disabled_rewinds_the_disabled_cursor[4]
+assert [1007, 2147483648] == [1005, 2147483648]
+  
+  At index 0 diff: 1007 != 1005
+  Use -v to get more diff
+FAIL test_two_reorgs_while_disabled_keep_the_lowest_ancestor
+AssertionError: assert None == 1004
+ +  where None = meta('reorg:sw_a')
+ +    where meta = <db.DB object at 0x108dd1b20>.meta
+ +      where <db.DB object at 0x108dd1b20> = <eb_reconcile.Worker object at 0x108dd1d90>.db
+ +        where <eb_reconcile.Worker object at 0x108dd1d90> = <test_switches.Env object at 0x108dd19a0>.w
+FAIL test_reenabled_after_a_reorg_while_disabled_replays_the_new_chain
+AssertionError: assert ([{'reasons': {'interval'}, 'events': [], 'inbox': [], 'block': 1005}] and 'reorg' in {'interval'})
+ +  where [{'reasons': {'interval'}, 'events': [], 'inbox': [], 'block': 1005}] = <test_switches._register.<locals>.Registered object at 0x108ddab40>.runs
+FAIL test_reenabled_check_never_touches_its_disabled_rows
+AssertionError: assert (['open'] == ['disabled']
+  
+  At index 0 diff: 'open' != 'disabled'
+  Use -v to get more diff)
+FAIL test_failed_closure_commits_nothing_and_the_next_start_closes_once
+Failed: DID NOT RAISE OSError
+FAIL test_rpc_outage_at_the_disabling_start_closes_later_and_never_realerts
+AssertionError: assert [{'key': 'sw_...e-1001', ...}] == []
+  
+  Left contains one more item: {'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800025380.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', ...}
+  Use -v to get more diff
+FAIL test_readonly_status_lists_the_disabled_check_and_closes_nothing
+KeyError: 'disabled'
+FAIL test_status_and_export_after_the_closure
+AssertionError: assert not [{'id': 'sw_a-kpage-1001', 'check_id': 'sw_a', 'key': 'kpage', 'severity': 'page', ...}, {'id': 'sw_a-ksilent-1001', '...arn', 'severity': 'warn', ...}, {'id': 'sw_a-kinfo-1002', 'check_id': 'sw_a', 'key': 'kinfo', 'severity': 'info', ...}]
+FAIL test_metrics_open_count_excludes_disabled_rows
+assert (['ssv_watch_open_incidents{check="sw_a",severity="info"} 1', 'ssv_watch_open_incidents{check="sw_a",severity="page"} 1', 'ssv_watch_open_incidents{check="sw_a",severity="warn"} 2'] and not ['ssv_watch_open_incidents{check="sw_a",severity="info"} 1', 'ssv_watch_open_incidents{check="sw_a",severity="page"} 1', 'ssv_watch_open_incidents{check="sw_a",severity="warn"} 2'])
+FAIL test_seeded_switch_sweep[0]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108df80b0>.meta
+ +      where <db.DB object at 0x108df80b0> = <eb_reconcile.Worker object at 0x108df8dd0>.db
+ +        where <eb_reconcile.Worker object at 0x108df8dd0> = <test_switches.Env object at 0x108b628d0>.w
+FAIL test_seeded_switch_sweep[1]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108dfad20>.meta
+ +      where <db.DB object at 0x108dfad20> = <eb_reconcile.Worker object at 0x108df83b0>.db
+ +        where <eb_reconcile.Worker object at 0x108df83b0> = <test_switches.Env object at 0x108b60200>.w
+FAIL test_seeded_switch_sweep[2]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108dfba40>.meta
+ +      where <db.DB object at 0x108dfba40> = <eb_reconcile.Worker object at 0x108df8e90>.db
+ +        where <eb_reconcile.Worker object at 0x108df8e90> = <test_switches.Env object at 0x108dfb410>.w
+FAIL test_seeded_switch_sweep[3]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108de3710>.meta
+ +      where <db.DB object at 0x108de3710> = <eb_reconcile.Worker object at 0x108a8e3c0>.db
+ +        where <eb_reconcile.Worker object at 0x108a8e3c0> = <test_switches.Env object at 0x108b60530>.w
+FAIL test_seeded_switch_sweep[4]
+AssertionError: (4, 'restart')
+assert not [{'id': 'sw_a-k1-1003', 'ikey': 'sw_a:k1', 'check_id': 'sw_a', 'key': 'k1', ...}]
+FAIL test_seeded_switch_sweep[5]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108dd8290>.meta
+ +      where <db.DB object at 0x108dd8290> = <eb_reconcile.Worker object at 0x108dd8d70>.db
+ +        where <eb_reconcile.Worker object at 0x108dd8d70> = <test_switches.Env object at 0x108dd90a0>.w
+FAIL test_seeded_switch_sweep[6]
+AssertionError: (6, 'outage')
+assert not [{'id': 'sw_a-k2-1001', 'ikey': 'sw_a:k2', 'check_id': 'sw_a', 'key': 'k2', ...}, {'id': 'sw_a-k3-1002', 'ikey': 'sw_a:k3', 'check_id': 'sw_a', 'key': 'k3', ...}]
+FAIL test_seeded_switch_sweep[7]
+AssertionError: (7, 'restart')
+assert not [{'id': 'sw_a-k2-1003', 'ikey': 'sw_a:k2', 'check_id': 'sw_a', 'key': 'k2', ...}]
+FAIL test_seeded_switch_sweep[8]
+AssertionError: (8, 'restart')
+assert not [{'id': 'sw_a-k1-1002', 'ikey': 'sw_a:k1', 'check_id': 'sw_a', 'key': 'k1', ...}, {'id': 'sw_a-k3-1004', 'ikey': 'sw_a:k3', 'check_id': 'sw_a', 'key': 'k3', ...}]
+FAIL test_seeded_switch_sweep[9]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108de1010>.meta
+ +      where <db.DB object at 0x108de1010> = <eb_reconcile.Worker object at 0x108de27e0>.db
+ +        where <eb_reconcile.Worker object at 0x108de27e0> = <test_switches.Env object at 0x108dd1f40>.w
+FAIL test_seeded_switch_sweep[10]
+AssertionError: (10, 'outage', [{'key': 'sw_a-k2-1001:realert:1', 'created_at': 1800025980.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a k2 — test
+  body
+  Incident: sw_a-k2-1001', ...}])
+assert not [{'key': 'sw_a-k2-1001:realert:1', 'created_at': 1800025980.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a k2 — test\nbody\nIncident: sw_a-k2-1001', ...}]
+FAIL test_seeded_switch_sweep[11]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108dfbf50>.meta
+ +      where <db.DB object at 0x108dfbf50> = <eb_reconcile.Worker object at 0x108dfb650>.db
+ +        where <eb_reconcile.Worker object at 0x108dfb650> = <test_switches.Env object at 0x108dd2540>.w
+FAIL test_seeded_switch_sweep[12]
+AssertionError: (12, 'restart')
+assert not [{'id': 'sw_a-k2-1001', 'ikey': 'sw_a:k2', 'check_id': 'sw_a', 'key': 'k2', ...}]
+FAIL test_seeded_switch_sweep[13]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x109066270>.meta
+ +      where <db.DB object at 0x109066270> = <eb_reconcile.Worker object at 0x109067050>.db
+ +        where <eb_reconcile.Worker object at 0x109067050> = <test_switches.Env object at 0x108dfb5c0>.w
+PASS test_seeded_switch_sweep[14]
+FAIL test_seeded_switch_sweep[15]
+AssertionError: (15, 'outage')
+assert not [{'id': 'sw_a-k3-1007', 'ikey': 'sw_a:k3', 'check_id': 'sw_a', 'key': 'k3', ...}]
+FAIL test_seeded_switch_sweep[16]
+AssertionError: (16, 'outage')
+assert not [{'id': 'sw_a-k2-1000', 'ikey': 'sw_a:k2', 'check_id': 'sw_a', 'key': 'k2', ...}]
+FAIL test_seeded_switch_sweep[17]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108de3f50>.meta
+ +      where <db.DB object at 0x108de3f50> = <eb_reconcile.Worker object at 0x108de3680>.db
+ +        where <eb_reconcile.Worker object at 0x108de3680> = <test_switches.Env object at 0x108dd8950>.w
+FAIL test_seeded_switch_sweep[18]
+AssertionError: (18, 'outage', [{'key': 'sw_a-k3-1004:realert:3', 'created_at': 1800179220.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a k3 — test
+  body
+  Incident: sw_a-k3-1004', ...}])
+assert not [{'key': 'sw_a-k3-1004:realert:3', 'created_at': 1800179220.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a k3 — test\nbody\nIncident: sw_a-k3-1004', ...}]
+FAIL test_seeded_switch_sweep[19]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108de0440>.meta
+ +      where <db.DB object at 0x108de0440> = <eb_reconcile.Worker object at 0x108ddae70>.db
+ +        where <eb_reconcile.Worker object at 0x108ddae70> = <test_switches.Env object at 0x108dd3230>.w
+FAIL test_seeded_switch_sweep[20]
+AssertionError: (20, 'restart')
+assert not [{'id': 'sw_a-k1-1002', 'ikey': 'sw_a:k1', 'check_id': 'sw_a', 'key': 'k1', ...}]
+FAIL test_seeded_switch_sweep[21]
+AssertionError: (21, 'restart')
+assert not [{'id': 'sw_a-k3-1001', 'ikey': 'sw_a:k3', 'check_id': 'sw_a', 'key': 'k3', ...}]
+FAIL test_seeded_switch_sweep[22]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x10906ade0>.meta
+ +      where <db.DB object at 0x10906ade0> = <eb_reconcile.Worker object at 0x108dfbb60>.db
+ +        where <eb_reconcile.Worker object at 0x108dfbb60> = <test_switches.Env object at 0x1090635f0>.w
+FAIL test_seeded_switch_sweep[23]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x109066150>.meta
+ +      where <db.DB object at 0x109066150> = <eb_reconcile.Worker object at 0x109060530>.db
+ +        where <eb_reconcile.Worker object at 0x109060530> = <test_switches.Env object at 0x1090668a0>.w
+FAIL test_seeded_switch_sweep[24]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108dfb560>.meta
+ +      where <db.DB object at 0x108dfb560> = <eb_reconcile.Worker object at 0x1090626c0>.db
+ +        where <eb_reconcile.Worker object at 0x1090626c0> = <test_switches.Env object at 0x1090664b0>.w
+FAIL test_seeded_switch_sweep[25]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x108dd1550>.meta
+ +      where <db.DB object at 0x108dd1550> = <eb_reconcile.Worker object at 0x108dd3f50>.db
+ +        where <eb_reconcile.Worker object at 0x108dd3f50> = <test_switches.Env object at 0x109064650>.w
+FAIL test_seeded_switch_sweep[26]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x109069340>.meta
+ +      where <db.DB object at 0x109069340> = <eb_reconcile.Worker object at 0x10906b4a0>.db
+ +        where <eb_reconcile.Worker object at 0x10906b4a0> = <test_switches.Env object at 0x109067560>.w
+FAIL test_seeded_switch_sweep[27]
+AssertionError: assert None is not None
+ +  where None = meta('disabled:sw_a')
+ +    where meta = <db.DB object at 0x10906a840>.meta
+ +      where <db.DB object at 0x10906a840> = <eb_reconcile.Worker object at 0x10906ac30>.db
+ +        where <eb_reconcile.Worker object at 0x10906ac30> = <test_switches.Env object at 0x108dda660>.w
+FAIL test_seeded_switch_sweep[28]
+AssertionError: (28, 'restart')
+assert not [{'id': 'sw_a-k2-1003', 'ikey': 'sw_a:k2', 'check_id': 'sw_a', 'key': 'k2', ...}, {'id': 'sw_a-k1-1005', 'ikey': 'sw_a:k1', 'check_id': 'sw_a', 'key': 'k1', ...}]
+FAIL test_seeded_switch_sweep[29]
+AssertionError: (29, 'outage', [{'key': 'sw_a-k2-1009:realert:3', 'created_at': 1800129180.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a k2 — test
+  body
+  Incident: sw_a-k2-1009', ...}])
+assert not [{'key': 'sw_a-k2-1009:realert:3', 'created_at': 1800129180.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a k2 — test\nbody\nIncident: sw_a-k2-1009', ...}]
