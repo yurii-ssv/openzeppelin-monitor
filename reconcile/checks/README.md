@@ -95,10 +95,11 @@ says which. Every run is at the current checkpoint block (intermediate blocks ar
 | (framework) | a parameter event was scanned, the parameters were re-read after a reorg, or they became readable again after a failed read (after `prepare`) | `params` |
 | (framework) | the chain was reorganised below the checkpoint (durable until the check's run commits, also across a restart; `ctx.reorg_ancestor`) | `reorg` |
 | (framework) | `once` / `step(force=True)` | `force` |
-| (framework) | silent backfill (D17): the check's one evaluation of history, pinned to the caught-up checkpoint (`ctx.block` is that block even when a failed run is retried later); its findings open, escalate and resolve incidents **without sending** (applied with `notify=False`) | `backfill`, `force` |
+| (framework) | silent backfill (D17): the check's one evaluation of history, pinned to the caught-up checkpoint (`ctx.block` is that block even when a failed run is retried later; a check re-enabled during the backfill, once that checkpoint is known, is evaluated again pinned at the checkpoint of its first step after the restart, D15); its findings open, escalate and resolve incidents **without sending** (applied with `notify=False`); repeated after a reorg below its pin (the check leaves `phase.evaluated`, D15) | `backfill`, `force` |
 | (framework) | the check's first run after its own silent evaluation, at a block after the caught-up checkpoint (in the same step when the silent run was a retry; the other checks need not have finished theirs): a forced full run; a key still reported is sent then (`open`), a key only found in history stays unsent | `live`, `force` |
-| (framework) | per-check catch-up (D9), on a `live` database with `backfill.enabled`: a check re-enabled (§7) or with no completed run on the database (new) evaluates everything since its last committed run once, silently: pinned to its catch-up block (the checkpoint of the first step it runs in, durable in `meta` `catchup:<id>`; kept when the run is retried or the worker restarts, and repeated there after a reorg below it), events from its cursor; findings applied with `notify=False` | `backfill`, `force` |
-| (framework) | the check's first run at a block after its catch-up block (in the same step when the silent run was a retry; another check's runs are never held): a forced full run; a key still reported is sent then (`open`), an event or condition of the catch-up only stays unsent; no message about the catch-up itself (D3); the record is deleted when it commits | `live`, `force` |
+| (framework) | per-check catch-up (D9), on a `live` database with `backfill.enabled`: a check re-enabled (§7) or with no completed run on the database (new) evaluates everything since its last committed run once, silently: pinned to its catch-up block (the checkpoint of the first step it runs in, durable in `meta` `catchup:<id>`; kept when the run is retried or the worker restarts), events from its cursor; findings applied with `notify=False` | `backfill`, `force` |
+| (framework) | silent repeat (D15) on a `live` database: a check whose event cursor a reorg rewound below its **silent boundary** (the higher of its last catch-up block, durable in `meta` `silent:<id>`, and the caught-up checkpoint `phase.history_block`), before or after its first live run, evaluates the new chain up to the boundary again silently (a `catchup:<id>` record with `cause: reorg`, or a `first_live` one set back to `pending`); a check that never completed a run is not concerned. Incidents last seen above the boundary (alerts of live runs) are not judged by it (§6.2, 6) | `backfill`, `force`, `reorg` |
+| (framework) | the check's first run at a block after its catch-up block, or after a silent repeat (in the same step when the silent run was a retry; another check's runs are never held): a forced full run; a key still reported is sent then (`open`), an event or condition of the catch-up only stays unsent; no message about the catch-up itself (D3); the record is deleted when it commits, the boundary `silent:<id>` stays | `live`, `force` |
 
 Cursors (`meta` keys `cursor:events:<id>`, `cursor:inbox:<id>`) are durable and advance only when a
 run commits, so no event or inbox entry is lost across a crash. A reorg rewinds event cursors to the
@@ -148,7 +149,9 @@ open incident closed as `disabled` by the next worker start (`bootstrap`, one tr
 `disabled` row is neither open nor resolved: never re-alerted, absent from the open counts (status, digest, metrics),
 never re-evaluated by the reorg re-find rule or `resolve_on_absence`, and never re-opened: a key found again once the
 check is re-enabled opens a new incident with a new id. Re-enabled, the check catches up silently (§3, per-check
-catch-up) and then alerts; nothing is sent about the switch itself, in either direction (D3). Most checks that read
+catch-up) and then alerts; nothing is sent about the switch itself, in either direction (D3). An event, or a condition
+that appeared and healed, at or below a check's silent boundary (§3) is never sent, also after a reorg: the incident
+it opened silently (`notify = 0`, `alerts = 0`) is re-found only by a silent run, which never unmutes it (D15). Most checks that read
 `incidents` themselves select `state='open'` (or `'resolved'`), so they ignore `disabled` rows; two match any state on purpose: M1's "already
 reported" test (`_reported`: a message naming the transaction was sent, whatever its incident's state later became, so
 a re-detected transient poisoning is not sent twice) and M5's incident-id uniqueness (a `disabled` id stays taken).
@@ -337,6 +340,14 @@ to the run with reason `reorg` (`ctx.reorg_ancestor` = A, set until that run com
    derive from `canonical = 1` rows at or below the checkpoint, so their inbox-derived warns (`revert:<address>`,
    `revert-rate`) can resolve in that reorg run and reopen once the entry is re-confirmed (a transient warn, a
    NOTE under D15).
+6. **Silent repeat below a silent boundary** (plan check-switches D15, §3). A reorg with ancestor A below a check's
+   silent boundary B makes the check's next run a silent one pinned at B (with `ctx.reorg_ancestor` = A) before any
+   live run. That run does not judge the incidents last seen above B (alerts of earlier live runs: it cannot see their
+   support): they are left out of `ctx.reorg_keys`, a finding or resolution for their key is not applied, and
+   `resolve_on_absence` keeps them; when it commits, `reorg:<id>` becomes B instead of being cleared, so the forced
+   live run after it is a reorg run from B (reasons `live`, `force`, `reorg`) and applies items 1–5 to them: re-found,
+   they stay open under their id without a new message; not re-found, they are resolved as "evidence left the
+   canonical chain" once. Events in (A, B] stay silent; events above B are live.
 
 Pattern (see `tests/test_reorg_sweep.py::Watch`, `tests/test_reorg_refind.py::FailedTxWatch`):
 
@@ -372,7 +383,9 @@ only) ← `checks.<id>`. A key not in `defaults` or an unknown check id is a sta
 registered check is enabled unless `"enabled": false`. `enabled`, when present, must be a JSON boolean (any other
 value is a startup error, D14); it is read at start (no live reload). `false`: the check is not built and its open
 incidents are closed as `disabled` at the next start (§4); `true` again (or removing the key): the check catches up
-silently, then alerts (§3). A check that is merely not built (tests' `only=`) is not disabled. Other worker
+silently, then alerts (§3; while the database is still in phase `backfill` and its caught-up checkpoint is known, the
+global path evaluates it again silently, pinned at the checkpoint of its first step after the restart). A check that is merely not built (tests'
+`only=`) is not disabled. Other worker
 sections: `alerts` (mode, env names of secrets, label, explorer, `realert_s`, `routes`, `health_realert_s`, `digest_interval_s`,
 `record_path`), `inbox` (`path`, `blockscout`, `enabled`; a missing file is health, §5.2), `inventory` (`api_url` — null disables
 the API —, `api_refresh_s`), `metrics` (`enabled`, `host`, `port`). See `../config.example.json`.

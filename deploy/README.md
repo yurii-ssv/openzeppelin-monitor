@@ -94,7 +94,11 @@ other checks do. A condition still true at that first live run (a low wallet, a 
 open M5 shortfall, a dissenting oracle that votes again) is sent then, as `open`; one that only existed in history
 (an old failed round, a past event) is never sent and stays visible in `status`/`export` as an incident with
 `alerts = 0`. Events up to the caught-up checkpoint are history, including failed transactions the Monitor wrote to
-the inbox during the backfill; every later block is live. A check whose silent run fails (an RPC error, a broken
+the inbox during the backfill; every later block is live. History stays silent after a chain reorganisation too: a
+reorg below the caught-up checkpoint (any depth the worker handles, before or after a check's first live run) makes
+the check evaluate the new chain up to there silently again before it alerts (while `backfill` it leaves
+`status.phase.evaluated`; once `live`, `status.checks.<id>.catchup` with `cause: "reorg"`), then its next run is a
+forced live one; alerts it already sent are not sent again. A check whose silent run fails (an RPC error, a broken
 input) raises its usual `check-error` health message (an RPC error counts as an RPC failure) and does not hold the
 other checks back; its silent run is retried every step, still pinned to the caught-up checkpoint (state read at
 that block: after more than about 100 blocks this needs one endpoint of the failover list that serves historical
@@ -136,22 +140,29 @@ reorganisation still rewinds its event cursor; the replay happens when it is ena
 **Re-enable.** With `backfill.enabled` true (the default; the production config has it) on a database in phase
 `live`, the re-enabled check first catches up **silently**: its first run evaluates everything since its last
 committed run (the events of the disabled period from its cursor, the state at its catch-up block = the checkpoint of
-the first step after the restart) and opens, escalates and resolves incidents without a message. Its first run at a
+the first step after the restart, never below an earlier catch-up block) and opens, escalates and resolves incidents without a message. Its first run at a
 later block (normally the next step) is forced and sends what it still reports: a condition still true then is sent
 **once**, as `open`, under a new incident id. An event of the disabled period and a condition that appeared and
 healed while the check was off are never sent; the event stays visible in `export` as an incident with `alerts = 0`
 (a healed level condition leaves no incident). No message is sent about the re-enable itself. While it lasts,
 `status.checks.<id>.catchup` = `{"state": "pending" | "first_live", "history_block": <catch-up block>, "since",
-"cause": "reenabled" | "new"}`; it disappears when the first live run commits. The catch-up survives restarts (it is
+"cause": "reenabled" | "new" | "reorg"}`; it disappears when the first live run commits. The catch-up survives restarts (it is
 kept in the database with its block). If the catch-up run fails, the check raises its usual `check-error` health
 message (an RPC error counts as an RPC failure), keeps its catch-up block and is retried every step; the other checks
-alert as usual meanwhile. A reorganisation below the catch-up block before the first live run repeats the silent run
-on the new chain.
+alert as usual meanwhile. The catch-up block stays the check's silent boundary after the catch-up (`meta`
+`silent:<id>`): a reorganisation below it, before or after the first live run and of any depth the worker handles,
+repeats the silent run up to it on the new chain (`catchup.cause: "reorg"`), then the check runs live once more
+(forced): an event of the disabled period or of the catch-up is never sent, an alert already sent is not sent again
+and is resolved only if the new chain no longer supports it ("evidence left the canonical chain"), and a condition the
+new chain turns on and that is still true then is sent once.
 
 With `backfill.enabled: false` there is **no** catch-up: the re-enabled check's first run alerts on everything since
 its last run, i.e. every event of the disabled period is sent. Keep the backfill enabled in production. While a new
-database is still in phase `backfill`, a check enabled or disabled there is simply handled by the [global
-backfill](#backfill-phase-d17).
+database is still in phase `backfill`, the [global backfill](#backfill-phase-d17) handles the switch: a check
+disabled there is not waited for (the phase goes live without it; re-enabled later, it catches up as above); a check
+re-enabled there once the caught-up checkpoint is known leaves `status.phase.evaluated` (if it was there) and is
+evaluated again silently, pinned at the checkpoint of the first step after the restart (`status.checks.<id>.catchup`
+until then), so its disabled period is never sent; it alerts from the next block.
 
 **Monitor rules are separate.** `checks.<id>.enabled` switches only the worker check. M8, M10, M11 and M13 also have
 OpenZeppelin Monitor rules (`deploy/config/monitors/`, each with its own `"paused"` field) and M15 is Monitor-only,

@@ -100,7 +100,8 @@ Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --con
 - `once`: one step with every check forced, then exit (`--serve-metrics --hold N` keeps `/metrics` up N s)
 - `status`: phase (`backfill` with progress, or `live`), checkpoint, per-check last run, open incidents,
   undelivered alerts, `disabled` (the checks the config switches off, sorted), `checks.<id>.catchup` while a check
-  catches up (`state` `pending`|`first_live`, `history_block`, `since`, `cause`) (read-only: answers while a check runs)
+  catches up (`state` `pending`|`first_live`, `history_block`, `since`, `cause` `reenabled`|`new`|`reorg`) (read-only:
+  answers while a check runs)
 
 Disabling a check (`checks.<id>.enabled: false`, read at start; any value other than `true`/`false` is a
 configuration error: `run`, `once` and `verify-layout` stop with it before the database is opened or created, so no
@@ -116,8 +117,11 @@ event cursor and records its pending reorg ancestor (replayed when it is enabled
 again clears `disabled:<id>`; a key it finds again opens a new incident. With `backfill.enabled` (the default) on a
 live database, the re-enabled check, like a check new to the database, first catches up silently: its first run
 evaluates everything since its last committed run without a message, pinned to its catch-up block; its next run, at a
-later block, sends what is still true (once); events and conditions of the disabled period are never sent, and the
-switch itself is never announced. Runbook: [Disable / re-enable a monitor](../deploy/README.md#disable--re-enable-a-monitor).
+later block, sends what is still true (once); events and conditions of the disabled period are never sent (also
+after a later reorg below the catch-up block, which repeats the silent evaluation: `cause: reorg`), and the switch
+itself is never announced. Re-enabled while a new database still backfills (once its caught-up checkpoint is
+known), the check is evaluated again silently by the global backfill, pinned at the checkpoint of its first step after
+the start. Runbook: [Disable / re-enable a monitor](../deploy/README.md#disable--re-enable-a-monitor).
 - `export`: every incident and outbox message as JSON (soak evidence)
 - `audit`: M5 event-only history of every root window with post-S additions and matched removals
 - `verify-layout`: implementation, module addresses and codehashes against the pin

@@ -1,0 +1,32 @@
+label=known-red-global-on-9e94a1a
+revision=9e94a1a
+overlay=['reconcile/tests/test_catchup.py', 'reconcile/tests/test_history_silence.py']
+extra=[]
+select='(nf1 or nf2 or repeat_does or orphaned or condition_new or healed or survives or above_the) and global or while_backfilling_repeats'
+sabotage=None
+exit=1
+summary=11 failed, 1 passed, 29 deselected in 0.33s
+
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0]: FAIL
+    AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2]: FAIL
+    AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12]: FAIL
+    AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global]: FAIL
+    AssertionError: history replay escaped silence: ['ev:1004', 'ev:1005']
+test_repeat_does_not_resolve_or_resend_what_a_live_run_already_sent[above_the_boundary-global]: FAIL
+    AssertionError: [('open', 'ev:1001')]
+test_repeat_does_not_resolve_or_resend_what_a_live_run_already_sent[history_height-global]: FAIL
+    AssertionError: [('open', 'ev:1001')]
+test_live_event_orphaned_by_a_reorg_below_the_boundary_is_resolved_once_by_the_live_run[global]: FAIL
+    AssertionError: assert [('open', 'cu...v:1004-1004')] == [('resolved',...v:1004-1004')]
+test_condition_new_on_the_replacing_chain_below_the_boundary_and_still_true_is_sent_once[global]: FAIL
+    AssertionError: assert ['ev:1001', 'lv2'] == ['lv2']
+test_condition_healed_by_the_first_live_run_stays_silent_after_a_deep_reorg[global]: FAIL
+    AssertionError: ['ev:1001']
+test_repeat_survives_a_failure_and_a_restart_and_never_delays_another_check[global]: FAIL
+    AssertionError: assert (['ev:1001'] == []
+test_reorg_above_the_boundary_needs_no_repeat[global]: PASS
+test_reorg_below_the_caught_up_checkpoint_while_backfilling_repeats_the_silent_run: FAIL
+    AssertionError: [('open', 'ev:1004'), ('open', 'ev:1007')]

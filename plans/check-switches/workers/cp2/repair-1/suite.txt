@@ -1,0 +1,29 @@
+CP2 repair 1 — suite, ruff, guarded hashes (2026-11-06T14:19:02Z)
+base HEAD: 718606c5ee2d43c260240101c06642340cabc1a0 (branch cs/cp2-r1); candidate = base + the working-tree changes committed in the repair commit (file hashes below)
+python: Python 3.12.15; pytest 9.1.1; ruff 0.17.1
+
+## sha256 of the candidate files
+3db3e47be97d49930398ec8bdcfa81cd69c60bdb8820ede0aabea8ce5f18c34a  reconcile/eb_reconcile.py
+047c0c4c15ed7db91ba2609d104d9d637fe8028921be44666567f67ce8fc3cdd  reconcile/alerts.py
+4e2c2302b63d5710067adecd3d03fb3dfecc4cf48f1d05eabb61b6dd61a628af  reconcile/tests/test_catchup.py
+0d72f17d392c2a310e1eca1e2c3a18b08cfe6ebd096796af80328daf43cc4da1  reconcile/tests/test_history_silence.py
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35  reconcile/tests/test_backfill.py
+40a511bbef98b8182d929e7e834ab93110fbe2bd63182b50a670ff2852a81b29  reconcile/tests/test_switches.py
+3ce85de014ae10dccf88f0cb99ab04735bb54205641ec43a7923ba6c1104783d  reconcile/tests/harness.py
+bc1e363d366cf57849220c76d00f0d82ac180fb52ebb576a4532f71868d66bb2  reconcile/db.py
+6746a035f737fb4bdb7717510a69891eac8cab03357ad2d9b114034de88af72b  reconcile/metrics.py
+58c5dab80551609e8fffc33ee50f8e3f5c9a0dd192efd7da8d5df09255cdbd45  reconcile/checks/registry.py
+
+## guarded paths vs 718606c (empty = unchanged)
+(end)
+
+## reconcile/.venv/bin/python -m pytest -q reconcile/tests
+2505 passed in 60.76s (0:01:00)
+exit=0
+
+## targeted: test_history_silence.py test_catchup.py test_backfill.py test_switches.py
+259 passed in 3.15s
+
+## reconcile/.venv/bin/ruff check reconcile
+All checks passed!
+exit=0
