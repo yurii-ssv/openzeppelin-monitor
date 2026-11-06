@@ -141,3 +141,10 @@ Decision: CP2 REPAIR (third repair by Marco's decision); then composed QA round 
 2026-11-06 · coordinator
 Outcome: packet sha256 `2d0968ee…`. Task `task_b7882b055c18`, Dispatch `ctx_582f1c65dc6a`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-r2`, HEAD `ff3841f` = base; claude/opus/high = `launch.effective`; turn started.
 Decision: next, on `worker_done`: scope check (`alerts.py` `_apply_one` only), composed Codex QA round 3.
+
+<a id="event-0021"></a>
+## Event 0021 — CP2 repair 2 done; composed QA round 3 dispatched
+
+2026-11-06 · coordinator
+Outcome: `worker_done` (msg `msg_0e2444ea42a4`, Dispatch `ctx_582f1c65dc6a`): commit `4205b00` on `cs/cp2-r2` (parent `ff3841f`), tree clean; diff 9 files: `alerts.py` (`_apply_one` id allocation + `_id_state` helper), `checks/README.md` §4, new `tests/test_switch_ids.py` (14 cases incl. QA's real-M5 reproducer), `workers/cp2/repair-2/**` — within the packet. Claims: reproducer red on `ff3841f` (0 pages, ValueError), green now; QA's `test_qa2_deep.py` 28/28; suite 2,519 passed, ruff clean, `test_backfill.py` byte-identical; 5 falsifiers; QN2 unchanged by D16. Residual risks: no real-M5 reorg+UNKNOWN re-enable case; §6.1 "must still be unique" wording outside §4. QA-3 packet `workers/cp2/packet-qa-3.md`.
+Decision: start composed Codex QA round 3 on `4205b00`.
