@@ -1,0 +1,117 @@
+revision=ff3841ffd1bfc2b7b6478f8c3941aefaa5d27833
+scratch=/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos
+command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/reconcile/.venv/bin/python', '-m', 'pytest', '-vv', '-s', 'reconcile/tests/test_qa2_deep.py', '--junitxml', '/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/plans/check-switches/qa/cp2-round-2/new-probes-final.xml', '--basetemp', '/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/test-tmp']
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos
+collecting ... collected 15 items
+
+reconcile/tests/test_qa2_deep.py::test_m1_live_poison_after_deep_repeat[True-global] {'m1': 'global', 'supported': True, 'pin': 1001, 'actual': [], 'rows': [('open', 'warn')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m1_live_poison_after_deep_repeat[True-percheck] {'m1': 'percheck', 'supported': True, 'pin': 1001, 'actual': [], 'rows': [('open', 'warn')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m1_live_poison_after_deep_repeat[False-global] {'m1': 'global', 'supported': False, 'pin': 1001, 'actual': [('info', 'resolved')], 'rows': [('resolved', 'warn')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m1_live_poison_after_deep_repeat[False-percheck] {'m1': 'percheck', 'supported': False, 'pin': 1001, 'actual': [('info', 'resolved')], 'rows': [('resolved', 'warn')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m1_historical_transient_stays_silent_across_deep_repeat[global] PASSED
+reconcile/tests/test_qa2_deep.py::test_m1_historical_transient_stays_silent_across_deep_repeat[percheck] PASSED
+reconcile/tests/test_qa2_deep.py::test_m2_live_condition_after_global_repeat_with_empty_api[True] {'m2_supported': True, 'actual': [], 'marker': None}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m2_live_condition_after_global_repeat_with_empty_api[False] {'m2_supported': False, 'actual': [('info', 'resolved')], 'marker': None}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_state_after_global_repeat[True-clean] {'boundary': 'clean', 'supported': True, 'pin': 1003, 'actual': [], 'original': [('EB94775-228316cb1e-1005', 'confirmed:1005')], 'internal': [('EB94775-228316cb1e-1005', 'open', 'confirmed')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_state_after_global_repeat[True-latent] {'boundary': 'latent', 'supported': True, 'pin': 1007, 'actual': [], 'original': [('EB94775-228316cb1e-1004', 'confirmed:1004')], 'internal': [('EB94775-228316cb1e-1004', 'resolved', 'confirmed'), ('EB94775-228316cb1e-1004-2', 'open', 'confirmed')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_state_after_global_repeat[True-confirmed] {'boundary': 'confirmed', 'supported': True, 'pin': 1008, 'actual': [], 'original': [('EB94775-228316cb1e-1004', 'confirmed:1004')], 'internal': [('EB94775-228316cb1e-1004', 'open', 'confirmed')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_state_after_global_repeat[False-clean] {'boundary': 'clean', 'supported': False, 'pin': 1003, 'actual': [('info', 'resolved')], 'original': [('EB94775-228316cb1e-1005', 'confirmed:1005')], 'internal': [('EB94775-228316cb1e-1005', 'resolved', 'confirmed')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_state_after_global_repeat[False-latent] {'boundary': 'latent', 'supported': False, 'pin': 1007, 'actual': [('info', 'resolved')], 'original': [('EB94775-228316cb1e-1004', 'confirmed:1004')], 'internal': [('EB94775-228316cb1e-1004', 'resolved', 'confirmed')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_state_after_global_repeat[False-confirmed] {'boundary': 'confirmed', 'supported': False, 'pin': 1008, 'actual': [('info', 'resolved')], 'original': [('EB94775-228316cb1e-1004', 'confirmed:1004')], 'internal': [('EB94775-228316cb1e-1004', 'resolved', 'confirmed')]}
+PASSED
+reconcile/tests/test_qa2_deep.py::test_m5_real_disabled_key_gets_new_id_and_first_live_page {'m5_reenable_messages': [], 'record_after_silent': {'state': 'pending', 'history_block': 1010, 'since': 1793975281.9744918, 'cause': 'reenabled'}, 'record_now': {'state': 'pending', 'history_block': 1010, 'since': 1793975281.9744918, 'cause': 'reenabled'}, 'run': {'at': 1793975281.971508, 'block': 1009, 'reasons': ['events', 'interval'], 'findings': 1, 'rpc_calls': {'eth_getStorageAt': 4, 'eth_getTransactionByHash': 1}, 'errors': 2, 'last_error': 'ValueError: incident id EB94775-228316cb1e-1005 already exists; a check must propose unique ids'}, 'health': ['🩺 [HEALTH] SSV watch: check-error — test\nCheck m5 raised ValueError: incident id EB94775-228316cb1e-1005 already exists; a check must propose unique ids']}
+FAILED
+
+=================================== FAILURES ===================================
+__________ test_m5_real_disabled_key_gets_new_id_and_first_live_page ___________
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/test-tmp/test_m5_real_disabled_key_gets0')
+
+    def test_m5_real_disabled_key_gets_new_id_and_first_live_page(tmp_path):
+        chain, w = make_m5(tmp_path, backfill={'enabled': True}, max_log_range=1)
+        ssv = MiniSSV(chain)
+        ssv.register(EB_OWNER, EB_OPS, pubkeys(1, 1))
+        ref = chain.number
+        chain.mine()
+        ssv.commit(ref)
+        ssv.update(EB_OWNER, EB_OPS, 2048)
+        advance(w)
+        chain.mine()
+        advance(w)
+        ref = chain.number
+        chain.mine()
+        dummy = pubkeys(63, 100)
+        ssv.register(EB_OWNER, EB_OPS, dummy)
+        ssv.commit(ref)
+        ssv.update(EB_OWNER, EB_OPS, 2048)
+        ssv.remove(EB_OWNER, EB_OPS, dummy)
+        advance(w)
+        (old_page,) = [m for m in sent(w, 'm5') if m['severity']=='page']
+        w = flip(w, chain, 'm5', False)
+        frozen = dict(w.db.conn.execute('SELECT * FROM incidents WHERE id=?', (old_page['incident_id'],)).fetchone())
+        assert frozen['state'] == 'disabled'
+        chain.mine()
+        advance(w)
+        w = flip(w, chain, 'm5', True)
+        before = len(sent(w, 'm5'))
+        advance(w)
+        silent_record = w.db.meta('catchup:m5')
+        chain.mine()
+        advance(w)
+        actual = [(m['severity'], m['kind'], m['incident_id']) for m in sent(w, 'm5', before)]
+        print({'m5_reenable_messages': actual, 'record_after_silent': silent_record,
+               'record_now': w.db.meta('catchup:m5'), 'run': w.db.meta('run:m5'),
+               'health': [m['text'] for m in outbox(w, "kind='health'")]})
+>       assert len(actual) == 1 and actual[0][:2] == ('page', 'open'), 'surviving M5 condition missed its first-live page'
+E       AssertionError: surviving M5 condition missed its first-live page
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+reconcile/tests/test_qa2_deep.py:212: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    eb-reconcile:eb_reconcile.py:748 check m5 failed at block 1010
+Traceback (most recent call last):
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/eb_reconcile.py", line 730, in run_checks
+    self.run_check(check, at, self.due(check, at, now, force))
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/eb_reconcile.py", line 796, in run_check
+    self.alerts.apply([replace(f, notify=False) if mute and not f.resolve else f for f in findings
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/alerts.py", line 105, in apply
+    sent += self._apply_one(f, block)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/alerts.py", line 132, in _apply_one
+    raise ValueError(f"incident id {inc_id} already exists; a check must propose unique ids")
+ValueError: incident id EB94775-228316cb1e-1005 already exists; a check must propose unique ids
+ERROR    eb-reconcile:eb_reconcile.py:748 check m5 failed at block 1011
+Traceback (most recent call last):
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/eb_reconcile.py", line 730, in run_checks
+    self.run_check(check, at, self.due(check, at, now, force))
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/eb_reconcile.py", line 796, in run_check
+    self.alerts.apply([replace(f, notify=False) if mute and not f.resolve else f for f in findings
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/alerts.py", line 105, in apply
+    sent += self._apply_one(f, block)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/cs-cp2-qa2-new-probes-final-22vx8kos/reconcile/alerts.py", line 132, in _apply_one
+    raise ValueError(f"incident id {inc_id} already exists; a check must propose unique ids")
+ValueError: incident id EB94775-228316cb1e-1005 already exists; a check must propose unique ids
+- generated xml file: /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/plans/check-switches/qa/cp2-round-2/new-probes-final.xml -
+=========================== short test summary info ============================
+FAILED reconcile/tests/test_qa2_deep.py::test_m5_real_disabled_key_gets_new_id_and_first_live_page - AssertionError: surviving M5 condition missed its first-live page
+assert (0 == 1)
+ +  where 0 = len([])
+========================= 1 failed, 14 passed in 0.41s =========================
+
+exit=1

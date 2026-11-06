@@ -1,0 +1,26 @@
+reconcile.tests.test_qa2_deep::test_m1_live_poison_after_deep_repeat[True-global]: PASS
+reconcile.tests.test_qa2_deep::test_m1_live_poison_after_deep_repeat[True-percheck]: PASS
+reconcile.tests.test_qa2_deep::test_m1_live_poison_after_deep_repeat[False-global]: PASS
+reconcile.tests.test_qa2_deep::test_m1_live_poison_after_deep_repeat[False-percheck]: PASS
+reconcile.tests.test_qa2_deep::test_m1_historical_transient_stays_silent_across_deep_repeat[global]: PASS
+reconcile.tests.test_qa2_deep::test_m1_historical_transient_stays_silent_across_deep_repeat[percheck]: PASS
+reconcile.tests.test_qa2_deep::test_m2_live_condition_after_global_repeat_with_empty_api[True]: PASS
+reconcile.tests.test_qa2_deep::test_m2_live_condition_after_global_repeat_with_empty_api[False]: FAIL
+AssertionError: assert [] == [('info', 'resolved')]
+  
+  Right contains one more item: ('info', 'resolved')
+  
+  Full diff:
+  + []
+  - [
+  -     (
+  -         'info',
+  -         'resolved',
+  -     ),
+  - ]
+reconcile.tests.test_qa2_deep::test_m5_real_state_after_global_repeat[True-clean]: PASS
+reconcile.tests.test_qa2_deep::test_m5_real_state_after_global_repeat[True-latent]: PASS
+reconcile.tests.test_qa2_deep::test_m5_real_state_after_global_repeat[True-confirmed]: PASS
+reconcile.tests.test_qa2_deep::test_m5_real_state_after_global_repeat[False-clean]: PASS
+reconcile.tests.test_qa2_deep::test_m5_real_state_after_global_repeat[False-latent]: PASS
+reconcile.tests.test_qa2_deep::test_m5_real_state_after_global_repeat[False-confirmed]: PASS

@@ -1,0 +1,15 @@
+cp1-independent: total=107 pass=107 fail=0 error=0 skip=0
+cp2-independent-final: total=21 pass=21 fail=0 error=0 skip=0
+real-check-composition: total=2 pass=2 fail=0 error=0 skip=0
+new-probes-complete: total=28 pass=27 fail=1 error=0 skip=0
+m5-restart-proof: total=1 pass=0 fail=1 error=0 skip=0
+m5-prior-candidate: total=1 pass=0 fail=1 error=0 skip=0
+cp1-red-on-code-base: total=82 pass=2 fail=80 error=0 skip=0
+cp2-red-on-cp1: total=69 pass=29 fail=40 error=0 skip=0
+round1-repro-red-final: total=21 pass=10 fail=11 error=0 skip=0
+suite-unrestricted: 2505 PASS / 0 skip / exit 0
+suite sandbox: 2495 PASS / 10 socket-bind PermissionErrors / exit 1
+targeted S+C+H+B: 259 PASS / exit 0
+ruff: PASS / exit 0
+audited candidate=ff3841ffd1bfc2b7b6478f8c3941aefaa5d27833
+verdict=FAIL; QF4 BLOCKING missed M5 page; QF1-QF3 and DF1 closed; QN1 disposed exception; QN2 owned NOTE

@@ -1,0 +1,193 @@
+revision=ff3841ffd1bfc2b7b6478f8c3941aefaa5d27833
+scratch=/private/tmp/cs-cp2-qa2-cp1-independent-gupsv53v
+command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/reconcile/.venv/bin/python', '-m', 'pytest', '-vv', '-s', 'reconcile/tests/test_cp1_independent.py', 'reconcile/tests/test_cp1_siblings.py', '--junitxml', '/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/plans/check-switches/qa/cp2-round-2/cp1-independent.xml', '--basetemp', '/private/tmp/cs-cp2-qa2-cp1-independent-gupsv53v/test-tmp']
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp2-qa2-cp1-independent-gupsv53v
+collecting ... collected 107 items
+
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[0] PASSED
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[None] PASSED
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[] PASSED
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[False] PASSED
+reconcile/tests/test_cp1_independent.py::test_d6_only_literal_false_may_close[True] PASSED
+reconcile/tests/test_cp1_independent.py::test_partial_closure_bad_evidence_rolls_back_all_checks PASSED
+reconcile/tests/test_cp1_independent.py::test_resolved_rows_and_times_are_preserved PASSED
+reconcile/tests/test_cp1_independent.py::test_marker_only_unregistered_id_is_rewound_and_persists_restart PASSED
+reconcile/tests/test_cp1_independent.py::test_identity_failure_closes_nothing PASSED
+reconcile/tests/test_cp1_independent.py::test_cli_bootstrap_callers_close_silently[once] {
+ "identity": {
+  "chain_id": 1,
+  "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1",
+  "start_block": 1000
+ },
+ "schema_version": 1,
+ "checkpoint": {
+  "block": 1002,
+  "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"
+ },
+ "lag_blocks": 0,
+ "phase": {
+  "phase": "live",
+  "since": 1800000000.0,
+  "first_live": [],
+  "checkpoint": 1002,
+  "target": 1002
+ },
+ "disabled": [
+  "sw_a"
+ ],
+ "checks": {
+  "m5": {
+   "at": 1793975040.496408,
+   "block": 1002,
+   "reasons": [
+    "force",
+    "interval"
+   ],
+   "findings": 0,
+   "rpc_calls": {},
+   "errors": 0,
+   "last_error": null,
+   "state": {
+    "block": 1002,
+    "at": 1793975040.496465,
+    "full": true,
+    "evaluated": 0,
+    "counts": {}
+   }
+  }
+ },
+ "params_block": null,
+ "reorg_pending": {},
+ "params": {
+  "enabled": false,
+  "ok": true,
+  "block": null,
+  "error": null
+ },
+ "inbox": {
+  "enabled": false,
+  "ok": true,
+  "path": null,
+  "error": null,
+  "held": 0,
+  "orphaned": 0
+ },
+ "open_incidents": {},
+ "undelivered": 0,
+ "monitor": {
+  "enabled": false
+ }
+}
+PASSED
+reconcile/tests/test_cp1_independent.py::test_cli_bootstrap_callers_close_silently[verify-layout] {
+ "block": 1002,
+ "ok": true,
+ "problems": []
+}
+PASSED
+reconcile/tests/test_cp1_independent.py::test_m1_disabled_transient_repair_orphaned_rebuilds_from_own_state PASSED
+reconcile/tests/test_cp1_independent.py::test_m2_disabled_hard_condition_reorg_empty_api_rebuilds_from_own_state PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry0-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry0-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry0-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry0-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry0-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry1-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry1-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry1-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry1-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry1-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry2-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry2-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry2-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry2-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry2-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry3-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry3-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry3-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry3-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry3-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry4-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry4-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry4-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry4-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry4-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry5-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry5-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry5-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry5-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry5-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry6-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry6-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry6-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry6-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry6-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry7-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry7-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry7-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry7-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry7-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-False-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-False-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-False-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-False-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-False-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-None-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-None-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-None-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-None-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-None-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry10-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry10-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry10-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry10-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-entry10-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a--run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a--once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a--verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a--status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a--direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-1-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-1-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-1-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-1-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[sw_a-1-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry13-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry13-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry13-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry13-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry13-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry14-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry14-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry14-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry14-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-entry14-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-False-run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-False-once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-False-verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-False-status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_sibling_invalid_config_raises_without_changing_existing_rows[retired-False-direct] PASSED
+reconcile/tests/test_cp1_siblings.py::test_read_only_nonworker_commands_accept_bad_switch_and_never_write[export] PASSED
+reconcile/tests/test_cp1_siblings.py::test_read_only_nonworker_commands_accept_bad_switch_and_never_write[audit] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_causes_no_database_write_statements[run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_causes_no_database_write_statements[once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_causes_no_database_write_statements[verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_causes_no_database_write_statements[status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_does_not_initialize_a_fresh_database[run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_does_not_initialize_a_fresh_database[once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_does_not_initialize_a_fresh_database[verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_leaves_a_preversion_database_unchanged[run] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_leaves_a_preversion_database_unchanged[once] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_leaves_a_preversion_database_unchanged[verify-layout] PASSED
+reconcile/tests/test_cp1_siblings.py::test_invalid_config_leaves_a_preversion_database_unchanged[status] PASSED
+reconcile/tests/test_cp1_siblings.py::test_shipped_configs_load_and_construct_workers reconcile/config.example.json: load_config + Worker; 14 shipped checks built
+deploy/config/networks/evm_ethereum_mainnet.json: JSON load; no worker checks setting; switches validation accepts
+PASSED
+
+- generated xml file: /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/plans/check-switches/qa/cp2-round-2/cp1-independent.xml -
+============================= 107 passed in 1.36s ==============================
+
+exit=0

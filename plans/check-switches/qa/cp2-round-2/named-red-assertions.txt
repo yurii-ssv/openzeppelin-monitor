@@ -1,0 +1,518 @@
+cp1-red-on-code-base
+test_disabled_check_closes_its_incidents_and_is_never_realerted[False]
+AssertionError: assert [{'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800021720.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:2', 'created_at': 1800043320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800043320.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:3', 'created_at': 1800064920.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064920.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:4', 'created_at': 1800086520.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 5): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800086520.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kwarn-1001:realert:1', 'created_at': 1800086520.0, 'severity': 'warn', 'text': '⚠️ [WARN] Still open (alert 2): sw_a kwarn — test\nbody\nIncident: sw_a-kwarn-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800086520.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kwarn-1001', 'kind': 'realert', 'receipt': 'captured'}] == []
+  
+  Left contains 5 more items, first extra item: {'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:1',
+  +         'created_at': 1800021720.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800021720.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:2',
+  +         'created_at': 1800043320.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800043320.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:3',
+  +         'created_at': 1800064920.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800064920.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:4',
+  +         'created_at': 1800086520.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 5): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800086520.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kwarn-1001:realert:1',
+  +         'created_at': 1800086520.0,
+  +         'severity': 'warn',
+  +         'text': '⚠️ [WARN] Still open (alert 2): sw_a kwarn — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kwarn-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800086520.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kwarn-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  + ]
+test_disabled_check_closes_its_incidents_and_is_never_realerted[True]
+AssertionError: assert [{'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800021720.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:2', 'created_at': 1800043320.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800043320.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:3', 'created_at': 1800064920.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064920.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kpage-1001:realert:4', 'created_at': 1800086520.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 5): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800086520.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kpage-1001', 'kind': 'realert', 'receipt': 'captured'}, {'key': 'sw_a-kwarn-1001:realert:1', 'created_at': 1800086520.0, 'severity': 'warn', 'text': '⚠️ [WARN] Still open (alert 2): sw_a kwarn — test\nbody\nIncident: sw_a-kwarn-1001', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800086520.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'sw_a', 'incident_id': 'sw_a-kwarn-1001', 'kind': 'realert', 'receipt': 'captured'}] == []
+  
+  Left contains 5 more items, first extra item: {'key': 'sw_a-kpage-1001:realert:1', 'created_at': 1800021720.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\nbody\nIncident: sw_a-kpage-1001', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:1',
+  +         'created_at': 1800021720.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 2): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800021720.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:2',
+  +         'created_at': 1800043320.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 3): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800043320.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:3',
+  +         'created_at': 1800064920.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 4): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800064920.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kpage-1001:realert:4',
+  +         'created_at': 1800086520.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] Still open (alert 5): sw_a kpage — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kpage-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800086520.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kpage-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  +     {
+  +         'key': 'sw_a-kwarn-1001:realert:1',
+  +         'created_at': 1800086520.0,
+  +         'severity': 'warn',
+  +         'text': '⚠️ [WARN] Still open (alert 2): sw_a kwarn — test\n'
+  +         'body\n'
+  +         'Incident: sw_a-kwarn-1001',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800086520.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'sw_a',
+  +         'incident_id': 'sw_a-kwarn-1001',
+  +         'kind': 'realert',
+  +         'receipt': 'captured',
+  +     },
+  + ]
+test_reorg_while_disabled_rewinds_the_disabled_cursor[1]
+assert [1004, 2147483648] == [1002, 2147483648]
+  
+  At index 0 diff: 1004 != 1002
+  
+  Full diff:
+    [
+  -     1002,
+  ?        ^
+  +     1004,
+  ?        ^
+        2147483648,
+    ]
+test_reorg_while_disabled_rewinds_the_disabled_cursor[4]
+assert [1007, 2147483648] == [1005, 2147483648]
+  
+  At index 0 diff: 1007 != 1005
+  
+  Full diff:
+    [
+  -     1005,
+  ?        ^
+  +     1007,
+  ?        ^
+        2147483648,
+    ]
+cp2-red-on-cp1
+test_reenabled_check_catches_up_silently_then_sends_what_is_still_true_once
+AssertionError: ['ev:1004', 'ev:1006', 'lv1', 'lv2']
+assert [{'rid': 3, 'key': 'cu_a-ev:1004-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 4, 'key': 'cu_a-ev:1006-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1006 — test\nIncident: cu_a-ev:1006-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1006-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1006'}, {'rid': 5, 'key': 'cu_a-lv1-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}, {'rid': 6, 'key': 'cu_a-lv2-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv2 — test\nIncident: cu_a-lv2-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv2-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv2'}] == []
+  
+  Left contains 4 more items, first extra item: {'rid': 3, 'key': 'cu_a-ev:1004-1008:open', 'created_at': 1800050400.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-ev:1004-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 4,
+  +         'key': 'cu_a-ev:1006-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1006 — test\n'
+  +         'Incident: cu_a-ev:1006-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1006-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1006',
+  +     },
+  +     {
+  +         'rid': 5,
+  +         'key': 'cu_a-lv1-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  +     {
+  +         'rid': 6,
+  +         'key': 'cu_a-lv2-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv2 — test\n'
+  +         'Incident: cu_a-lv2-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv2-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv2',
+  +     },
+  + ]
+test_new_check_on_a_live_database_catches_up_from_start_block
+AssertionError: ['ev:1003', 'ev:1004', 'ev:1005', 'ev:1006', 'lv1']
+assert [{'rid': 1, 'key': 'cu_a-ev:1003-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1003 — test\nIncident: cu_a-ev:1003-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1003-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1003'}, {'rid': 2, 'key': 'cu_a-ev:1004-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 3, 'key': 'cu_a-ev:1005-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1005 — test\nIncident: cu_a-ev:1005-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1005-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1005'}, {'rid': 4, 'key': 'cu_a-ev:1006-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1006 — test\nIncident: cu_a-ev:1006-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1006-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1006'}, {'rid': 5, 'key': 'cu_a-lv1-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}] == []
+  
+  Left contains 5 more items, first extra item: {'rid': 1, 'key': 'cu_a-ev:1003-1007:open', 'created_at': 1800025200.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 1,
+  +         'key': 'cu_a-ev:1003-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1003 — test\n'
+  +         'Incident: cu_a-ev:1003-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1003-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1003',
+  +     },
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-ev:1004-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-ev:1005-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1005 — test\n'
+  +         'Incident: cu_a-ev:1005-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1005-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1005',
+  +     },
+  +     {
+  +         'rid': 4,
+  +         'key': 'cu_a-ev:1006-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1006 — test\n'
+  +         'Incident: cu_a-ev:1006-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1006-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1006',
+  +     },
+  +     {
+  +         'rid': 5,
+  +         'key': 'cu_a-lv1-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  + ]
+round1-repro-red-final
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-0]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1003']
+assert ['ev:1003'] == []
+  
+  Left contains one more item: 'ev:1003'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1003',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-2]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1005']
+assert ['ev:1005'] == []
+  
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1005',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-12]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1015']
+assert ['ev:1015'] == []
+  
+  Left contains one more item: 'ev:1015'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1015',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-0]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1003']
+assert ['ev:1003'] == []
+  
+  Left contains one more item: 'ev:1003'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1003',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-2]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1005']
+assert ['ev:1005'] == []
+  
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1005',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-12]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1015']
+assert ['ev:1015'] == []
+  
+  Left contains one more item: 'ev:1015'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1015',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12]
+AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global]
+AssertionError: history replay escaped silence: ['ev:1004', 'ev:1005']
+assert ['ev:1004', 'ev:1005'] == ['ev:1005']
+  
+  At index 0 diff: 'ev:1004' != 'ev:1005'
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+    [
+  +     'ev:1004',
+        'ev:1005',
+    ]
+test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[True]
+AssertionError: disabled-interval event sent on first live run: ['ev:1002']
+assert 'ev:1002' not in ['ev:1002']
+m5-prior-candidate
+test_m5_real_disabled_key_gets_new_id_and_first_live_page
+AssertionError: surviving M5 condition missed its first-live page
+assert (0 == 1)
+ +  where 0 = len([])

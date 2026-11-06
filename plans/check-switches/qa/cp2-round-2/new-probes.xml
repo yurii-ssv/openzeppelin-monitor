@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="14" time="0.378" timestamp="2026-11-06T15:26:22.327108+01:00" hostname="marcot-MacBook-Pro"><testcase classname="reconcile.tests.test_qa2_deep" name="test_m1_live_poison_after_deep_repeat[True-global]" time="0.008" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m1_live_poison_after_deep_repeat[True-percheck]" time="0.009" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m1_live_poison_after_deep_repeat[False-global]" time="0.006" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m1_live_poison_after_deep_repeat[False-percheck]" time="0.007" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m1_historical_transient_stays_silent_across_deep_repeat[global]" time="0.006" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m1_historical_transient_stays_silent_across_deep_repeat[percheck]" time="0.013" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m2_live_condition_after_global_repeat_with_empty_api[True]" time="0.007" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m2_live_condition_after_global_repeat_with_empty_api[False]" time="0.007"><failure message="AssertionError: assert [] == [('info', 'resolved')]&#10;  &#10;  Right contains one more item: ('info', 'resolved')&#10;  &#10;  Full diff:&#10;  + []&#10;  - [&#10;  -     (&#10;  -         'info',&#10;  -         'resolved',&#10;  -     ),&#10;  - ]">tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-new-probes-pd8hfliq/test-tmp/test_m2_live_condition_after_g1')
+supported = False
+
+    @pytest.mark.parametrize('supported', [True, False])
+    def test_m2_live_condition_after_global_repeat_with_empty_api(tmp_path, supported):
+        chain, w, ssv, rows = m2_setup(tmp_path, eth=0, private=True, m2={'early_headroom': 1},
+                                      backfill={'enabled': True}, max_log_range=1)
+        advance(w)
+        pin = w.phase()['history_block']
+        chain.mine()
+        advance(w)
+        set_operator(chain, 1, eth=2981, ssv=20, private=True)
+        chain.mine()
+        w.clock.advance(601)
+        advance(w)
+        assert sorted((m['severity'], m['kind']) for m in sent(w, 'm2')) == [('info','open'),('warn','open')]
+        live = chain.sealed
+        saved, mark = snapshot(chain), len(sent(w, 'm2'))
+        rows.clear()
+        w = restart(w, chain)
+        w.inventory.http_get = lambda url: {'clusters': [], 'pagination': {'pages': 1}}
+        replay(chain, saved, pin, None if supported else live)
+        advance(w)
+        actual = [(m['severity'], m['kind']) for m in sent(w, 'm2', mark)]
+        print({'m2_supported': supported, 'actual': actual, 'marker': w.db.meta('reorg:m2')})
+&gt;       assert actual == ([] if supported else [('info', 'resolved')])
+E       AssertionError: assert [] == [('info', 'resolved')]
+E         
+E         Right contains one more item: ('info', 'resolved')
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     (
+E         -         'info',
+E         -         'resolved',
+E         -     ),
+E         - ]
+
+reconcile/tests/test_qa2_deep.py:115: AssertionError</failure></testcase><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_state_after_global_repeat[True-clean]" time="0.019" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_state_after_global_repeat[True-latent]" time="0.014" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_state_after_global_repeat[True-confirmed]" time="0.016" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_state_after_global_repeat[False-clean]" time="0.012" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_state_after_global_repeat[False-latent]" time="0.016" /><testcase classname="reconcile.tests.test_qa2_deep" name="test_m5_real_state_after_global_repeat[False-confirmed]" time="0.019" /></testsuite></testsuites>

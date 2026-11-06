@@ -1,0 +1,951 @@
+reconcile.tests.test_catchup::test_reenabled_check_catches_up_silently_then_sends_what_is_still_true_once: FAIL
+AssertionError: ['ev:1004', 'ev:1006', 'lv1', 'lv2']
+assert [{'rid': 3, 'key': 'cu_a-ev:1004-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 4, 'key': 'cu_a-ev:1006-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1006 — test\nIncident: cu_a-ev:1006-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1006-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1006'}, {'rid': 5, 'key': 'cu_a-lv1-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}, {'rid': 6, 'key': 'cu_a-lv2-1008:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv2 — test\nIncident: cu_a-lv2-1008', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv2-1008', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv2'}] == []
+  
+  Left contains 4 more items, first extra item: {'rid': 3, 'key': 'cu_a-ev:1004-1008:open', 'created_at': 1800050400.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-ev:1004-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 4,
+  +         'key': 'cu_a-ev:1006-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1006 — test\n'
+  +         'Incident: cu_a-ev:1006-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1006-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1006',
+  +     },
+  +     {
+  +         'rid': 5,
+  +         'key': 'cu_a-lv1-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  +     {
+  +         'rid': 6,
+  +         'key': 'cu_a-lv2-1008:open',
+  +         'created_at': 1800050400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv2 — test\n'
+  +         'Incident: cu_a-lv2-1008',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800050400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv2-1008',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv2',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_new_check_on_a_live_database_catches_up_from_start_block: FAIL
+AssertionError: ['ev:1003', 'ev:1004', 'ev:1005', 'ev:1006', 'lv1']
+assert [{'rid': 1, 'key': 'cu_a-ev:1003-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1003 — test\nIncident: cu_a-ev:1003-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1003-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1003'}, {'rid': 2, 'key': 'cu_a-ev:1004-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 3, 'key': 'cu_a-ev:1005-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1005 — test\nIncident: cu_a-ev:1005-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1005-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1005'}, {'rid': 4, 'key': 'cu_a-ev:1006-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1006 — test\nIncident: cu_a-ev:1006-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1006-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1006'}, {'rid': 5, 'key': 'cu_a-lv1-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}] == []
+  
+  Left contains 5 more items, first extra item: {'rid': 1, 'key': 'cu_a-ev:1003-1007:open', 'created_at': 1800025200.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 1,
+  +         'key': 'cu_a-ev:1003-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1003 — test\n'
+  +         'Incident: cu_a-ev:1003-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1003-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1003',
+  +     },
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-ev:1004-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-ev:1005-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1005 — test\n'
+  +         'Incident: cu_a-ev:1005-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1005-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1005',
+  +     },
+  +     {
+  +         'rid': 4,
+  +         'key': 'cu_a-ev:1006-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1006 — test\n'
+  +         'Incident: cu_a-ev:1006-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1006-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1006',
+  +     },
+  +     {
+  +         'rid': 5,
+  +         'key': 'cu_a-lv1-1007:open',
+  +         'created_at': 1800025200.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800025200.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_upgraded_live_database_gives_no_catch_up_to_a_check_that_ran: PASS
+reconcile.tests.test_catchup::test_new_check_while_the_database_is_backfilling_takes_the_global_path: PASS
+reconcile.tests.test_catchup::test_backfill_disabled_keeps_the_base_behaviour[new]: PASS
+reconcile.tests.test_catchup::test_backfill_disabled_keeps_the_base_behaviour[reenabled]: PASS
+reconcile.tests.test_catchup::test_check_disabled_after_go_live_before_its_first_live_run: FAIL
+AssertionError: ['ev:1004', 'lv1', 'lv2']
+assert [{'rid': 1, 'key': 'cu_a-ev:1004-1005:open', 'created_at': 1800014400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1005', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800014400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1005', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 2, 'key': 'cu_a-lv1-1005:open', 'created_at': 1800014400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1005', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800014400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1005', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}, {'rid': 3, 'key': 'cu_a-lv2-1005:open', 'created_at': 1800014400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv2 — test\nIncident: cu_a-lv2-1005', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800014400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv2-1005', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv2'}] == []
+  
+  Left contains 3 more items, first extra item: {'rid': 1, 'key': 'cu_a-ev:1004-1005:open', 'created_at': 1800014400.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 1,
+  +         'key': 'cu_a-ev:1004-1005:open',
+  +         'created_at': 1800014400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1005',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800014400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1005',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-lv1-1005:open',
+  +         'created_at': 1800014400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1005',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800014400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1005',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-lv2-1005:open',
+  +         'created_at': 1800014400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv2 — test\n'
+  +         'Incident: cu_a-lv2-1005',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800014400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv2-1005',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv2',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_check_disabled_during_the_backfill_is_caught_up_after_go_live: FAIL
+AssertionError: ['ev:1004', 'ev:1031', 'ev:1042', 'lv0']
+assert [{'rid': 1, 'key': 'cu_a-ev:1004-1043:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1043', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1043', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 2, 'key': 'cu_a-ev:1031-1043:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1031 — test\nIncident: cu_a-ev:1031-1043', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1031-1043', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1031'}, {'rid': 3, 'key': 'cu_a-ev:1042-1043:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1042 — test\nIncident: cu_a-ev:1042-1043', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1042-1043', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1042'}, {'rid': 4, 'key': 'cu_a-lv0-1043:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv0 — test\nIncident: cu_a-lv0-1043', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv0-1043', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv0'}] == []
+  
+  Left contains 4 more items, first extra item: {'rid': 1, 'key': 'cu_a-ev:1004-1043:open', 'created_at': 1800028800.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 1,
+  +         'key': 'cu_a-ev:1004-1043:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1043',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1043',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-ev:1031-1043:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1031 — test\n'
+  +         'Incident: cu_a-ev:1031-1043',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1031-1043',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1031',
+  +     },
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-ev:1042-1043:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1042 — test\n'
+  +         'Incident: cu_a-ev:1042-1043',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1042-1043',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1042',
+  +     },
+  +     {
+  +         'rid': 4,
+  +         'key': 'cu_a-lv0-1043:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv0 — test\n'
+  +         'Incident: cu_a-lv0-1043',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv0-1043',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv0',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_reenabled_while_backfilling_clears_the_marker_without_a_record: PASS
+reconcile.tests.test_catchup::test_backfill_switched_off_mid_catch_up_keeps_the_durable_record: FAIL
+AssertionError: assert ([{'rid': 1, 'key': 'cu_a-ev:1003-1004:open', 'created_at': 1800014400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1003 — test\nIncident: cu_a-ev:1003-1004', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800014400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1003-1004', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1003'}] == []
+  
+  Left contains one more item: {'rid': 1, 'key': 'cu_a-ev:1003-1004:open', 'created_at': 1800014400.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 1,
+  +         'key': 'cu_a-ev:1003-1004:open',
+  +         'created_at': 1800014400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1003 — test\n'
+  +         'Incident: cu_a-ev:1003-1004',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800014400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1003-1004',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1003',
+  +     },
+  + ])
+reconcile.tests.test_catchup::test_restarts_and_a_failed_silent_run_keep_the_record_and_its_pinned_block[runtime]: FAIL
+AssertionError: ['ev:1006', 'lv1']
+assert [{'rid': 3, 'key': 'cu_a-ev:1006-1007:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1006 — test\nIncident: cu_a-ev:1006-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1006-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1006'}, {'rid': 4, 'key': 'cu_a-lv1-1007:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}] == []
+  
+  Left contains 2 more items, first extra item: {'rid': 3, 'key': 'cu_a-ev:1006-1007:open', 'created_at': 1800028800.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-ev:1006-1007:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1006 — test\n'
+  +         'Incident: cu_a-ev:1006-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1006-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1006',
+  +     },
+  +     {
+  +         'rid': 4,
+  +         'key': 'cu_a-lv1-1007:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_restarts_and_a_failed_silent_run_keep_the_record_and_its_pinned_block[rpc]: FAIL
+AssertionError: ['ev:1006', 'lv1']
+assert [{'rid': 2, 'key': 'cu_a-ev:1006-1007:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1006 — test\nIncident: cu_a-ev:1006-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1006-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1006'}, {'rid': 3, 'key': 'cu_a-lv1-1007:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}] == []
+  
+  Left contains 2 more items, first extra item: {'rid': 2, 'key': 'cu_a-ev:1006-1007:open', 'created_at': 1800028800.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-ev:1006-1007:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1006 — test\n'
+  +         'Incident: cu_a-ev:1006-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1006-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1006',
+  +     },
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-lv1-1007:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_new_check_restarted_after_a_failed_silent_run_keeps_its_pinned_block: FAIL
+AssertionError: assert ['ev:1003', 'ev:1005'] == ['ev:1005']
+  
+  At index 0 diff: 'ev:1003' != 'ev:1005'
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+    [
+  +     'ev:1003',
+        'ev:1005',
+    ]
+reconcile.tests.test_catchup::test_reorg_while_disabled_then_reenabled_catches_up_on_the_new_chain: FAIL
+AssertionError: ['ev:1004', 'lv2']
+assert [{'rid': 2, 'key': 'cu_a-ev:1004-1007:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a event at 1004 — test\nIncident: cu_a-ev:1004-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1004-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1004'}, {'rid': 3, 'key': 'cu_a-lv2-1007:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv2 — test\nIncident: cu_a-lv2-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv2-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv2'}] == []
+  
+  Left contains 2 more items, first extra item: {'rid': 2, 'key': 'cu_a-ev:1004-1007:open', 'created_at': 1800028800.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-ev:1004-1007:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a event at 1004 — test\n'
+  +         'Incident: cu_a-ev:1004-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-ev:1004-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'ev:1004',
+  +     },
+  +     {
+  +         'rid': 3,
+  +         'key': 'cu_a-lv2-1007:open',
+  +         'created_at': 1800028800.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv2 — test\n'
+  +         'Incident: cu_a-lv2-1007',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800028800.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv2-1007',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv2',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_reorg_below_the_catch_up_block_before_the_first_live_run_stays_silent: FAIL
+AssertionError: ['ev:1005', 'ev:1006']
+assert ('ev:1005' not in ['ev:1005', 'ev:1006'])
+reconcile.tests.test_catchup::test_live_alerts_of_another_check_are_sent_while_a_catch_up_fails[reenabled]: FAIL
+AssertionError: assert ['ev:1003', 'ev:1005', 'lv1'] == ['ev:1005', 'lv1']
+  
+  At index 0 diff: 'ev:1003' != 'ev:1005'
+  Left contains one more item: 'lv1'
+  
+  Full diff:
+    [
+  +     'ev:1003',
+        'ev:1005',
+        'lv1',
+    ]
+reconcile.tests.test_catchup::test_live_alerts_of_another_check_are_sent_while_a_catch_up_fails[new]: FAIL
+AssertionError: assert ['ev:1003', 'ev:1005', 'lv1'] == ['ev:1005', 'lv1']
+  
+  At index 0 diff: 'ev:1003' != 'ev:1005'
+  Left contains one more item: 'lv1'
+  
+  Full diff:
+    [
+  +     'ev:1003',
+        'ev:1005',
+        'lv1',
+    ]
+reconcile.tests.test_catchup::test_flips_without_steps_close_once_per_disable_and_send_nothing: FAIL
+TypeError: 'NoneType' object is not subscriptable
+reconcile.tests.test_catchup::test_reenable_with_no_new_block_pins_the_current_checkpoint_and_a_second_disable_closes_it: FAIL
+AssertionError: assert [{'rid': 2, 'key': 'cu_a-lv1-1003-2:open', 'created_at': 1800014400.0, 'severity': 'page', 'text': '🚨 [PAGE] cu_a lv1 — test\nIncident: cu_a-lv1-1003-2', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800014400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv1-1003-2', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv1'}] == []
+  
+  Left contains one more item: {'rid': 2, 'key': 'cu_a-lv1-1003-2:open', 'created_at': 1800014400.0, 'severity': 'page', ...}
+  
+  Full diff:
+  - []
+  + [
+  +     {
+  +         'rid': 2,
+  +         'key': 'cu_a-lv1-1003-2:open',
+  +         'created_at': 1800014400.0,
+  +         'severity': 'page',
+  +         'text': '🚨 [PAGE] cu_a lv1 — test\n'
+  +         'Incident: cu_a-lv1-1003-2',
+  +         'attempts': 0,
+  +         'next_attempt_at': 0.0,
+  +         'sent_at': 1800014400.0,
+  +         'delivery': 'telegram',
+  +         'last_error': None,
+  +         'check_id': 'cu_a',
+  +         'incident_id': 'cu_a-lv1-1003-2',
+  +         'kind': 'open',
+  +         'receipt': 'captured',
+  +         'ikey_': 'lv1',
+  +     },
+  + ]
+reconcile.tests.test_catchup::test_status_cli_during_a_catch_up_shows_it_and_changes_nothing: FAIL
+TypeError: 'NoneType' object is not subscriptable
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[0]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[1]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[2]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[3]: FAIL
+AssertionError: (3, 'same', 'cu_a', 1006, ['ev:1005'])
+assert not [{'rid': 5, 'key': 'cu_a-ev:1005-1006:open', 'created_at': 1800039600.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1005 \u2014 test\nIncident: cu_a-ev:1005-1006', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800039600.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1005-1006', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1005'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[4]: FAIL
+AssertionError: (4, 'step', 'cu_a', 'catch-up step', ['ev:1003'])
+assert not [{'rid': 2, 'key': 'cu_a-ev:1003-1006:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1003 \u2014 test\nIncident: cu_a-ev:1003-1006', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1003-1006', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1003'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[5]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[6]: FAIL
+AssertionError: (6, 'level', 'cu_b', 1019, ['ev:1011', 'ev:1013', 'ev:1016', 'lv1'])
+assert not [{'rid': 4, 'key': 'cu_b-ev:1011-1020:open', 'created_at': 1800100800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1011 \u2014 test\nIncident: cu_b-ev:1011-1020', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800100800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1011-1020', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1011'}, {'rid': 5, 'key': 'cu_b-ev:1013-1020:open', 'created_at': 1800100800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1013 \u2014 test\nIncident: cu_b-ev:1013-1020', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800100800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1013-1020', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1013'}, {'rid': 6, 'key': 'cu_b-ev:1016-1020:open', 'created_at': 1800100800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1016 \u2014 test\nIncident: cu_b-ev:1016-1020', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800100800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1016-1020', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1016'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[7]: FAIL
+AssertionError: (7, 'step', 'cu_a', 'catch-up step', ['ev:1016'])
+assert not [{'rid': 13, 'key': 'cu_a-ev:1016-1016:open', 'created_at': 1800090000.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1016 \u2014 test\nIncident: cu_a-ev:1016-1016', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800090000.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1016-1016', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1016'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[8]: FAIL
+AssertionError: (8, 'event', 'cu_b', 'catch-up step', ['ev:1017', 'lv0'])
+assert not [{'rid': 21, 'key': 'cu_b-ev:1017-1017:open', 'created_at': 1800111600.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1017 \u2014 test\nIncident: cu_b-ev:1017-1017', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800111600.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1017-1017', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1017'}, {'rid': 22, 'key': 'cu_b-lv0-1017:open', 'created_at': 1800111600.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b lv0 \u2014 test\nIncident: cu_b-lv0-1017', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800111600.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-lv0-1017', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv0'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[9]: FAIL
+AssertionError: (9, 'step', 'cu_a', 'catch-up step', ['ev:1023'])
+assert not [{'rid': 13, 'key': 'cu_a-ev:1023-1023:open', 'created_at': 1800104400.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1023 \u2014 test\nIncident: cu_a-ev:1023-1023', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800104400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1023-1023', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1023'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[10]: FAIL
+AssertionError: (10, 'reorg', 'cu_b', 1014, ['ev:1009', 'ev:1010', 'lv0', 'lv2'])
+assert not [{'rid': 7, 'key': 'cu_b-ev:1009-1015:open', 'created_at': 1800064800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1009 \u2014 test\nIncident: cu_b-ev:1009-1015', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1009-1015', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1009'}, {'rid': 8, 'key': 'cu_b-ev:1010-1015:open', 'created_at': 1800064800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1010 \u2014 test\nIncident: cu_b-ev:1010-1015', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1010-1015', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1010'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[11]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[12]: FAIL
+AssertionError: (12, 'step', 'cu_b', 'catch-up step', ['ev:1005'])
+assert not [{'rid': 1, 'key': 'cu_b-ev:1005-1005:open', 'created_at': 1800028800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1005 \u2014 test\nIncident: cu_b-ev:1005-1005', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800028800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1005-1005', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1005'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[13]: FAIL
+AssertionError: (13, 'same', 'cu_b', 1011, ['ev:1011'])
+assert not [{'rid': 6, 'key': 'cu_b-ev:1011-1015:open', 'created_at': 1800086400.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1011 \u2014 test\nIncident: cu_b-ev:1011-1015', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800086400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1011-1015', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1011'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[14]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[15]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[16]: FAIL
+AssertionError: (16, 'same', 'cu_b', 'catch-up step', ['ev:1007'])
+assert not [{'rid': 2, 'key': 'cu_b-ev:1007-1010:open', 'created_at': 1800068400.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1007 \u2014 test\nIncident: cu_b-ev:1007-1010', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800068400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1007-1010', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1007'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[17]: FAIL
+AssertionError: (17, 'step', 'cu_a', 1011, ['ev:1002'])
+assert not [{'rid': 9, 'key': 'cu_a-ev:1002-1010:open', 'created_at': 1800079200.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1002 \u2014 test\nIncident: cu_a-ev:1002-1010', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800079200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1002-1010', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1002'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[18]: FAIL
+AssertionError: (18, 'reorg', 'cu_a', 1005, ['ev:1003'])
+assert not [{'rid': 11, 'key': 'cu_a-ev:1003-1004:open', 'created_at': 1800068400.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1003 \u2014 test\nIncident: cu_a-ev:1003-1004', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800068400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1003-1004', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1003'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[19]: FAIL
+AssertionError: (19, 'level', 'cu_a', 'catch-up step', ['lv2'])
+assert not [{'rid': 3, 'key': 'cu_a-lv2-1007:open', 'created_at': 1800025200.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a lv2 \u2014 test\nIncident: cu_a-lv2-1007', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800025200.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-lv2-1007', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'lv2'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[20]: FAIL
+AssertionError: (20, 'deep', 'cu_b', 1009, ['ev:1008'])
+assert not [{'rid': 4, 'key': 'cu_b-ev:1008-1009:open', 'created_at': 1800050400.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1008 \u2014 test\nIncident: cu_b-ev:1008-1009', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800050400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1008-1009', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1008'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[21]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[22]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[23]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[24]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[25]: FAIL
+AssertionError: (25, 'same', 'cu_a', 1014, ['ev:1012', 'lv2'])
+assert not [{'rid': 4, 'key': 'cu_a-ev:1012-1016:open', 'created_at': 1800086400.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_a event at 1012 \u2014 test\nIncident: cu_a-ev:1012-1016', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800086400.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_a', 'incident_id': 'cu_a-ev:1012-1016', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1012'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[26]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[27]: FAIL
+AssertionError: (27, 'same', 'cu_b', 'catch-up step', ['ev:1003'])
+assert not [{'rid': 3, 'key': 'cu_b-ev:1003-1010:open', 'created_at': 1800064800.0, 'severity': 'page', 'text': '\U0001f6a8 [PAGE] cu_b event at 1003 \u2014 test\nIncident: cu_b-ev:1003-1010', 'attempts': 0, 'next_attempt_at': 0.0, 'sent_at': 1800064800.0, 'delivery': 'telegram', 'last_error': None, 'check_id': 'cu_b', 'incident_id': 'cu_b-ev:1003-1010', 'kind': 'open', 'receipt': 'captured', 'ikey_': 'ev:1003'}]
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[28]: PASS
+reconcile.tests.test_catchup::test_seeded_catchup_sweep[29]: PASS
+reconcile.tests.test_catchup::test_malformed_switch_writes_nothing_to_a_current_database[run]: FAIL
+assert ["INSERT INTO meta(key, value) VALUES('schema_version', '1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"] == []
+  
+  Left contains one more item: "INSERT INTO meta(key, value) VALUES('schema_version', '1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+  
+  Full diff:
+  - []
+  + [
+  +     "INSERT INTO meta(key, value) VALUES('schema_version', '1') ON "
+  +     'CONFLICT(key) DO UPDATE SET value=excluded.value',
+  + ]
+reconcile.tests.test_catchup::test_malformed_switch_writes_nothing_to_a_current_database[once]: FAIL
+assert ["INSERT INTO meta(key, value) VALUES('schema_version', '1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"] == []
+  
+  Left contains one more item: "INSERT INTO meta(key, value) VALUES('schema_version', '1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+  
+  Full diff:
+  - []
+  + [
+  +     "INSERT INTO meta(key, value) VALUES('schema_version', '1') ON "
+  +     'CONFLICT(key) DO UPDATE SET value=excluded.value',
+  + ]
+reconcile.tests.test_catchup::test_malformed_switch_writes_nothing_to_a_current_database[verify-layout]: FAIL
+assert ["INSERT INTO meta(key, value) VALUES('schema_version', '1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"] == []
+  
+  Left contains one more item: "INSERT INTO meta(key, value) VALUES('schema_version', '1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+  
+  Full diff:
+  - []
+  + [
+  +     "INSERT INTO meta(key, value) VALUES('schema_version', '1') ON "
+  +     'CONFLICT(key) DO UPDATE SET value=excluded.value',
+  + ]
+reconcile.tests.test_catchup::test_malformed_switch_creates_no_database[run]: FAIL
+AssertionError: assert ['w.sqlite', 'w.sqlite-shm', 'w.sqlite-wal', 'w.sqlite.lock'] == []
+  
+  Left contains 4 more items, first extra item: 'w.sqlite'
+  
+  Full diff:
+  - []
+  + [
+  +     'w.sqlite',
+  +     'w.sqlite-shm',
+  +     'w.sqlite-wal',
+  +     'w.sqlite.lock',
+  + ]
+reconcile.tests.test_catchup::test_malformed_switch_creates_no_database[once]: FAIL
+AssertionError: assert ['w.sqlite', 'w.sqlite-shm', 'w.sqlite-wal', 'w.sqlite.lock'] == []
+  
+  Left contains 4 more items, first extra item: 'w.sqlite'
+  
+  Full diff:
+  - []
+  + [
+  +     'w.sqlite',
+  +     'w.sqlite-shm',
+  +     'w.sqlite-wal',
+  +     'w.sqlite.lock',
+  + ]
+reconcile.tests.test_catchup::test_malformed_switch_creates_no_database[verify-layout]: FAIL
+AssertionError: assert ['w.sqlite', 'w.sqlite-shm', 'w.sqlite-wal', 'w.sqlite.lock'] == []
+  
+  Left contains 4 more items, first extra item: 'w.sqlite'
+  
+  Full diff:
+  - []
+  + [
+  +     'w.sqlite',
+  +     'w.sqlite-shm',
+  +     'w.sqlite-wal',
+  +     'w.sqlite.lock',
+  + ]
+reconcile.tests.test_catchup::test_malformed_switch_leaves_a_pre_version_database_unchanged[run]: FAIL
+assert {'blocks': ["(1001, '0x00000000000000000000000000000000000000000000000000000000000003e9')", "(1002, '0x00000000000000000000000000000000000000000000000000000000000003ea')"], 'inbox': [], 'incidents': [], 'logs': [], 'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"}\')', "('cursor:events:cu_a', '[1002, 2147483648]')", '(\'identity\', \'{"chain_id": 1, "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')', '(\'inputs_unavailable\', \'{"params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", '(\'phase\', \'{"phase": "live", "since": 1800003600.0, "caught_up_block": 1001, "history_block": 1001, "first_live": []}\')', "('rpc_failures', '0')", '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": ["force", "interval", "live"], "findings": 3, "rpc_calls": {"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')', "('scan_target', '1002')", "('schema_version', '1')", '(\'topics\', \'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", "0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", "0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", "0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", "0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", "0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", "0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", "0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", "0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", "0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", "0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", "0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", "0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", "0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", "0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", "0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", "0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", "0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", "0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", "0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", "0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", "0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", "0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", "0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", "0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", "0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", "0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", "0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')'], 'outbox': [], 'sqlite_sequence': []} == {'blocks': ["(1001, '0x00000000000000000000000000000000000000000000000000000000000003e9')", "(1002, '0x00000000000000000000000000000000000000000000000000000000000003ea')"], 'inbox': [], 'incidents': [], 'logs': [], 'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"}\')', "('cursor:events:cu_a', '[1002, 2147483648]')", '(\'identity\', \'{"chain_id": 1, "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')', '(\'inputs_unavailable\', \'{"params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", '(\'phase\', \'{"phase": "live", "since": 1800003600.0, "caught_up_block": 1001, "history_block": 1001, "first_live": []}\')', "('rpc_failures', '0')", '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": ["force", "interval", "live"], "findings": 3, "rpc_calls": {"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')', "('scan_target', '1002')", '(\'topics\', \'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", "0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", "0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", "0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", "0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", "0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", "0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", "0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", "0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", "0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", "0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", "0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", "0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", "0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", "0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", "0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", "0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", "0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", "0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", "0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", "0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", "0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", "0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", "0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", "0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", "0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", "0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", "0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')'], 'outbox': [], 'sqlite_sequence': []}
+  
+  Common items:
+  {'blocks': ['(1001, '
+              "'0x00000000000000000000000000000000000000000000000000000000000003e9')",
+              '(1002, '
+              "'0x00000000000000000000000000000000000000000000000000000000000003ea')"],
+   'inbox': [],
+   'incidents': [],
+   'logs': [],
+   'outbox': [],
+   'sqlite_sequence': []}
+  Differing items:
+  {'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x0000000000000000000000000000000000000000000000000000000000000...params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", ...]} != {'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x0000000000000000000000000000000000000000000000000000000000000...params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", ...]}
+  
+  Full diff:
+    {
+        'blocks': [
+            '(1001, '
+            "'0x00000000000000000000000000000000000000000000000000000000000003e9')",
+            '(1002, '
+            "'0x00000000000000000000000000000000000000000000000000000000000003ea')",
+        ],
+        'inbox': [],
+        'incidents': [],
+        'logs': [],
+        'meta': [
+            '(\'checkpoint\', \'{"block": 1002, "hash": '
+            '"0x00000000000000000000000000000000000000000000000000000000000003ea"}\')',
+            "('cursor:events:cu_a', '[1002, 2147483648]')",
+            '(\'identity\', \'{"chain_id": 1, "proxy": '
+            '"0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')',
+            '(\'inputs_unavailable\', \'{"params": false, "inbox": false, '
+            '"monitor": false}\')',
+            "('lag_blocks', '0')",
+            "('last_scan_at', '1800007200.0')",
+            '(\'phase\', \'{"phase": "live", "since": 1800003600.0, '
+            '"caught_up_block": 1001, "history_block": 1001, "first_live": []}\')',
+            "('rpc_failures', '0')",
+            '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": '
+            '["force", "interval", "live"], "findings": 3, "rpc_calls": '
+            '{"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')',
+            "('scan_target', '1002')",
+  +         "('schema_version', '1')",
+            "('topics', "
+            '\'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", '
+            '"0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", '
+            '"0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", '
+            '"0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", '
+            '"0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", '
+            '"0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", '
+            '"0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", '
+            '"0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", '
+            '"0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", '
+            '"0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", '
+            '"0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", '
+            '"0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", '
+            '"0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", '
+            '"0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", '
+            '"0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", '
+            '"0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", '
+            '"0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", '
+            '"0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", '
+            '"0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", '
+            '"0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", '
+            '"0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", '
+            '"0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", '
+            '"0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", '
+            '"0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", '
+            '"0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", '
+            '"0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", '
+            '"0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", '
+            '"0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", '
+            '"0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", '
+            '"0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')',
+        ],
+        'outbox': [],
+        'sqlite_sequence': [],
+    }
+reconcile.tests.test_catchup::test_malformed_switch_leaves_a_pre_version_database_unchanged[once]: FAIL
+assert {'blocks': ["(1001, '0x00000000000000000000000000000000000000000000000000000000000003e9')", "(1002, '0x00000000000000000000000000000000000000000000000000000000000003ea')"], 'inbox': [], 'incidents': [], 'logs': [], 'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"}\')', "('cursor:events:cu_a', '[1002, 2147483648]')", '(\'identity\', \'{"chain_id": 1, "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')', '(\'inputs_unavailable\', \'{"params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", '(\'phase\', \'{"phase": "live", "since": 1800003600.0, "caught_up_block": 1001, "history_block": 1001, "first_live": []}\')', "('rpc_failures', '0')", '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": ["force", "interval", "live"], "findings": 3, "rpc_calls": {"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')', "('scan_target', '1002')", "('schema_version', '1')", '(\'topics\', \'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", "0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", "0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", "0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", "0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", "0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", "0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", "0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", "0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", "0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", "0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", "0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", "0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", "0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", "0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", "0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", "0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", "0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", "0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", "0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", "0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", "0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", "0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", "0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", "0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", "0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", "0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", "0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')'], 'outbox': [], 'sqlite_sequence': []} == {'blocks': ["(1001, '0x00000000000000000000000000000000000000000000000000000000000003e9')", "(1002, '0x00000000000000000000000000000000000000000000000000000000000003ea')"], 'inbox': [], 'incidents': [], 'logs': [], 'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"}\')', "('cursor:events:cu_a', '[1002, 2147483648]')", '(\'identity\', \'{"chain_id": 1, "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')', '(\'inputs_unavailable\', \'{"params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", '(\'phase\', \'{"phase": "live", "since": 1800003600.0, "caught_up_block": 1001, "history_block": 1001, "first_live": []}\')', "('rpc_failures', '0')", '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": ["force", "interval", "live"], "findings": 3, "rpc_calls": {"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')', "('scan_target', '1002')", '(\'topics\', \'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", "0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", "0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", "0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", "0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", "0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", "0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", "0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", "0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", "0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", "0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", "0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", "0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", "0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", "0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", "0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", "0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", "0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", "0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", "0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", "0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", "0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", "0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", "0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", "0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", "0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", "0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", "0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')'], 'outbox': [], 'sqlite_sequence': []}
+  
+  Common items:
+  {'blocks': ['(1001, '
+              "'0x00000000000000000000000000000000000000000000000000000000000003e9')",
+              '(1002, '
+              "'0x00000000000000000000000000000000000000000000000000000000000003ea')"],
+   'inbox': [],
+   'incidents': [],
+   'logs': [],
+   'outbox': [],
+   'sqlite_sequence': []}
+  Differing items:
+  {'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x0000000000000000000000000000000000000000000000000000000000000...params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", ...]} != {'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x0000000000000000000000000000000000000000000000000000000000000...params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", ...]}
+  
+  Full diff:
+    {
+        'blocks': [
+            '(1001, '
+            "'0x00000000000000000000000000000000000000000000000000000000000003e9')",
+            '(1002, '
+            "'0x00000000000000000000000000000000000000000000000000000000000003ea')",
+        ],
+        'inbox': [],
+        'incidents': [],
+        'logs': [],
+        'meta': [
+            '(\'checkpoint\', \'{"block": 1002, "hash": '
+            '"0x00000000000000000000000000000000000000000000000000000000000003ea"}\')',
+            "('cursor:events:cu_a', '[1002, 2147483648]')",
+            '(\'identity\', \'{"chain_id": 1, "proxy": '
+            '"0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')',
+            '(\'inputs_unavailable\', \'{"params": false, "inbox": false, '
+            '"monitor": false}\')',
+            "('lag_blocks', '0')",
+            "('last_scan_at', '1800007200.0')",
+            '(\'phase\', \'{"phase": "live", "since": 1800003600.0, '
+            '"caught_up_block": 1001, "history_block": 1001, "first_live": []}\')',
+            "('rpc_failures', '0')",
+            '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": '
+            '["force", "interval", "live"], "findings": 3, "rpc_calls": '
+            '{"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')',
+            "('scan_target', '1002')",
+  +         "('schema_version', '1')",
+            "('topics', "
+            '\'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", '
+            '"0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", '
+            '"0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", '
+            '"0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", '
+            '"0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", '
+            '"0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", '
+            '"0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", '
+            '"0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", '
+            '"0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", '
+            '"0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", '
+            '"0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", '
+            '"0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", '
+            '"0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", '
+            '"0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", '
+            '"0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", '
+            '"0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", '
+            '"0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", '
+            '"0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", '
+            '"0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", '
+            '"0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", '
+            '"0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", '
+            '"0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", '
+            '"0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", '
+            '"0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", '
+            '"0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", '
+            '"0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", '
+            '"0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", '
+            '"0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", '
+            '"0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", '
+            '"0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')',
+        ],
+        'outbox': [],
+        'sqlite_sequence': [],
+    }
+reconcile.tests.test_catchup::test_malformed_switch_leaves_a_pre_version_database_unchanged[verify-layout]: FAIL
+assert {'blocks': ["(1001, '0x00000000000000000000000000000000000000000000000000000000000003e9')", "(1002, '0x00000000000000000000000000000000000000000000000000000000000003ea')"], 'inbox': [], 'incidents': [], 'logs': [], 'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"}\')', "('cursor:events:cu_a', '[1002, 2147483648]')", '(\'identity\', \'{"chain_id": 1, "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')', '(\'inputs_unavailable\', \'{"params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", '(\'phase\', \'{"phase": "live", "since": 1800003600.0, "caught_up_block": 1001, "history_block": 1001, "first_live": []}\')', "('rpc_failures', '0')", '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": ["force", "interval", "live"], "findings": 3, "rpc_calls": {"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')', "('scan_target', '1002')", "('schema_version', '1')", '(\'topics\', \'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", "0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", "0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", "0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", "0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", "0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", "0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", "0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", "0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", "0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", "0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", "0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", "0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", "0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", "0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", "0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", "0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", "0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", "0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", "0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", "0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", "0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", "0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", "0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", "0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", "0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", "0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", "0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')'], 'outbox': [], 'sqlite_sequence': []} == {'blocks': ["(1001, '0x00000000000000000000000000000000000000000000000000000000000003e9')", "(1002, '0x00000000000000000000000000000000000000000000000000000000000003ea')"], 'inbox': [], 'incidents': [], 'logs': [], 'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x00000000000000000000000000000000000000000000000000000000000003ea"}\')', "('cursor:events:cu_a', '[1002, 2147483648]')", '(\'identity\', \'{"chain_id": 1, "proxy": "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')', '(\'inputs_unavailable\', \'{"params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", '(\'phase\', \'{"phase": "live", "since": 1800003600.0, "caught_up_block": 1001, "history_block": 1001, "first_live": []}\')', "('rpc_failures', '0')", '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": ["force", "interval", "live"], "findings": 3, "rpc_calls": {"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')', "('scan_target', '1002')", '(\'topics\', \'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", "0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", "0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", "0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", "0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", "0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", "0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", "0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", "0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", "0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", "0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", "0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", "0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", "0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", "0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", "0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", "0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", "0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", "0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", "0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", "0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", "0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", "0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", "0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", "0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", "0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", "0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", "0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')'], 'outbox': [], 'sqlite_sequence': []}
+  
+  Common items:
+  {'blocks': ['(1001, '
+              "'0x00000000000000000000000000000000000000000000000000000000000003e9')",
+              '(1002, '
+              "'0x00000000000000000000000000000000000000000000000000000000000003ea')"],
+   'inbox': [],
+   'incidents': [],
+   'logs': [],
+   'outbox': [],
+   'sqlite_sequence': []}
+  Differing items:
+  {'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x0000000000000000000000000000000000000000000000000000000000000...params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", ...]} != {'meta': ['(\'checkpoint\', \'{"block": 1002, "hash": "0x0000000000000000000000000000000000000000000000000000000000000...params": false, "inbox": false, "monitor": false}\')', "('lag_blocks', '0')", "('last_scan_at', '1800007200.0')", ...]}
+  
+  Full diff:
+    {
+        'blocks': [
+            '(1001, '
+            "'0x00000000000000000000000000000000000000000000000000000000000003e9')",
+            '(1002, '
+            "'0x00000000000000000000000000000000000000000000000000000000000003ea')",
+        ],
+        'inbox': [],
+        'incidents': [],
+        'logs': [],
+        'meta': [
+            '(\'checkpoint\', \'{"block": 1002, "hash": '
+            '"0x00000000000000000000000000000000000000000000000000000000000003ea"}\')',
+            "('cursor:events:cu_a', '[1002, 2147483648]')",
+            '(\'identity\', \'{"chain_id": 1, "proxy": '
+            '"0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1", "start_block": 1000}\')',
+            '(\'inputs_unavailable\', \'{"params": false, "inbox": false, '
+            '"monitor": false}\')',
+            "('lag_blocks', '0')",
+            "('last_scan_at', '1800007200.0')",
+            '(\'phase\', \'{"phase": "live", "since": 1800003600.0, '
+            '"caught_up_block": 1001, "history_block": 1001, "first_live": []}\')',
+            "('rpc_failures', '0')",
+            '(\'run:cu_a\', \'{"at": 1800007200.0, "block": 1002, "reasons": '
+            '["force", "interval", "live"], "findings": 3, "rpc_calls": '
+            '{"eth_getStorageAt": 3}, "errors": 0, "last_error": null}\')',
+            "('scan_target', '1002')",
+  +         "('schema_version', '1')",
+            "('topics', "
+            '\'["0x0cc301d13799ab915796eed462da724756a969f8e05d69ad2405eb3da7036b55", '
+            '"0x18d44c1ee4bcb1ecb7d57ca44a74ede64c7c9accda084b97d466e6a0998329b3", '
+            '"0x1fce24c373e07f89214e9187598635036111dbb363e99f4ce498488cdc66e688", '
+            '"0x2bac1912f2481d12f0df08647c06bee174967c62d3a03cbc078eb215dc1bd9a2", '
+            '"0x2fff7e5a48a4befc2c2be4d77e141f6d97907798977ce452429ec55c2658a342", '
+            '"0x39d1320bbda24947e77f3560661323384aa0a1cb9d5e040e617e5cbf50b6dbe0", '
+            '"0x42af14411036d7a50e5e92daf825781450fc8fac8fb65cbdb04720ff08efb84f", '
+            '"0x48a3ea0796746043948f6341d17ff8200937b99262a0b48c2663b951ed7114e5", '
+            '"0x513e931ff778ed01e676d55880d8db185c29b0094546ff2b3e9f5b6920d16bef", '
+            '"0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf", '
+            '"0x5fbd75d987b37490f91aa1909db948e7ff14c6ffb495b2f8e0b2334da9b192f1", '
+            '"0x6113130a2400e4e0980410314b8d41a250e526ca56d039ffd91278aeac44c468", '
+            '"0x67b4581d242b51c956246a35859809bc259dfd07d622b4bc0a9858641a6297fb", '
+            '"0x6965b9c8509097ad68ba0eb17fcb9436f4a72a057fe5ac556737580bce80d840", '
+            '"0x6dc71e7231318932a8a7f99bac76f94ffe24cac147843e0c285ce4cf290c803a", '
+            '"0x791dc99be5109fa13cd62186968189a4f65235f0a4aea35cdf15c585bbcbfdaf", '
+            '"0x8794fa1a5292ace029a96ff5db5c03006669acdf358814c3f716ac098b99092e", '
+            '"0x8f49a76c5d617bd72673d92d3a019ff8f04f204536aae7a3d10e7ca85603f3cc", '
+            '"0x8fe9b0a74e05eaabda056a095be40fb09405d83f5b2c07d7823d1eb655b927b8", '
+            '"0xbb018dc682e13c04ee4a5608c89a9f287c402c1aec96588d6dd85478179b4bba", '
+            '"0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b", '
+            '"0xc0516bad4be527b56ad33b7087029ffee230e390e2f2d1076597820c9e170b67", '
+            '"0xc6e0ba7aedc5595dfb313cf8e5bc03109e9f71dc644c019f9acb86fc054ed454", '
+            '"0xc803f8c01343fcdaf32068f4c283951623ef2b3fa0c547551931356f456b6859", '
+            '"0xc968a767c53be943fe324987597efaba682968c894cab4291313662c8b99691d", '
+            '"0xccf4370403e5fbbde0cd3f13426479dcd8a5916b05db424b7a2c04978cf8ce6e", '
+            '"0xd363ab4392efaf967a89d8616cba1ff0c6f05a04c2f214671be365f0fab05960", '
+            '"0xe865acf13176ceb6a83a16f925f9f67fd03c94ca1af6160d78a7f8a2914253e2", '
+            '"0xf6b8a2b45d0a60381de51a7b980c4660d9e5b82db6e07a4d342bfc17a6ff96bf", '
+            '"0xfdf54bf052398eb41c923eb1bd596351c5e72b99959d1ca529a7f13c0a2503d7"]\')',
+        ],
+        'outbox': [],
+        'sqlite_sequence': [],
+    }
+reconcile.tests.test_catchup::test_read_only_commands_with_a_malformed_switch_are_unchanged[status]: PASS
+reconcile.tests.test_catchup::test_read_only_commands_with_a_malformed_switch_are_unchanged[export]: PASS
+reconcile.tests.test_catchup::test_read_only_commands_with_a_malformed_switch_are_unchanged[audit]: PASS
+reconcile.tests.test_catchup::test_harness_default_is_unchanged: PASS
+reconcile.tests.test_catchup::test_every_start_command_closes_and_status_export_never_do[run]: PASS
+reconcile.tests.test_catchup::test_every_start_command_closes_and_status_export_never_do[once]: PASS
+reconcile.tests.test_catchup::test_every_start_command_closes_and_status_export_never_do[verify-layout]: PASS
+reconcile.tests.test_catchup::test_every_start_command_closes_and_status_export_never_do[status]: PASS
+reconcile.tests.test_catchup::test_every_start_command_closes_and_status_export_never_do[export]: PASS
+reconcile.tests.test_catchup::test_metrics_have_no_run_series_for_a_disabled_check: PASS

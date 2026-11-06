@@ -1,0 +1,764 @@
+revision=718606c5ee2d43c260240101c06642340cabc1a0
+scratch=/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf
+command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/reconcile/.venv/bin/python', '-m', 'pytest', '-vv', '-s', 'reconcile/tests/test_cp2_independent.py', '--junitxml', '/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/plans/check-switches/qa/cp2-round-2/round1-repro-red.xml', '--basetemp', '/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp']
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/reconcile/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf
+collecting ... collected 21 items
+
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-0] {'cause': 'new', 'confirmations': 0, 'event': 1003, 'pin': 1006, 'old_checkpoint': 1007, 'ancestor': 1002, 'replayed_incident': 'cu_a-ev:1003-1006', 'notify': 1, 'alerts': 1, 'sent': ['ev:1003']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-2] {'cause': 'new', 'confirmations': 2, 'event': 1005, 'pin': 1008, 'old_checkpoint': 1009, 'ancestor': 1004, 'replayed_incident': 'cu_a-ev:1005-1008', 'notify': 1, 'alerts': 1, 'sent': ['ev:1005']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-12] {'cause': 'new', 'confirmations': 12, 'event': 1015, 'pin': 1018, 'old_checkpoint': 1019, 'ancestor': 1014, 'replayed_incident': 'cu_a-ev:1015-1018', 'notify': 1, 'alerts': 1, 'sent': ['ev:1015']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-0] {'cause': 'reenabled', 'confirmations': 0, 'event': 1003, 'pin': 1006, 'old_checkpoint': 1007, 'ancestor': 1002, 'replayed_incident': 'cu_a-ev:1003-1006', 'notify': 1, 'alerts': 1, 'sent': ['ev:1003']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-2] {'cause': 'reenabled', 'confirmations': 2, 'event': 1005, 'pin': 1008, 'old_checkpoint': 1009, 'ancestor': 1004, 'replayed_incident': 'cu_a-ev:1005-1008', 'notify': 1, 'alerts': 1, 'sent': ['ev:1005']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-12] {'cause': 'reenabled', 'confirmations': 12, 'event': 1015, 'pin': 1018, 'old_checkpoint': 1019, 'ancestor': 1014, 'replayed_incident': 'cu_a-ev:1015-1018', 'notify': 1, 'alerts': 1, 'sent': ['ev:1015']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0] {'cause': 'global', 'confirmations': 0, 'event': 1001, 'pin': 1005, 'old_checkpoint': 1006, 'ancestor': 1000, 'replayed_incident': 'cu_a-ev:1001-1005', 'notify': 1, 'alerts': 1, 'sent': ['ev:1001']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2] {'cause': 'global', 'confirmations': 2, 'event': 1001, 'pin': 1005, 'old_checkpoint': 1006, 'ancestor': 1000, 'replayed_incident': 'cu_a-ev:1001-1005', 'notify': 1, 'alerts': 1, 'sent': ['ev:1001']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12] {'cause': 'global', 'confirmations': 12, 'event': 1001, 'pin': 1005, 'old_checkpoint': 1006, 'ancestor': 1000, 'replayed_incident': 'cu_a-ev:1001-1005', 'notify': 1, 'alerts': 1, 'sent': ['ev:1001']}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global] {'path': 'global', 'pin': 1004, 'history_event': 1004, 'live_event': 1005, 'sent': ['ev:1004', 'ev:1005'], 'runs': [{'block': 1005, 'reasons': {'live', 'reorg', 'interval', 'events', 'force'}, 'events': [1004, 1005], 'ancestor': 1003}]}
+FAILED
+reconcile/tests/test_cp2_independent.py::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[percheck] {'path': 'percheck', 'pin': 1004, 'history_event': 1004, 'live_event': 1005, 'sent': ['ev:1005'], 'runs': [{'block': 1004, 'reasons': {'reorg', 'interval', 'events', 'force', 'backfill'}, 'events': [1004], 'ancestor': 1003}, {'block': 1005, 'reasons': {'live', 'force', 'events'}, 'events': [1005], 'ancestor': None}]}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[True] FAILED
+reconcile/tests/test_cp2_independent.py::test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[False] {'reenable_before_live': False, 'disabled_event': 1002, 'sent': [], 'phase': {'phase': 'live', 'since': 1800010800.0, 'caught_up_block': 1003, 'history_block': 1001, 'first_live': []}, 'catchup': {'state': 'first_live', 'history_block': 1004, 'since': 1800010800.0, 'cause': 'reenabled'}}
+PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[runtime-pending] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[runtime-first_live] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[rpc-pending] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[rpc-first_live] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[partial-pending] PASSED
+reconcile/tests/test_cp2_independent.py::test_partial_or_failed_run_is_atomic_and_first_live_retries_after_restart[partial-first_live] PASSED
+reconcile/tests/test_cp2_independent.py::test_empty_success_is_silent_then_forces_live_and_removes_record PASSED
+reconcile/tests/test_cp2_independent.py::test_catchup_planning_and_d7_marker_clear_roll_back_together PASSED
+
+=================================== FAILURES ===================================
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-0] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m0')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 0, cause = 'new'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1003']
+E       assert ['ev:1003'] == []
+E         
+E         Left contains one more item: 'ev:1003'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1003',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-2] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m1')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 2, cause = 'new'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1005']
+E       assert ['ev:1005'] == []
+E         
+E         Left contains one more item: 'ev:1005'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1005',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-12] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m2')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 12, cause = 'new'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1015']
+E       assert ['ev:1015'] == []
+E         
+E         Left contains one more item: 'ev:1015'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1015',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-0] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m3')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 0, cause = 'reenabled'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1003']
+E       assert ['ev:1003'] == []
+E         
+E         Left contains one more item: 'ev:1003'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1003',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-2] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m4')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 2, cause = 'reenabled'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1005']
+E       assert ['ev:1005'] == []
+E         
+E         Left contains one more item: 'ev:1005'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1005',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-12] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m5')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 12, cause = 'reenabled'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1015']
+E       assert ['ev:1015'] == []
+E         
+E         Left contains one more item: 'ev:1015'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1015',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m6')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 0, cause = 'global'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+E       assert ['ev:1001'] == []
+E         
+E         Left contains one more item: 'ev:1001'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1001',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m7')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 2, cause = 'global'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+E       assert ['ev:1001'] == []
+E         
+E         Left contains one more item: 'ev:1001'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1001',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf1_history_event_stays_m8')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+confirmations = 12, cause = 'global'
+
+    @pytest.mark.parametrize("confirmations", [0, 2, 12])
+    @pytest.mark.parametrize("cause", ["new", "reenabled", "global"])
+    def test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg(tmp_path, ctl, confirmations, cause):
+        env = Env(tmp_path, confirmations=confirmations)
+        if cause == "global":
+            event = env.event("cu_a")
+            env.chain.mine(4 + confirmations)
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # retain a recorded common ancestor below the replay
+            env.step()
+            assert env.w.phase()["phase"] == "live"
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_b",) if cause == "new" else IDS)
+            if cause == "reenabled":
+                env.start(disabled=("cu_a",))
+            event = env.event("cu_a")
+            env.chain.mine(2 + confirmations)
+            env.step()
+            env.start()
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        assert event <= pin and keys(env) == []
+        original = next(r for r in env.rows("cu_a") if r["key"] == f"ev:{event}")
+        assert original["notify"] == original["alerts"] == 0
+        env.step()  # first live commit deletes record / clears first_live
+        assert env.rec("cu_a") is None and keys(env) == []
+        assert "cu_a" not in env.w.phase()["first_live"]
+        env.start(only=("cu_a",) if cause == "global" else IDS)  # no lost in-memory state excuse
+        old_head = env.chain.sealed
+        old_cp = env.w.checkpoint()["block"]
+        env.chain.reorg(event)  # common ancestor precedes history event and pin
+        assert env.event("cu_a") == event  # same event rule/data, re-included at its historical height
+        restore_head(env, old_head)
+        actual = keys(env)
+        replayed = next(r for r in env.rows("cu_a") if r["id"] == original["id"])
+        print({"cause": cause, "confirmations": confirmations, "event": event, "pin": pin,
+               "old_checkpoint": old_cp, "ancestor": event - 1, "replayed_incident": replayed["id"],
+               "notify": replayed["notify"], "alerts": replayed["alerts"], "sent": actual})
+>       assert actual == [], f"historical catch-up event sent after deep reorg: {actual}"
+E       AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+E       assert ['ev:1001'] == []
+E         
+E         Left contains one more item: 'ev:1001'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'ev:1001',
+E         + ]
+
+reconcile/tests/test_cp2_independent.py:57: AssertionError
+_ test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global] _
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf2_reorg_before_first_li0')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 0, 'rpc': False}}
+path = 'global'
+
+    @pytest.mark.parametrize("path", ["global", "percheck"])
+    def test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live(tmp_path, ctl, path):
+        env = Env(tmp_path)
+        if path == "global":
+            env.start(only=("cu_a",))
+            env.w.cfg.raw["max_log_range"] = 1  # scan records a usable common ancestor
+            env.chain.mine(3)
+            env.step()
+            pin = env.w.phase()["history_block"]
+        else:
+            env.go_live(only=("cu_a",))
+            env.start(only=("cu_a",), disabled=("cu_a",))
+            env.step()
+            env.start(only=("cu_a",))
+            env.step()
+            pin = env.rec("cu_a")["history_block"]
+        old_head = env.chain.sealed
+        env.start(only=("cu_a",))
+        env.chain.reorg(pin)
+        historical = env.event("cu_a")
+        env.chain.mine()
+        live = env.event("cu_a")
+        restore_head(env, old_head)
+        actual = keys(env)
+        print({"path": path, "pin": pin, "history_event": historical, "live_event": live, "sent": actual,
+               "runs": env.check("cu_a").runs})
+>       assert actual == [f"ev:{live}"], f"history replay escaped silence: {actual}"
+E       AssertionError: history replay escaped silence: ['ev:1004', 'ev:1005']
+E       assert ['ev:1004', 'ev:1005'] == ['ev:1005']
+E         
+E         At index 0 diff: 'ev:1004' != 'ev:1005'
+E         Left contains one more item: 'ev:1005'
+E         
+E         Full diff:
+E           [
+E         +     'ev:1004',
+E               'ev:1005',
+E           ]
+
+reconcile/tests/test_cp2_independent.py:86: AssertionError
+_ test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[True] __
+
+tmp_path = PosixPath('/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/test-tmp/test_nf3_disabled_interval_sta0')
+ctl = {'cu_a': {'fail': 0, 'rpc': False}, 'cu_b': {'fail': 28, 'rpc': False}}
+reenable_before_live = True
+
+    @pytest.mark.parametrize("reenable_before_live", [True, False])
+    def test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill(tmp_path, ctl, reenable_before_live):
+        env = Env(tmp_path)
+        ctl["cu_b"]["fail"] = 30
+        env.start()
+        env.step()
+        assert env.w.backfilling and "cu_a" in env.w.phase()["evaluated"]
+        env.start(disabled=("cu_a",))
+        disabled_event = env.event("cu_a")
+        env.step()
+        if reenable_before_live:
+            env.start()
+            assert env.w.backfilling and env.w.db.meta("disabled:cu_a") is None
+>           assert "cu_a" not in env.w.phase()["evaluated"]  # D15(c), coordinator-approved mechanism
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: assert 'cu_a' not in ['cu_a']
+
+reconcile/tests/test_cp2_independent.py:102: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    eb-reconcile:eb_reconcile.py:677 check cu_b failed at block 1001
+Traceback (most recent call last):
+  File "/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/reconcile/eb_reconcile.py", line 655, in run_checks
+    self.run_check(check, at, self.due(check, at, now, force))
+  File "/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/reconcile/eb_reconcile.py", line 706, in run_check
+    findings = list(check.run(ctx, block) or [])
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/reconcile/tests/test_catchup.py", line 63, in run
+    raise RuntimeError("cannot evaluate")
+RuntimeError: cannot evaluate
+ERROR    eb-reconcile:eb_reconcile.py:677 check cu_b failed at block 1002
+Traceback (most recent call last):
+  File "/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/reconcile/eb_reconcile.py", line 655, in run_checks
+    self.run_check(check, at, self.due(check, at, now, force))
+  File "/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/reconcile/eb_reconcile.py", line 706, in run_check
+    findings = list(check.run(ctx, block) or [])
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/cs-cp2-qa2-round1-repro-red-sq2zzbvf/reconcile/tests/test_catchup.py", line 63, in run
+    raise RuntimeError("cannot evaluate")
+RuntimeError: cannot evaluate
+- generated xml file: /Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa2/plans/check-switches/qa/cp2-round-2/round1-repro-red.xml -
+=========================== short test summary info ============================
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-0] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1003']
+assert ['ev:1003'] == []
+  
+  Left contains one more item: 'ev:1003'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1003',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-2] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1005']
+assert ['ev:1005'] == []
+  
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1005',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[new-12] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1015']
+assert ['ev:1015'] == []
+  
+  Left contains one more item: 'ev:1015'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1015',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-0] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1003']
+assert ['ev:1003'] == []
+  
+  Left contains one more item: 'ev:1003'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1003',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-2] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1005']
+assert ['ev:1005'] == []
+  
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1005',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[reenabled-12] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1015']
+assert ['ev:1015'] == []
+  
+  Left contains one more item: 'ev:1015'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1015',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-0] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-2] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf1_history_event_stays_muted_after_record_deleted_and_deep_reorg[global-12] - AssertionError: historical catch-up event sent after deep reorg: ['ev:1001']
+assert ['ev:1001'] == []
+  
+  Left contains one more item: 'ev:1001'
+  
+  Full diff:
+  - []
+  + [
+  +     'ev:1001',
+  + ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf2_reorg_before_first_live_keeps_history_silent_and_later_event_live[global] - AssertionError: history replay escaped silence: ['ev:1004', 'ev:1005']
+assert ['ev:1004', 'ev:1005'] == ['ev:1005']
+  
+  At index 0 diff: 'ev:1004' != 'ev:1005'
+  Left contains one more item: 'ev:1005'
+  
+  Full diff:
+    [
+  +     'ev:1004',
+        'ev:1005',
+    ]
+FAILED reconcile/tests/test_cp2_independent.py::test_nf3_disabled_interval_stays_silent_after_flip_in_global_backfill[True] - AssertionError: assert 'cu_a' not in ['cu_a']
+======================== 11 failed, 10 passed in 0.39s =========================
+
+exit=1

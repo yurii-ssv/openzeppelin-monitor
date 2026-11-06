@@ -1,0 +1,58 @@
+deploy/config/monitors/ssv_attacker_interaction_monitor.json: paused=False
+deploy/config/monitors/ssv_cluster_discord_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_cluster_discord_success_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_discord_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_discord_success_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_safe_discord_execution_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_safe_discord_reverted_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_safe_execution_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_safe_reverted_monitor.json: paused=False
+deploy/config/monitors/ssv_dao_success_monitor.json: paused=False
+deploy/config/monitors/ssv_failed_tx_inbox.json: paused=False
+deploy/config/monitors/ssv_large_eth_transfer_discord_monitor.json: paused=False
+deploy/config/monitors/ssv_large_eth_transfer_telegram_monitor.json: paused=False
+deploy/config/monitors/ssv_liquidation_discord_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_liquidation_discord_success_monitor.json: paused=False
+deploy/config/monitors/ssv_liquidation_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_liquidation_success_monitor.json: paused=False
+deploy/config/monitors/ssv_operator_discord_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_operator_discord_success_monitor.json: paused=False
+deploy/config/monitors/ssv_oracle_discord_dissent_monitor.json: paused=False
+deploy/config/monitors/ssv_oracle_discord_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_oracle_discord_success_monitor.json: paused=False
+deploy/config/monitors/ssv_oracle_dissent_monitor.json: paused=False
+deploy/config/monitors/ssv_oracle_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_oracle_success_monitor.json: paused=False
+deploy/config/monitors/ssv_retired_addresses_monitor.json: paused=False
+deploy/config/monitors/ssv_retired_updater_attempt_monitor.json: paused=False
+deploy/config/monitors/ssv_seed_stake_monitor.json: paused=False
+deploy/config/monitors/ssv_updater_other_sender_monitor.json: paused=False
+deploy/config/monitors/ssv_validator_discord_failure_monitor.json: paused=False
+deploy/config/monitors/ssv_validator_discord_success_monitor.json: paused=False
+
+Registered imports:
+"""Registered checks. Each lane appends its import lines in its own block (merges stay textual)."""
+
+from checks.registry import REGISTRY, build, register  # noqa: F401
+
+# --- CP1B: framework port of the #94775 worker
+from checks import m5_eb_desync  # noqa: F401, E402
+
+# --- CP2a: liquidation family (M3, M4, M14)
+from checks import m3_liquidation_zone, m4_conservation_deficit, m14_deposit_frontrun  # noqa: F401, E402
+
+# --- CP2b: oracle family (M9, M10, M11)
+from checks import m9_oracle_quorum, m10_oracle_rotation, m11_updater_liveness  # noqa: F401, E402
+
+# --- CP2c: wallets and supply (M12, M8 floor)
+from checks import m8_supply_floor, m12_wallet_burn, m13_retired_keys  # noqa: F401, E402
+
+# --- CP2d: cluster integrity and capacity (M1, M2)
+from checks import m1_stale_tuple, m2_operator_capacity  # noqa: F401, E402
+
+# --- CP2e: legacy SSV (M6, M7)
+from checks import m6_legacy_coverage, m7_ssv_solvency  # noqa: F401, E402
+
+example backfill={"enabled": true, "live_within_blocks": 12, "blocks_per_step": 50000}
+example _comment=Mainnet template. Copy to config.json (gitignored). Secrets are read from the environment variables named here, never from this file. Development and QA name the TEST_* variables or keep alerts.mode 'record'. rpc_urls: failover order (URLs or env variable names); MAINNET_RPC_URL, when set, replaces the first. backfill: history from start_block is evaluated without alerts (D17). checks.<id>.enabled (true or false only, read at start): false closes the check's open incidents silently as disabled; true again, or a check new to a live database, first catches up silently (needs backfill.enabled), then alerts.

@@ -1,0 +1,570 @@
+........................................................................ [  2%]
+........................................................................ [  5%]
+..............F......................................................... [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+........................................................................ [ 25%]
+........................................................................ [ 28%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 60%]
+........................................................................ [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 71%]
+........................................................................ [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 80%]
+........................................................................ [ 83%]
+........................................................................ [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+..................................................................FFFFFF [ 94%]
+FFF..................................................................... [ 97%]
+.........................................................                [100%]
+=================================== FAILURES ===================================
+________________ test_metrics_endpoint_exposes_required_series _________________
+
+tmp_path = PosixPath('/private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5303/test_metrics_endpoint_exposes_0')
+
+    def test_metrics_endpoint_exposes_required_series(tmp_path):
+        from metrics import MetricsServer
+    
+        chain = FakeChain()
+        chain.mine()
+        _, w = make_worker(tmp_path, [Stub(emit=lambda ctx, b: [finding(key="p", severity="page")])], chain=chain)
+        w.step(force=True)
+>       srv = MetricsServer(w.cfg.db_path, list(w.checks), "127.0.0.1", 0).start()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_framework.py:495: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/metrics.py:114: in __init__
+    self.httpd = ThreadingHTTPServer((host, port), Handler)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10b69c3e0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[502 + a gateway's JSON-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ca653a0>
+name = "502 + a gateway's JSON", behaviour = <function <lambda> at 0x10bded440>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10ee1d4c0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[403 + JSON without error-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ce94a40>
+name = '403 + JSON without error'
+behaviour = <function <lambda> at 0x10bded4e0>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10e783fe0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[200 + neither result nor error-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ca7b240>
+name = '200 + neither result nor error'
+behaviour = <function <lambda> at 0x10bded580>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10ee1fd40>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[500 + JSON-RPC error-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ca78040>
+name = '500 + JSON-RPC error', behaviour = <function <lambda> at 0x10bded620>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10ee1c3b0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[429-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ce94c20>
+name = '429', behaviour = <function <lambda> at 0x10bded6c0>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10e781d30>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[200 + HTML-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ce97a60>
+name = '200 + HTML', behaviour = <function <lambda> at 0x10bded760>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10ee1f2f0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[range error-<lambda>] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ce94fe0>
+name = 'range error', behaviour = <function <lambda> at 0x10bded800>
+
+    @pytest.mark.parametrize("name, behaviour", [
+        ("502 + a gateway's JSON", lambda b: (502, {"message": "Bad Gateway"})),
+        ("403 + JSON without error", lambda b: (403, {"message": "invalid api key"})),
+        ("200 + neither result nor error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)})),
+        ("500 + JSON-RPC error", lambda b: (500, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "x"}})),
+        ("429", lambda b: (429, b"too many")),
+        ("200 + HTML", lambda b: (200, b"<html>oops</html>")),
+        ("range error", lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0),
+                                          "error": {"code": -32005, "message": "query exceeds max block range 1000"}})),
+    ])
+    def test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint(http_endpoint, name, behaviour):
+        """QA CP3 attempt 1 F2: an HTTP error whose body is not a JSON-RPC error, and a 200 body with neither `result`
+        nor `error`, are transport failures of that endpoint: the next one answers (red before: `no result` raised,
+        the healthy fallback never asked); never a clean result from the broken one."""
+>       a, _ = http_endpoint(behaviour)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10ef024e0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error[<lambda>0] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10c7913a0>
+behaviour = <function <lambda> at 0x10bded940>
+
+    @pytest.mark.parametrize("behaviour", [
+        lambda b: (502, {"message": "Bad Gateway"}),
+        lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)}),
+    ])
+    def test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error(http_endpoint, behaviour):
+        """With every endpoint broken this way the request raises a transport error (`get_logs` does not split it
+        into single blocks; never `[]`), and the message names hosts only, never the key in the path."""
+>       a, hits = http_endpoint(behaviour)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10e7ba480>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+_ test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error[<lambda>1] _
+
+http_endpoint = <function http_endpoint.<locals>.start at 0x10ce94fe0>
+behaviour = <function <lambda> at 0x10bded9e0>
+
+    @pytest.mark.parametrize("behaviour", [
+        lambda b: (502, {"message": "Bad Gateway"}),
+        lambda b: (200, {"jsonrpc": "2.0", "id": b.get("id", 0)}),
+    ])
+    def test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error(http_endpoint, behaviour):
+        """With every endpoint broken this way the request raises a transport error (`get_logs` does not split it
+        into single blocks; never `[]`), and the message names hosts only, never the key in the path."""
+>       a, hits = http_endpoint(behaviour)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+reconcile/tests/test_rpc_failover.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reconcile/tests/test_rpc_failover.py:236: in start
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:457: in __init__
+    self.server_bind()
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/http/server.py:140: in server_bind
+    socketserver.TCPServer.server_bind(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <http.server.ThreadingHTTPServer object at 0x10ee1ffe0>
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+>       self.socket.bind(self.server_address)
+E       PermissionError: [Errno 1] Operation not permitted
+
+../../../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/socketserver.py:478: PermissionError
+=========================== short test summary info ============================
+FAILED reconcile/tests/test_framework.py::test_metrics_endpoint_exposes_required_series
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[502 + a gateway's JSON-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[403 + JSON without error-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[200 + neither result nor error-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[500 + JSON-RPC error-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[429-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[200 + HTML-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_an_answer_that_is_not_a_json_rpc_answer_fails_over_to_the_next_endpoint[range error-<lambda>]
+FAILED reconcile/tests/test_rpc_failover.py::test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error[<lambda>0]
+FAILED reconcile/tests/test_rpc_failover.py::test_a_lone_endpoint_answering_no_json_rpc_answer_raises_a_transport_error[<lambda>1]
+10 failed, 2495 passed in 64.51s (0:01:04)
+
+exit=1

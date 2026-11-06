@@ -1,0 +1,26 @@
+ deploy/README.md                                   |  25 +-
+ .../workers/cp2/repair-1/candidate-qa-probes.txt   | 140 +++++
+ .../workers/cp2/repair-1/docs-checklist.md         |  32 ++
+ .../cp2/repair-1/falsifier-F1-no-live-repeat.txt   | 144 +++++
+ .../falsifier-F10-no-boundary-live-gate.txt        | 121 ++++
+ ...alsifier-F11-absence-resolves-deferred-keys.txt | 120 ++++
+ .../repair-1/falsifier-F2-no-backfill-repeat.txt   | 120 ++++
+ .../falsifier-F3-no-backfill-reenable-record.txt   | 122 ++++
+ .../cp2/repair-1/falsifier-F4-no-deferral.txt      | 130 +++++
+ ...falsifier-F5-marker-cleared-not-handed-over.txt | 127 +++++
+ .../repair-1/falsifier-F6-no-floor-on-the-pin.txt  | 121 ++++
+ .../falsifier-F7-repeat-for-never-run-checks.txt   | 120 ++++
+ .../repair-1/falsifier-F8-no-durable-boundary.txt  | 138 +++++
+ .../falsifier-F9-backfill-pin-ignores-record.txt   | 121 ++++
+ .../check-switches/workers/cp2/repair-1/handoff.md | 244 ++++++++
+ .../cp2/repair-1/known-red-global-on-9e94a1a.txt   |  32 ++
+ .../workers/cp2/repair-1/red-on-718606c.txt        | 151 +++++
+ .../workers/cp2/repair-1/run_evidence.py           | 120 ++++
+ .../workers/cp2/repair-1/scratch-restoration.txt   |  14 +
+ .../check-switches/workers/cp2/repair-1/suite.txt  |  29 +
+ reconcile/README.md                                |  10 +-
+ reconcile/checks/README.md                         |  23 +-
+ reconcile/eb_reconcile.py                          | 145 ++++-
+ reconcile/tests/test_catchup.py                    |  31 +-
+ reconcile/tests/test_history_silence.py            | 633 +++++++++++++++++++++
+ 25 files changed, 2954 insertions(+), 59 deletions(-)
