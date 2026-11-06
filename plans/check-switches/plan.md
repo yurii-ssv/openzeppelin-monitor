@@ -194,7 +194,7 @@ Round 1 `qa/cp1-round-1.md` (`c63de872…`): FAIL — QF1 BLOCKING (falsy `enabl
 <a id="cp2"></a>
 ## CP2 — Silent catch-up for re-enabled and new checks; docs; composed QA
 
-Status: REPAIR
+Status: AWAITING QA
 Goal: a re-enabled or newly added check on a live database is caught up silently and then alerts, the global D17 backfill is unchanged, and the runbook tells DevOps how to flip a monitor.
 Required inputs: Global rules; D3, D4, D5, D9–D13; F4, F5, F7, F9; CP1 handoff and QA report; `reconcile/eb_reconcile.py` (`bootstrap`, `phase` helpers `:222-277`, `due` `:488-510`, `run_checks` `:543-580`, `run_check` `:582-636`, `status`), `reconcile/checks/README.md` §3, §4, §7, `reconcile/tests/test_backfill.py` (as the model for the scenarios and as the frozen oracle), `deploy/README.md` "Backfill phase (D17)", `reconcile/README.md`, `reconcile/config.example.json`.
 Allowed writes: `reconcile/eb_reconcile.py` (catch-up record, pinned silent run, forced first live run, `status.checks.<id>.catchup`), `reconcile/tests/test_switches.py` (extend) and/or `reconcile/tests/test_catchup.py` (new), `reconcile/tests/harness.py` (additive keyword only), `deploy/README.md`, `reconcile/checks/README.md` §3/§4/§7, `reconcile/README.md`, `reconcile/config.example.json` (`_comment` only), `plans/check-switches/workers/cp2/**`. Not: `tests/test_backfill.py`, `tests/test_m*.py`, `checks/m*.py`, `checks/registry.py`, `db.py`, `metrics.py`.
