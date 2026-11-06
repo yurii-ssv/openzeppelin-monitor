@@ -48,6 +48,7 @@ from alerts import Alerts
 from checks.base import Ctx, Every, NearSetEveryBlock, OnEvents, OnInbox
 from checks.m5_eb_desync import audit  # noqa: F401 - re-exported (CLI, tests)
 from checks.registry import disabled as disabled_ids
+from checks.registry import validate_switches
 from db import DB  # noqa: F401 - re-exported
 from eb_events import PARAM_KINDS, TOPIC0, decode_log
 from inbox import Inbox, InboxUnavailable
@@ -229,7 +230,9 @@ class Worker:
         never re-alerted, absent from the open counts; a key re-found after a re-enable opens a new incident),
         `resolved_block` = the checkpoint, with no message of any kind (D3); the durable marker `disabled:<id>`
         records the disabled state. A second start with the same config closes nothing and keeps the marker. A
-        built check's marker is cleared (the re-enabling start)."""
+        disabled check's catch-up record (D9) is dropped: the start that enables it again decides afresh. A built
+        check's marker is cleared (the re-enabling start), after the catch-up records are written (`_plan_catchups`).
+        """
         block, now = self.checkpoint()["block"], self.clock()
         for cid in self.disabled:
             rows = self.db.conn.execute("SELECT id, evidence FROM incidents WHERE check_id=? AND state='open'",
@@ -247,8 +250,52 @@ class Worker:
             elif rows:  # rows opened while the marker stood (not by this worker): closed too, counted
                 self.db.set_meta(f"disabled:{cid}", {**marker, "closed": marker.get("closed", 0) + len(rows)})
                 log.info("check %s disabled: %d more open incident(s) closed as disabled", cid, len(rows))
+            self.db.conn.execute("DELETE FROM meta WHERE key=?", (f"catchup:{cid}",))
+        self._plan_catchups()
         for cid in self.checks:
             self.db.conn.execute("DELETE FROM meta WHERE key=?", (f"disabled:{cid}",))
+
+    def _plan_catchups(self) -> None:
+        """Per-check silent catch-up (D9, the D17 rule per check), decided at start inside bootstrap's transaction,
+        before any run attempt (a failed first run cannot flip the decision). Only with `backfill.enabled` and a
+        database in phase `live` (while `backfill`, the global path handles every check). A built check gets the
+        durable record `catchup:<id>` = `{state: pending, history_block: null, since, cause}` when it carries the
+        disabled marker (re-enabled: a fresh record) or has never completed a run on this database (`run:<id>`
+        without `block`: a new check; an existing record is kept, so a restart keeps its pinned block). A check that
+        completed a run before and was not disabled gets none (D10: upgrading a live database changes nothing). Its
+        stale `phase.first_live` entry (disabled after the go-live, before its first live run) is removed, so its
+        catch-up run never carries `live`."""
+        ph = self.phase()
+        if not self.backfill_cfg["enabled"] or ph["phase"] != "live":
+            return
+        now, planned = self.clock(), []
+        for cid in self.checks:
+            reenabled = self.db.meta(f"disabled:{cid}") is not None
+            new = (self.db.meta(f"run:{cid}") or {}).get("block") is None
+            if reenabled or (new and self.db.meta(f"catchup:{cid}") is None):
+                self.db.set_meta(f"catchup:{cid}", {"state": "pending", "history_block": None, "since": now,
+                                                    "cause": "reenabled" if reenabled else "new"})
+                planned.append(cid)
+                log.info("check %s %s: it evaluates everything since its last run silently, then alerts", cid,
+                         "re-enabled" if reenabled else "new on a live database")
+        stale = set(planned) & set(ph.get("first_live", ()))
+        if stale:
+            self.db.set_meta("phase", {**ph, "first_live": [c for c in ph["first_live"] if c not in stale]})
+
+    def _catchup(self, check_id: str) -> dict | None:
+        """The check's catch-up record (D9), None when it has none."""
+        return self.db.meta(f"catchup:{check_id}")
+
+    def _catchup_block(self, check_id: str, block: int) -> int:
+        """The check's catch-up block: the checkpoint of the first step in which its silent run is attempted, set
+        once and durably (like `_history_block`), so a retried or restarted silent run stays pinned there."""
+        rec = self._catchup(check_id)
+        if rec.get("history_block") is None:
+            with self.db.tx():
+                rec = {**rec, "history_block": block}
+                self.db.set_meta(f"catchup:{check_id}", rec)
+            log.info("check %s: catch-up pinned at block %d; it alerts from its first run after it", check_id, block)
+        return rec["history_block"]
 
     def checkpoint(self) -> dict:
         return self.db.meta("checkpoint")
@@ -361,6 +408,11 @@ class Worker:
                     self.db.set_meta(f"cursor:events:{cid}", [ancestor[0], END_OF_BLOCK])
                 prev = self.db.meta(f"reorg:{cid}")
                 self.db.set_meta(f"reorg:{cid}", ancestor[0] if prev is None else min(prev, ancestor[0]))
+                # A catch-up (D9) whose silent run evaluated blocks the reorg replaced: its silent run is repeated,
+                # still pinned to its catch-up block, so the new chain's blocks up to there stay silent too.
+                rec = self.db.meta(f"catchup:{cid}")
+                if rec is not None and rec["state"] == "first_live" and rec["history_block"] > ancestor[0]:
+                    self.db.set_meta(f"catchup:{cid}", {**rec, "state": "pending"})
             self.alerts.health(
                 "reorg",
                 f"Chain reorganisation below the confirmation horizon: checkpoint {cp['block']} rewound to "
@@ -530,8 +582,11 @@ class Worker:
         if force:
             reasons.add("force")
         ph = self.phase()
+        catch = self._catchup(check.id) if ph["phase"] != "backfill" else None
         if ph["phase"] == "backfill" and check.id not in ph.get("evaluated", ()):
             reasons |= {"backfill", "force"}  # the silent evaluation of history (D17), a full run
+        elif catch is not None:  # the check's own catch-up (D9): its silent run, then its first live run
+            reasons |= {"backfill", "force"} if catch["state"] == "pending" else {"live", "force"}
         elif check.id in ph.get("first_live", ()):
             reasons |= {"live", "force"}  # the first live evaluation after the backfill, a full run
         for s in check.schedules():
@@ -598,8 +653,17 @@ class Worker:
                     # later (a failed run): the blocks after it are evaluated live by the run below
                     at = min(history, block)
                     self.run_check(check, at, self.due(check, at, now, force))
+                catch = None if backfilling else self._catchup(check.id)
+                if catch is not None and catch["state"] == "pending":
+                    # its silent catch-up (D9), pinned to its catch-up block even when it is retried later; the
+                    # blocks after it are evaluated live by the run below (another check's run is not affected)
+                    at = min(self._catchup_block(check.id, block), block)
+                    self.run_check(check, at, self.due(check, at, now, force))
+                    catch = self._catchup(check.id)
                 if history is not None and block <= history:
                     continue  # alerting starts at the first block after the caught-up checkpoint
+                if catch is not None and block <= catch["history_block"]:
+                    continue  # this check alerts from the first block after its catch-up block
                 reasons = self.due(check, block, now, force)
                 if reasons:
                     self.run_check(check, block, reasons)
@@ -645,10 +709,13 @@ class Worker:
                     raise ValueError(f"check {check.id} returned a finding for {f.check!r}")
             ph = self.phase()
             silent = ph["phase"] == "backfill" and check.id not in ph.get("evaluated", ())
-            # The check's silent evaluation of history (D17): incidents are opened, escalated and resolved without
-            # a message; one still reported by a live run is sent then (an unsent incident is "unmuted" by its
-            # first notifying finding).
-            self.alerts.apply([replace(f, notify=False) if silent and not f.resolve else f for f in findings], block)
+            catch = self._catchup(check.id) if ph["phase"] != "backfill" else None
+            catching_up = catch is not None and catch["state"] == "pending"
+            # The check's silent evaluation of history (D17), or of everything since its last run (its catch-up,
+            # D9): incidents are opened, escalated and resolved without a message; one still reported by a live run
+            # is sent then (an unsent incident is "unmuted" by its first notifying finding).
+            mute = silent or catching_up
+            self.alerts.apply([replace(f, notify=False) if mute and not f.resolve else f for f in findings], block)
             if reorg_ancestor is not None:  # the reorg re-find rule (checks/README.md §6.2)
                 self.alerts.resolve_not_refound(check.id, reorg_keys - {f.key for f in findings}, block,
                                                 reorg_ancestor)
@@ -664,6 +731,15 @@ class Worker:
                                            "first_live": sorted({*ph.get("first_live", ()), check.id})})
             elif check.id in ph.get("first_live", ()):
                 self.db.set_meta("phase", {**ph, "first_live": [c for c in ph["first_live"] if c != check.id]})
+            if catching_up:
+                pinned = block if catch.get("history_block") is None else catch["history_block"]
+                if block >= pinned:  # the silent run committed at its catch-up block: the next run, at a later
+                    # block, is the first live one (a silent run below it, after a reorg rewound the checkpoint,
+                    # leaves the record pending: it is repeated at the catch-up block)
+                    self.db.set_meta(f"catchup:{check.id}", {**catch, "state": "first_live", "history_block": pinned})
+            elif catch is not None and block > catch["history_block"]:
+                # the first live run committed: the catch-up is over (it sends no message of its own, D3)
+                self.db.conn.execute("DELETE FROM meta WHERE key=?", (f"catchup:{check.id}",))
             prev = self.db.meta(f"run:{check.id}", {})
             self.db.set_meta(f"run:{check.id}", {
                 "at": now, "block": block, "reasons": sorted(reasons), "findings": len(findings),
@@ -784,7 +860,8 @@ class Worker:
             "identity": self.db.meta("identity"), "schema_version": self.db.meta("schema_version"),
             "checkpoint": self.checkpoint(), "lag_blocks": self.db.meta("lag_blocks"),
             "phase": self._phase_progress(), "disabled": self.disabled,
-            "checks": {c: {**self.db.meta(f"run:{c}", {}), "state": self.db.meta(f"check:{c}:last_sweep")}
+            "checks": {c: {**self.db.meta(f"run:{c}", {}), "state": self.db.meta(f"check:{c}:last_sweep"),
+                           **({"catchup": cu} if (cu := self._catchup(c)) is not None else {})}
                        for c in self.checks},
             "params_block": self.params.block,
             "reorg_pending": {c: a for c in self.checks if (a := self.db.meta(f"reorg:{c}")) is not None},
@@ -885,6 +962,11 @@ def main(argv=None) -> int:
                         stream=sys.stderr)
 
     cfg = load_config(args.config)
+    if args.command in ("run", "once", "verify-layout"):
+        # D14 before the writable database is opened or created (its migration writes `schema_version`): a
+        # malformed switch stops the start with the configuration error and no file or row is written. The
+        # read-only `status` raises it when it builds the worker; `export` and `audit` never read a switch.
+        validate_switches(cfg.raw)
     db = DB(cfg.db_path, readonly=args.command in ("audit", "status", "export"))
 
     if args.command == "audit":

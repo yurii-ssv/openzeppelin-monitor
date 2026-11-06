@@ -1,0 +1,60 @@
+# CP2 suite and gates (V2.7) on the candidate tree (branch cs/cp2, BASE d7b3da6 + the CP2 changes), 2026-11-06T13:25Z
+# env: Python 3.12.15, pytest 9.1.1, ruff 0.17.1, uv 0.13.4 (7456b60bc 2026-10-20 aarch64-apple-darwin), PATH prefixed with $HOME/.foundry/bin
+
+## full suite: reconcile/.venv/bin/python -m pytest -q reconcile/tests
+2464 passed in 61.44s (0:01:01)
+exit 0
+(BASE: 2,395 passed; new: 69 in reconcile/tests/test_catchup.py -> expected 2,464)
+
+## ruff: reconcile/.venv/bin/ruff check reconcile
+All checks passed!
+exit 0
+
+## CP1 tests re-run on this head (PF-10): test_switches.py
+82 passed in 0.85s
+## D17 oracle: test_backfill.py
+67 passed in 0.74s
+## new: test_catchup.py
+69 passed in 2.29s
+
+## sha256 (test_backfill.py must equal 28da7d49...; build() source unchanged)
+28da7d49e950a0bdc51ee7d4f6993ad757fa72d60524c39a7c28efcc24702d35  reconcile/tests/test_backfill.py
+40a511bbef98b8182d929e7e834ab93110fbe2bd63182b50a670ff2852a81b29  reconcile/tests/test_switches.py
+3ce85de014ae10dccf88f0cb99ab04735bb54205641ec43a7923ba6c1104783d  reconcile/tests/harness.py
+58c5dab80551609e8fffc33ee50f8e3f5c9a0dd192efd7da8d5df09255cdbd45  reconcile/checks/registry.py
+bc1e363d366cf57849220c76d00f0d82ac180fb52ebb576a4532f71868d66bb2  reconcile/db.py
+6746a035f737fb4bdb7717510a69891eac8cab03357ad2d9b114034de88af72b  reconcile/metrics.py
+
+## guarded paths: git diff --stat d7b3da6 -- (must be empty)
+(end of guarded diff)
+## guarded paths vs the code base 9e94a1a (CP1+CP2 composed): checks/m*.py, test_m*.py, test_backfill.py, db.py, metrics.py, harness.py
+(end)
+
+## phase meta shape: keys written by eb_reconcile.py (unchanged set: phase, since, evaluated, first_live, history_block, caught_up_block)
+215:                    self.db.set_meta("phase", {"phase": "backfill", "since": self.clock(), "evaluated": []})
+217:                self.db.set_meta("phase", {"phase": "live", "since": self.clock(), "first_live": []})
+283:            self.db.set_meta("phase", {**ph, "first_live": [c for c in ph["first_live"] if c not in stale]})
+341:                self.db.set_meta("phase", ph)
+352:            self.db.set_meta("phase", {"phase": "live", "since": self.clock(), "caught_up_block": block,
+730:                self.db.set_meta("phase", {**ph, "evaluated": sorted({*ph.get("evaluated", ()), check.id}),
+733:                self.db.set_meta("phase", {**ph, "first_live": [c for c in ph["first_live"] if c != check.id]})
+
+## lazy imports: test_catchup.py imports only symbols present at BASE (it collects there: see red-on-cp1.txt, 69 cases)
+15:from __future__ import annotations
+17:import json
+18:import random
+19:import sqlite3
+20:from pathlib import Path
+22:import pytest
+23:from fakechain import PROXY, FakeChain, FakeClock, FakeRpc
+24:from harness import Capture, outbox
+26:import checks as registry
+27:from checks.base import Check, Every, Finding, OnEvents
+28:from eb_reconcile import DB, DEFAULTS, Config, Worker
+29:from eb_storage import u256
+30:from rpc import RpcError
+
+## secret scan of the added lines: git diff d7b3da6 | grep -inE '^\+.*(token|secret|webhook|api[_-]?key|password|https?://)'
+150:+sections: `alerts` (mode, env names of secrets, label, explorer, `realert_s`, `routes`, `health_realert_s`, `digest_interval_s`,
+161:+  "_comment": "Mainnet template. Copy to config.json (gitignored). Secrets are read from the environment variables named here, never from this file. Develo
+(plans/ evidence excluded from the scan above: it quotes test names and this command only)

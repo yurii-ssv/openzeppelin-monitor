@@ -106,6 +106,70 @@ history; until the caught-up checkpoint the lag health alert is off; the daily d
 health messages (RPC, inbox, parameters, check errors) are always sent. A restart resumes the backfill from its
 checkpoint.
 
+### Disable / re-enable a monitor
+
+A worker check (M1–M14) is switched in `reconcile/config.json`; the worker reads the switch at start (no live
+reload):
+
+```bash
+# 1. edit reconcile/config.json:  "checks": { "m7": { "enabled": false } }   (true again, or remove the key, to re-enable)
+# 2. restart the worker (the change takes effect at this start)
+docker compose restart eb-reconcile
+# 3. check
+docker compose exec eb-reconcile python eb_reconcile.py status   # "disabled": ["m7"]; checks.<id>.catchup while catching up
+```
+
+`enabled` must be `true` or `false`. Any other value (`0`, `null`, `""`, `"false"`, …) stops the worker at start
+with `checks.m7.enabled: must be true or false` before it opens the database (D14); `status` refuses it too.
+
+**Disable.** Every start command (`run`, the container's command, and `once`, `verify-layout`) performs the closure;
+`status` and `export` never do. At that start the check's open incidents become state `disabled` in one transaction,
+with **no message of any kind** (no resolution, no "disabled" notice). A message queued before the disabling restart
+(not yet delivered) is still delivered. The closed incidents are never re-alerted, leave `status.open_incidents` and
+`open`, the digest's open counts and `ssv_watch_open_incidents`; `export` prints them with `state: disabled`.
+`status.disabled` lists the check (read from the config, so it shows as soon as the file is edited) and the daily
+digest adds `Disabled checks: m7` after "Open incidents". A disabled check is not built, so it has no
+`ssv_watch_check_last_run_*` or `ssv_watch_check_errors_total` series (the "last run older than 2× its interval" rule
+cannot fire for it) and no metric says it is disabled: read `status` or the digest. While it is off, a chain
+reorganisation still rewinds its event cursor; the replay happens when it is enabled again.
+
+**Re-enable.** With `backfill.enabled` true (the default; the production config has it) on a database in phase
+`live`, the re-enabled check first catches up **silently**: its first run evaluates everything since its last
+committed run (the events of the disabled period from its cursor, the state at its catch-up block = the checkpoint of
+the first step after the restart) and opens, escalates and resolves incidents without a message. Its first run at a
+later block (normally the next step) is forced and sends what it still reports: a condition still true then is sent
+**once**, as `open`, under a new incident id. An event of the disabled period and a condition that appeared and
+healed while the check was off are never sent; the event stays visible in `export` as an incident with `alerts = 0`
+(a healed level condition leaves no incident). No message is sent about the re-enable itself. While it lasts,
+`status.checks.<id>.catchup` = `{"state": "pending" | "first_live", "history_block": <catch-up block>, "since",
+"cause": "reenabled" | "new"}`; it disappears when the first live run commits. The catch-up survives restarts (it is
+kept in the database with its block). If the catch-up run fails, the check raises its usual `check-error` health
+message (an RPC error counts as an RPC failure), keeps its catch-up block and is retried every step; the other checks
+alert as usual meanwhile. A reorganisation below the catch-up block before the first live run repeats the silent run
+on the new chain.
+
+With `backfill.enabled: false` there is **no** catch-up: the re-enabled check's first run alerts on everything since
+its last run, i.e. every event of the disabled period is sent. Keep the backfill enabled in production. While a new
+database is still in phase `backfill`, a check enabled or disabled there is simply handled by the [global
+backfill](#backfill-phase-d17).
+
+**Monitor rules are separate.** `checks.<id>.enabled` switches only the worker check. M8, M10, M11 and M13 also have
+OpenZeppelin Monitor rules (`deploy/config/monitors/`, each with its own `"paused"` field) and M15 is Monitor-only,
+so disabling the worker check does not silence those rules. The sub-switches `checks.m9.dissent_enabled`,
+`checks.m11.revert_rate_enabled` and `checks.m11.zero_round_proof_enabled` are unchanged (a rule off by config is
+said once per run by a health line and its open episodes are resolved once).
+
+### Adding a check to a live database
+
+A check new to the database (for example M17 after an upgrade) gets the same silent catch-up at the first start that
+builds it, because it has no completed run there: its first run evaluates every stored event from its default cursor
+(`start_block − 1`) up to its catch-up block silently, and it alerts from its next run (a condition still true then is
+sent once). Its go-live block is `status.checks.<id>.catchup.history_block` (after the catch-up, `run:<id>` in
+`status.checks`). This needs `backfill.enabled` true, like the re-enable. Upgrading a live database to a version with
+this rule changes nothing for the checks that already completed a run: no catch-up, no forced run, no message. The
+catch-up reads state at its catch-up block; a run retried long after it needs an endpoint of the failover list that
+serves historical state, as for the backfill above.
+
 ### RPC failover (D16)
 
 Each request goes to the endpoint that answered last, then to the others in order; after `rpc_primary_retry_s`

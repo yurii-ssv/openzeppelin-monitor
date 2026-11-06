@@ -97,11 +97,14 @@ says which. Every run is at the current checkpoint block (intermediate blocks ar
 | (framework) | `once` / `step(force=True)` | `force` |
 | (framework) | silent backfill (D17): the check's one evaluation of history, pinned to the caught-up checkpoint (`ctx.block` is that block even when a failed run is retried later); its findings open, escalate and resolve incidents **without sending** (applied with `notify=False`) | `backfill`, `force` |
 | (framework) | the check's first run after its own silent evaluation, at a block after the caught-up checkpoint (in the same step when the silent run was a retry; the other checks need not have finished theirs): a forced full run; a key still reported is sent then (`open`), a key only found in history stays unsent | `live`, `force` |
+| (framework) | per-check catch-up (D9), on a `live` database with `backfill.enabled`: a check re-enabled (§7) or with no completed run on the database (new) evaluates everything since its last committed run once, silently: pinned to its catch-up block (the checkpoint of the first step it runs in, durable in `meta` `catchup:<id>`; kept when the run is retried or the worker restarts, and repeated there after a reorg below it), events from its cursor; findings applied with `notify=False` | `backfill`, `force` |
+| (framework) | the check's first run at a block after its catch-up block (in the same step when the silent run was a retry; another check's runs are never held): a forced full run; a key still reported is sent then (`open`), an event or condition of the catch-up only stays unsent; no message about the catch-up itself (D3); the record is deleted when it commits | `live`, `force` |
 
 Cursors (`meta` keys `cursor:events:<id>`, `cursor:inbox:<id>`) are durable and advance only when a
 run commits, so no event or inbox entry is lost across a crash. A reorg rewinds event cursors to the
 common ancestor. The first run of a new check on an existing database sees every stored event since
-`start_block`; filter by `ev.block` if only recent ones matter.
+`start_block` (silently, as its catch-up, when the database is live and the backfill enabled); filter by `ev.block`
+if only recent ones matter.
 
 ## 4. Findings and the incident lifecycle
 
@@ -144,8 +147,9 @@ open incident closed as `disabled` by the next worker start (`bootstrap`, one tr
 **no message of any kind** (no resolution, no disable notice; a message queued before is still delivered). A
 `disabled` row is neither open nor resolved: never re-alerted, absent from the open counts (status, digest, metrics),
 never re-evaluated by the reorg re-find rule or `resolve_on_absence`, and never re-opened: a key found again once the
-check is re-enabled opens a new incident with a new id. Most checks that read `incidents` themselves select
-`state='open'` (or `'resolved'`), so they ignore `disabled` rows; two match any state on purpose: M1's "already
+check is re-enabled opens a new incident with a new id. Re-enabled, the check catches up silently (§3, per-check
+catch-up) and then alerts; nothing is sent about the switch itself, in either direction (D3). Most checks that read
+`incidents` themselves select `state='open'` (or `'resolved'`), so they ignore `disabled` rows; two match any state on purpose: M1's "already
 reported" test (`_reported`: a message naming the transaction was sent, whatever its incident's state later became, so
 a re-detected transient poisoning is not sent twice) and M5's incident-id uniqueness (a `disabled` id stays taken).
 `checks.<id>.enabled`, when present, must be `true` or `false`; any other value stops the worker at construction. A
@@ -365,8 +369,11 @@ schedules are unchanged.
 
 `build()` resolves a check's config as `defaults` ← (legacy top-level keys named in `legacy_keys`, M5
 only) ← `checks.<id>`. A key not in `defaults` or an unknown check id is a startup error. Every
-registered check is enabled unless `"enabled": false`. Other worker sections: `alerts` (mode, env
-names of secrets, label, explorer, `realert_s`, `routes`, `health_realert_s`, `digest_interval_s`,
+registered check is enabled unless `"enabled": false`. `enabled`, when present, must be a JSON boolean (any other
+value is a startup error, D14); it is read at start (no live reload). `false`: the check is not built and its open
+incidents are closed as `disabled` at the next start (§4); `true` again (or removing the key): the check catches up
+silently, then alerts (§3). A check that is merely not built (tests' `only=`) is not disabled. Other worker
+sections: `alerts` (mode, env names of secrets, label, explorer, `realert_s`, `routes`, `health_realert_s`, `digest_interval_s`,
 `record_path`), `inbox` (`path`, `blockscout`, `enabled`; a missing file is health, §5.2), `inventory` (`api_url` — null disables
 the API —, `api_refresh_s`), `metrics` (`enabled`, `host`, `port`). See `../config.example.json`.
 
