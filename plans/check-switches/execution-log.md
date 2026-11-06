@@ -50,3 +50,10 @@ Decision: CP1 REPAIR (failed rounds: 1 of 2). New D14 (coordinator, within D6's 
 2026-11-06 · coordinator
 Outcome: packet `workers/cp1/packet-repair-1.md` sha256 `0b407dcb…` (commit `05a3fe0`). Task `task_5ce75920d977`, Dispatch `ctx_7a0b9bf65c45`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1-r1`, HEAD `7639cff` = repair base; requested claude/opus/high = `launch.effective`; turn started.
 Decision: CP1 REPAIR in progress. Next: on `worker_done`, scope check, then Codex QA round 2.
+
+<a id="event-0008"></a>
+## Event 0008 — CP1 QA round 1 settled
+
+2026-11-06 · coordinator
+Outcome: `worker_done` (msg `msg_b2007470e692`, Dispatch `ctx_0c5ee82f133b`): the QA-1 worker got past its approval prompt and committed its report on `cs/cp1-qa1` as `11e08ee` (25 files, additions only on top of `7639cff`). The committed report is byte-identical to the coordinator's copy (sha256 `c63de872…`) and every evidence file matches `qa/cp1-round-1.manifest.txt`. Verdict unchanged: FAIL.
+Decision: none new (repair 1 in progress, event 0007). QA-1 worktree `cs-cp1-qa1` releasable (report preserved in `qa/` and on `cs/cp1-qa1`).
