@@ -78,3 +78,10 @@ Decision: second failed QA round on CP1 → no third repair without Marco's deci
 2026-11-06 · coordinator
 Outcome: Marco chose option A: accept CP1, QF3 deferred to CP2 (DF1 in plan § Decisions and closure; D14 clarification: `export`/`audit` need not validate). `git merge --no-ff cs/cp1-r1` → `16432ad` on `plan/check-switches` (contains `7639cff` and `62ed4c2`). On the merge: suite **2,395 passed** (56.9 s), `ruff check reconcile` clean, `test_backfill.py` sha256 `28da7d49…` (= base). QA verdicts remain FAIL as measured (invariant 2).
 Decision: CP1 ACCEPTED WITH DEFERRALS; CP2 dispatch next, its packet adds DF1 and the CP1 docs follow-ups (runbook: every start command closes; queued rows still delivered; `enabled` must be boolean). Worktrees `cs-cp1`, `cs-cp1-r1`, `cs-cp1-qa1`, `cs-cp1-qa2` releasable (branches merged or reports copied).
+
+<a id="event-0012"></a>
+## Event 0012 — CP2 dispatched
+
+2026-11-06 · coordinator
+Outcome: packet `workers/cp2/packet-implementer-1.md` (sha256 `81d10101…`; CP2 block + DF1 + CP1 docs follow-ups) committed as `d7b3da6` = frozen CP2 base (parent `6b20457`, contains the CP1 merge `16432ad`). Start: Task `task_b2312d8a0353`, Dispatch `ctx_db6390806a7a`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2`, HEAD `d7b3da6` = base, branch `cs/cp2`; requested claude/opus/high = `launch.effective`; turn started.
+Decision: CP2 IN PROGRESS. Next: on `worker_done`, scope check, then composed Codex QA (V2.9) over `9e94a1a` → CP2 head incl. the DF1 reproducer.
