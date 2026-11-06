@@ -43,3 +43,10 @@ Decision: CP1 AWAITING QA. Next: on `worker_done`, copy the report into `qa/` wi
 2026-11-06 · coordinator
 Outcome: Codex QA round 1 report `qa/cp1-round-1.md` (sha256 `c63de8729ed96e6349cb48bfe30daf70a34770a59fd7685b2407914f9f5f7781`) and its evidence `qa/cp1-round-1/` (manifest `qa/cp1-round-1.manifest.txt`, 24 files) copied by the coordinator from `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1-qa1` (uncommitted there: the worker's `git add` hit the sandbox and stopped at an approval prompt the coordinator may not answer; escalations `msg_stop_c2e66460…`, `msg_stop_5f5a1308…`). Verdict **FAIL**: QF1 BLOCKING — `enabled: 0|null|""` closes incidents (D6 says explicit `false`); QF2 NOTE — reader table omits `m1_stale_tuple.py` `_reported` and `fork_e2e.py` `sent` (V1.6 FAIL); QN1 NOTE — README should say `verify-layout`/`once` close too. V1.1, V1.2, V1.4, V1.5, V1.7 PASS (suite 2,366 passed, ruff clean, regressions red on `61307dd` and `9e94a1a`); V1.3, V1.6 FAIL. Implementer risks 3–5 judged no defect.
 Decision: CP1 REPAIR (failed rounds: 1 of 2). New D14 (coordinator, within D6's intent): `enabled` must be a boolean, anything else is a startup configuration error; QF2 and QN1 assigned to the same repair (QN1's runbook part stays with CP2 docs). Repair packet `workers/cp1/packet-repair-1.md`, base `7639cff`, branch `cs/cp1-r1`.
+
+<a id="event-0007"></a>
+## Event 0007 — CP1 repair 1 started
+
+2026-11-06 · coordinator
+Outcome: packet `workers/cp1/packet-repair-1.md` sha256 `0b407dcb…` (commit `05a3fe0`). Task `task_5ce75920d977`, Dispatch `ctx_7a0b9bf65c45`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp1-r1`, HEAD `7639cff` = repair base; requested claude/opus/high = `launch.effective`; turn started.
+Decision: CP1 REPAIR in progress. Next: on `worker_done`, scope check, then Codex QA round 2.
