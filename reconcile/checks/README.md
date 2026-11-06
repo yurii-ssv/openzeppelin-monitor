@@ -122,14 +122,14 @@ class Finding:
     resolve: bool = False      # closes the open incident for (check, key)
     notify: bool = True        # False: open/track silently (digest only), e.g. M5 "latent"
     revision: str | None = None   # a value different from the open incident's re-sends it under the same id
-    incident_id: str | None = None  # id to use if this finding opens an incident (must be unique)
+    incident_id: str | None = None  # id to use if this finding opens an incident (unique; see the id rule below)
 ```
 
 Incidents are keyed by `(check, key)`; two checks never share an incident. Per run, for each finding:
 
 | Situation | Effect | Outbox `kind` |
 |---|---|---|
-| no open incident, `resolve=False` | open (id = `incident_id` or `<check>-<key[:16]>-<block>`); send unless `notify=False` | `open` |
+| no open incident, `resolve=False` | open (id = `incident_id` or `<check>-<key[:16]>-<block>`, id rule below); send unless `notify=False` | `open` |
 | open, higher severity | escalate under the same id; send | `escalate` |
 | open, lower severity | record silently | — |
 | open, new `revision` | send under the same id (a check-defined material change) | `update` |
@@ -155,6 +155,13 @@ it opened silently (`notify = 0`, `alerts = 0`) is re-found only by a silent run
 `incidents` themselves select `state='open'` (or `'resolved'`), so they ignore `disabled` rows; two match any state on purpose: M1's "already
 reported" test (`_reported`: a message naming the transaction was sent, whatever its incident's state later became, so
 a re-detected transient poisoning is not sent twice) and M5's incident-id uniqueness (a `disabled` id stays taken).
+**Incident id rule** (D16). A proposed `incident_id` must be unique: one held by an `open` or `resolved` incident
+raises `ValueError` (the run rolls back, `check-error`). One held only by a `disabled` incident is not an error: a
+check keeps its own state while it is off (M5's `m5_incidents` keeps the open row and proposes its id again after
+re-enable), so the new incident opens under the first free deterministic suffix `<id>-2`, `<id>-3`, … (the scheme of
+the default id). The `disabled` row is untouched and messages carry the framework id, which can then differ from the
+check's own id; later findings of the key reach the new incident through `(check, key)`, not through the id
+(`test_switch_ids`).
 `checks.<id>.enabled`, when present, must be `true` or `false`; any other value stops the worker at construction. A
 check that is merely not built (tests' `only=`, stub instances) is not disabled: nothing happens to its incidents
 (they are not re-alerted while it does not run).
