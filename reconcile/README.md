@@ -27,7 +27,8 @@ The worker is read-only against the chain. Each step:
    §6.2](checks/README.md)).
    A failed read invalidates the parameters (checks that read them do not run) and is retried every
    step; see [checks/README.md §5.1](checks/README.md).
-4. Re-alerts open incidents (page 6 h, warn 24 h), sends the daily digest, delivers the outbox.
+4. Re-alerts open incidents (page 6 h, warn 24 h) of the checks it runs, sends the daily digest, delivers the
+   outbox.
 5. Reads the Monitor's last processed block (`monitor_watch.py`, D20): a Monitor that stalls, a missing or unreadable
    file, or an unknown head for 4 min is a `monitor-stall` health message (one per stall), `monitor-recovered` when it
    catches up, and every block range the Monitor skips is a `monitor-skipped` message naming it. It also reads the
@@ -98,7 +99,16 @@ Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --con
 - `run`: the loop (default container command); serves `/metrics` when `metrics.enabled`
 - `once`: one step with every check forced, then exit (`--serve-metrics --hold N` keeps `/metrics` up N s)
 - `status`: phase (`backfill` with progress, or `live`), checkpoint, per-check last run, open incidents,
-  undelivered alerts (read-only: answers while a check runs)
+  undelivered alerts, `disabled` (the checks the config switches off, sorted) (read-only: answers while a check runs)
+
+Disabling a check (`checks.<id>.enabled: false`, read at start): the next `run`/`once` start closes the check's open
+incidents as state `disabled` in one transaction, with no message of any kind (no resolution, no notice), and records
+`disabled:<id>` in `meta`; they are never re-alerted, leave `status.open_incidents`/`open`, the digest's open counts
+and `ssv_watch_open_incidents`, and `export` prints them with `state: disabled`. A message queued before the
+closure is still delivered. `status` lists the check under `disabled` (also before the closing start) and the daily
+digest adds `Disabled checks: <ids>` after "Open incidents". A check absent from `checks` is enabled. While the check
+is off, a reorg still rewinds its event cursor and records its pending reorg ancestor (replayed when it is enabled
+again). The start that enables it again clears `disabled:<id>`; a key it finds again opens a new incident.
 - `export`: every incident and outbox message as JSON (soak evidence)
 - `audit`: M5 event-only history of every root window with post-S additions and matched removals
 - `verify-layout`: implementation, module addresses and codehashes against the pin

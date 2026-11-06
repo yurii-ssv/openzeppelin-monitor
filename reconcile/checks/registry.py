@@ -3,7 +3,8 @@
 A check module registers its class with `@register`; `checks/__init__.py` imports each module
 (one line per check, in lane blocks). `build(settings)` instantiates the enabled checks with their
 resolved config: the class `defaults`, then legacy top-level keys the class names in `legacy_keys`,
-then `settings["checks"][id]`. Unknown check ids and unknown keys are configuration errors.
+then `settings["checks"][id]`. Unknown check ids and unknown keys are configuration errors. `disabled(settings)`
+names the registered checks the configuration switches off (`checks.<id>.enabled: false`).
 """
 
 from __future__ import annotations
@@ -53,3 +54,11 @@ def build(settings: dict, only=None) -> list:
             register_event(name, sig)
         out.append(cls(resolve_config(cls, settings), settings))
     return out
+
+
+def disabled(settings: dict) -> list[str]:
+    """The registered ids switched off by `checks.<id>.enabled: false` (sorted): exactly the ids `build` skips for
+    `enabled` (same test), whatever `only` says. A registered id absent from `checks` is enabled; a check that is
+    merely not built (tests' `only=`, stub instances) is not disabled. Unknown ids are `build`'s error."""
+    configured = settings.get("checks", {})
+    return sorted(cid for cid in REGISTRY if not configured.get(cid, {}).get("enabled", True))

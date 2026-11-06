@@ -1,0 +1,172 @@
+# New tests (reconcile/tests/test_switches.py of the candidate) run on the base code 9e94a1a
+# Method: `git archive 9e94a1a reconcile` exported into a scratch directory (no worktree, this checkout untouched), the
+# candidate's test_switches.py copied in, `pytest -q reconcile/tests/test_switches.py --junitxml` with the CP1 venv; the
+# export was deleted afterwards. Per test: the failing line of test_switches.py and the assertion text.
+#
+# Named regressions (V1.7): V1.1 = test_disabled_check_closes_its_incidents_and_is_never_realerted[False|True]:
+#   red on the 6 h page `realert` row (line 151; -vv: 5 realert rows, first `sw_a-kpage-1001:realert:1`
+#   created_at 1800021720.0 = clock start + 6 h 02 min, text "🚨 [PAGE] Still open (alert 2): sw_a kpage"); V1.4 = test_reorg_while_disabled_rewinds_the_disabled_cursor[1|4]:
+#   red on the un-rewound cursor (line 358: `[1004, END] == [1002, END]` depth 1, `[1007, END] == [1005, END]` depth 4). Both behavioural (AssertionError, not ImportError/KeyError).
+# Tests red only for a new symbol (ImportError checks.registry.disabled, AttributeError Worker.disabled, KeyError
+#   status 'disabled'): test_build_order_unchanged_and_disabled_ids, test_built_check_with_the_same_id_is_never_disabled,
+#   test_example_config_with_a_disabled_check_lists_it_in_status, test_readonly_status_lists_the_disabled_check_and_
+#   closes_nothing — new API/visibility tests, not regressions. Green on base (controls): test_digest_has_no_
+#   disabled_line_without_disabled_checks, test_seeded_switch_sweep[14].
+
+FAIL  test_disabled_check_closes_its_incidents_and_is_never_realerted[False]
+      line 151 [AssertionError]: assert outbox(env.w, "kind='realert'") == []
+      E AssertionError: assert [{'key': 'sw_...n-1001', ...}] == []
+FAIL  test_disabled_check_closes_its_incidents_and_is_never_realerted[True]
+      line 151 [AssertionError]: assert outbox(env.w, "kind='realert'") == []
+      E AssertionError: assert [{'key': 'sw_...n-1001', ...}] == []
+FAIL  test_a_check_that_is_merely_not_built_is_not_disabled
+      line 179 [AssertionError]: assert outbox(env.w, "kind='realert'") == [] and env.n_outbox() == before
+      E AssertionError: assert ([{'key': 'sw_...e-1001', ...}] == []
+PASS  test_digest_has_no_disabled_line_without_disabled_checks
+FAIL  test_disable_enable_disable_round_trip_sends_nothing_at_start[False]
+      line 211 [AssertionError]: assert [r["state"] for r in closed] == ["disabled", "disabled"]
+      E AssertionError: assert ['open', 'open'] == ['disabled', 'disabled']
+FAIL  test_disable_enable_disable_round_trip_sends_nothing_at_start[True]
+      line 211 [AssertionError]: assert [r["state"] for r in closed] == ["disabled", "disabled"]
+      E AssertionError: assert ['open', 'open'] == ['disabled', 'disabled']
+FAIL  test_disabled_with_no_open_incident_writes_a_zero_marker
+      line 241 [AssertionError]: assert (marker.get("closed"), marker.get("block")) == (0, env.w.checkpoint()["block"])
+      E assert (None, None) == (0, 1001)
+FAIL  test_disabled_on_a_brand_new_database_anchors_at_start_block_minus_one
+      line 249 [AssertionError]: assert (marker.get("block"), marker.get("closed")) == (env.start - 1, 0) and env.n_outbox() == 0
+      E assert ((None, None) == (999, 0)
+FAIL  test_reopened_key_at_the_closure_block_gets_a_new_incident_id
+      line 264 [AssertionError]: assert [r["state"] for r in rows] == ["disabled", "open"]
+      E AssertionError: assert ['open'] == ['disabled', 'open']
+FAIL  test_enabled_check_realerts_and_resolves_beside_a_disabled_one
+      line 282 [AssertionError]: assert [r["check_id"] for r in realerts] == ["sw_b"]
+      E AssertionError: assert ['sw_a', 'sw_b'] == ['sw_b']
+FAIL  test_build_order_unchanged_and_disabled_ids
+      line 291 [ImportError]: from checks.registry import disabled
+      E ImportError: cannot import name 'disabled' from 'checks.registry' (<base-export>/reconcile/checks/reg
+FAIL  test_built_check_with_the_same_id_is_never_disabled
+      line 310 [AttributeError]: assert env.w.disabled == [] and env.w.db.meta("disabled:sw_a") is None
+      E AttributeError: 'Worker' object has no attribute 'disabled'
+FAIL  test_example_config_with_a_disabled_check_lists_it_in_status
+      line 314 [ImportError]: from checks.registry import disabled
+      E ImportError: cannot import name 'disabled' from 'checks.registry' (<base-export>/reconcile/checks/reg
+FAIL  test_reorg_while_disabled_rewinds_the_disabled_cursor[1]
+      line 358 [AssertionError]: assert env.w.db.meta("cursor:events:sw_a") == [ancestor, END_OF_BLOCK]
+      E assert [1004, 2147483648] == [1002, 2147483648]
+FAIL  test_reorg_while_disabled_rewinds_the_disabled_cursor[4]
+      line 358 [AssertionError]: assert env.w.db.meta("cursor:events:sw_a") == [ancestor, END_OF_BLOCK]
+      E assert [1007, 2147483648] == [1005, 2147483648]
+FAIL  test_two_reorgs_while_disabled_keep_the_lowest_ancestor
+      line 382 [AssertionError]: assert env.w.db.meta("reorg:sw_a") == ancestor  # min of both ancestors
+      E AssertionError: assert None == 1004
+FAIL  test_reenabled_after_a_reorg_while_disabled_replays_the_new_chain
+      line 401 [AssertionError]: assert check.runs and "reorg" in check.runs[0]["reasons"] and check.ancestors[0] == ancestor
+      E AssertionError: assert ([{'reasons': {'interval'}, 'events': [], 'inbox': [], 'block': 1005}] and 'reorg' in {'interval'})
+FAIL  test_reenabled_check_never_touches_its_disabled_rows
+      line 417 [AssertionError]: assert [r["state"] for r in closed] == ["disabled"] and closed[0]["last_seen_block"] > ancestor
+      E AssertionError: assert (['open'] == ['disabled']
+FAIL  test_failed_closure_commits_nothing_and_the_next_start_closes_once
+      line 447 [Failed]: with pytest.raises(OSError):
+      E Failed: DID NOT RAISE OSError
+FAIL  test_rpc_outage_at_the_disabling_start_closes_later_and_never_realerts
+      line 469 [AssertionError]: assert outbox(env.w, "kind='realert'") == []
+      E AssertionError: assert [{'key': 'sw_...e-1001', ...}] == []
+FAIL  test_readonly_status_lists_the_disabled_check_and_closes_nothing
+      line 494 [KeyError]: assert out["disabled"] == ["sw_a"]
+      E KeyError: 'disabled'
+FAIL  test_status_and_export_after_the_closure
+      line 508 [AssertionError]: assert not [r for r in st["open"] if r["check_id"] == "sw_a"]
+      E AssertionError: assert not [{'id': 'sw_a-kpage-1001', 'check_id': 'sw_a', 'key': 'kpage', 'severity': 'page', ...}, {'id': 'sw_a-ksilent-1001', '...arn', 'severity': 'warn', ...}, {'id': 'sw_a-kinfo-1002', 'check_id': 's
+FAIL  test_metrics_open_count_excludes_disabled_rows
+      line 522 [AssertionError]: assert open_lines and not [ln for ln in open_lines if 'check="sw_a"' in ln]
+      E assert (['ssv_watch_open_incidents{check="sw_a",severity="info"} 1', 'ssv_watch_open_incidents{check="sw_a",severity="page"} 1', 'ssv_watch_open_incidents{check="sw_a",severity="warn"} 2'] and not ['ssv_watch_open_incide
+FAIL  test_seeded_switch_sweep[0]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[1]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[2]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[3]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[4]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (4, 'restart')
+FAIL  test_seeded_switch_sweep[5]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[6]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (6, 'outage')
+FAIL  test_seeded_switch_sweep[7]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (7, 'restart')
+FAIL  test_seeded_switch_sweep[8]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (8, 'restart')
+FAIL  test_seeded_switch_sweep[9]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[10]
+      line 573 [AssertionError]: assert not [r for r in new if r["check_id"] == "sw_a"], (seed, act, new)
+      E AssertionError: (10, 'outage', [{'key': 'sw_a-k2-1001:realert:1', 'created_at': 1800025980.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 2): sw_a k2 — test
+FAIL  test_seeded_switch_sweep[11]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[12]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (12, 'restart')
+FAIL  test_seeded_switch_sweep[13]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+PASS  test_seeded_switch_sweep[14]
+FAIL  test_seeded_switch_sweep[15]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (15, 'outage')
+FAIL  test_seeded_switch_sweep[16]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (16, 'outage')
+FAIL  test_seeded_switch_sweep[17]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[18]
+      line 573 [AssertionError]: assert not [r for r in new if r["check_id"] == "sw_a"], (seed, act, new)
+      E AssertionError: (18, 'outage', [{'key': 'sw_a-k3-1004:realert:3', 'created_at': 1800179220.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a k3 — test
+FAIL  test_seeded_switch_sweep[19]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[20]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (20, 'restart')
+FAIL  test_seeded_switch_sweep[21]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (21, 'restart')
+FAIL  test_seeded_switch_sweep[22]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[23]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[24]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[25]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[26]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[27]
+      line 575 [AssertionError]: assert env.w.db.meta("disabled:sw_a") is not None
+      E AssertionError: assert None is not None
+FAIL  test_seeded_switch_sweep[28]
+      line 574 [AssertionError]: assert not [r for r in env.rows("sw_a") if r["state"] == "open"], (seed, act)
+      E AssertionError: (28, 'restart')
+FAIL  test_seeded_switch_sweep[29]
+      line 573 [AssertionError]: assert not [r for r in new if r["check_id"] == "sw_a"], (seed, act, new)
+      E AssertionError: (29, 'outage', [{'key': 'sw_a-k2-1009:realert:3', 'created_at': 1800129180.0, 'severity': 'page', 'text': '🚨 [PAGE] Still open (alert 4): sw_a k2 — test
+
+51 failed / 53 collected on 9e94a1a (exit 1 expected)
