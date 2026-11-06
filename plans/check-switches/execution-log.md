@@ -134,3 +134,10 @@ Decision: second failed QA round on CP2 → no third repair without Marco's deci
 2026-11-06 · coordinator
 Outcome: Marco chose "3rd repair, framework fix" for QF4. New **D16**: a proposed incident id held only by `disabled` rows opens under the first free `<id>-<n>`; other collisions still raise; no `checks/m*.py` change. Repair-2 packet `workers/cp2/packet-repair-2.md` (base `ff3841f`, branch `cs/cp2-r2`, `alerts.py` `_apply_one` only, QA's real-M5 reproducer as oracle).
 Decision: CP2 REPAIR (third repair by Marco's decision); then composed QA round 3.
+
+<a id="event-0020"></a>
+## Event 0020 — CP2 repair 2 started
+
+2026-11-06 · coordinator
+Outcome: packet sha256 `2d0968ee…`. Task `task_b7882b055c18`, Dispatch `ctx_582f1c65dc6a`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-r2`, HEAD `ff3841f` = base; claude/opus/high = `launch.effective`; turn started.
+Decision: next, on `worker_done`: scope check (`alerts.py` `_apply_one` only), composed Codex QA round 3.
