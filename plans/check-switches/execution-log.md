@@ -106,3 +106,10 @@ Decision: CP2 REPAIR (failed rounds 1 of 2). QN1: coordinator disposition — pl
 2026-11-06 · coordinator
 Outcome: Marco answered the scope question: fix both the per-check and the global D17 path (recommended option). New **D15** (durable historical silence; global NF2 silent-run repeat; NF3 amends D9's "phase `backfill` untouched" for list contents). QN1 disposed (plan-provisioning exception, reverted at closure). Repair packet `workers/cp2/packet-repair-1.md` (base `718606c`, branch `cs/cp2-r1`; `alerts.py` allowed for the mute rule only; `test_backfill.py` byte-identical; QA's `test_cp2_independent.py` is the oracle).
 Decision: start CP2 repair 1.
+
+<a id="event-0016"></a>
+## Event 0016 — CP2 repair 1 started
+
+2026-11-06 · coordinator
+Outcome: packet sha256 `56d7f6c0…` (commit `b06ec32`). Task `task_b45d25b0c809`, Dispatch `ctx_1779a0dfb3eb`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-r1`, HEAD `718606c` = repair base; claude/opus/high = `launch.effective`; turn started.
+Decision: CP2 REPAIR in progress. Next: on `worker_done`, scope check (incl. `alerts.py` limited to the mute rule), then composed Codex QA round 2. A second FAIL → decision by Marco.

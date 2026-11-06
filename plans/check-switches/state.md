@@ -1,7 +1,7 @@
 # Current state — check-switches
 
 Contract: [plan.md](plan.md) · History: [execution-log.md](execution-log.md)
-Updated: 2026-11-06 · Last transition: [event-0014](execution-log.md#event-0014)
+Updated: 2026-11-06 · Last transition: [event-0016](execution-log.md#event-0016)
 Mode: executing (plan READY, sha256 c396a859a965…); Run `run_3869f8caafaa`
 Observed candidate: `/Users/marco/orca/workspaces/ssv-network-monitor/check-switches`, branch `plan/check-switches`, plan commit `00fe823`, CP1 frozen base `61307dd` (run directory tracked via the `.gitignore` exception)
 Accepted candidate: CP1 → `plan/check-switches` merge `16432ad` (ACCEPTED WITH DEFERRALS: DF1 → CP2)
@@ -15,9 +15,9 @@ Status: ACCEPTED WITH DEFERRALS (Marco, option A; merge `16432ad`, suite 2,395 p
 
 ### CP2
 
-Status: REPAIR pending Marco's scope answer (composed QA round 1 FAIL: QF1/NF1, QF3/NF3 BLOCKING in scope; global NF1/NF2 BLOCKING, KNOWN RED on `9e94a1a`; QN1 NOTE; DF1 CLOSED). Candidate `718606c`; report `qa/cp2-round-1.md` `6d23504a…`. Failed rounds 1 of 2.
-Assignment: none
-Next: Marco decides whether the repair also fixes the global D17 path (NF1/NF2 global); then write repair-1 packet (D9 amendment for NF3; durable historical-silence boundary for NF1), start it from `718606c` on `cs/cp2-r1`.
+Status: REPAIR (composed QA round 1 FAIL; failed rounds 1 of 2; D15 by Marco's scope answer: fix per-check and global)
+Assignment: repair 1 — Task `task_b45d25b0c809`, Dispatch `ctx_1779a0dfb3eb`, worktree `/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-r1`, base `718606c`, branch `cs/cp2-r1`, claude/opus/high (effective = requested)
+Next: on `worker_done`, scope check, composed Codex QA round 2 (QA-1 reproducers + V1/V2 rows); FAIL again → decision by Marco.
 
 ## Resume
 
