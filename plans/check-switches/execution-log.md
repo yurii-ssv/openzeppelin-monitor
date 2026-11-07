@@ -177,3 +177,10 @@ Decision: delivery smoke recorded. Next: closure (move run dir to ssv-research, 
 2026-11-07 · coordinator
 Outcome: on Marco's request (D13 follow-up, docs only): `deploy/README.md` "Disable / re-enable a monitor" gains a quick-reference table (disable, re-enable, verify, Monitor `paused` rules with the render step); the Kubernetes section says the worker reads `config.json` only at start, so a switch = edit the worker ConfigMap + restart the pod. No code change; suite 2,519 passed.
 Decision: recorded; closure still pending Marco's go.
+
+<a id="event-0026"></a>
+## Event 0026 — Closure (Marco: agree on all, remove all, create the PR)
+
+2026-11-07 · coordinator
+Outcome: delivery code head `d1aa4dc` on `plan/check-switches` (base `9e94a1a`; integration merges `16432ad` CP1, `333de80` CP2; docs follow-up event 0025). Composed results: suite **2,519 passed**, ruff clean, `test_backfill.py` `28da7d49…` unchanged; CP1 and CP2 ACCEPTED WITH DEFERRALS; delivery smoke PASS (event 0024). Open NOTEs with owners: DF2 (QN3 missing info resolution after a deep reorg through a D15 repeat), DF3 (QN2 M5 id divergence), DF4 (QN4 wording) — owner Marco / M5-lifecycle follow-up plan, triggers in plan.md "Decisions and closure". Retrospective: [RETROSPECTIVE.md](RETROSPECTIVE.md). Marco's decisions: agree on closure; remove smoke volumes/image and all worker/QA worktrees; create the PR (stacked on PR #1, base `plan/monitoring-service`).
+Decision: CLOSED. Run directory moved to `/Users/marco/ssv/repos/ssv-research/checkpointed-plans/monitor-service/check-switches/` (manifest `MANIFEST.sha256`), removed from the branch, `.gitignore` back to `plans/` (QN1 closed).
