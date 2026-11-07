@@ -1,5 +1,5 @@
 {
-  "_comment": "Mainnet template. Copy to config.json (gitignored). Secrets are read from the environment variables named here, never from this file. Development and QA name the TEST_* variables or keep alerts.mode 'record'. rpc_urls: failover order (URLs or env variable names); MAINNET_RPC_URL, when set, replaces the first. backfill: history from start_block is evaluated without alerts (D17).",
+  "_comment": "Mainnet template. Copy to config.json (gitignored). Secrets are read from the environment variables named here, never from this file. Development and QA name the TEST_* variables or keep alerts.mode 'record'. rpc_urls: failover order (URLs or env variable names); MAINNET_RPC_URL, when set, replaces the first. backfill: history from start_block is evaluated without alerts (D17). checks.<id>.enabled (true or false only, read at start): false closes the check's open incidents silently as disabled; true again, or a check new to a live database, first catches up silently (needs backfill.enabled), then alerts.",
   "chain_id": 1,
   "proxy": "0xDD9BC35aE942eF0cFa76930954a156B3fF30a4E1",
   "views": "0xafE830B6Ee262ba11cce5F32fDCd760FFE6a66e4",
