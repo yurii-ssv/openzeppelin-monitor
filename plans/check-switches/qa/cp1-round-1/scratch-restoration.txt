@@ -1,3 +1,0 @@
-Scratch archive exports: /private/tmp/cs-cp1-qa1-11vx0rjz
-Removed: True
-Candidate implementation was never edited.

@@ -1,6 +1,0 @@
-revision=4205b00d510e3e2e84ccd370836473d2b20d7855
-scratch=/private/tmp/cs-cp2-qa3-ruff-v9eyycz0
-command=['/Users/marco/orca/workspaces/ssv-network-monitor/cs-cp2-qa3/reconcile/.venv/bin/ruff', 'check', 'reconcile']
-All checks passed!
-
-exit=0

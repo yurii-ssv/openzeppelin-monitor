@@ -1,7 +1,0 @@
-19:41:25 {"cp": 26357948, "catchup": {"state": "pending", "history_block": null, "since": 1793994034.1821122, "cause": "reenabled"}, "silent": null, "run": {"block": 26357889, "reasons": ["interval"], "findings": 0}, "rec": 8}
-19:45:03 {"cp": 26357971, "catchup": {"state": "pending", "history_block": null, "since": 1793994034.1821122, "cause": "reenabled"}, "silent": null, "run": {"block": 26357889, "reasons": ["interval"], "findings": 0}, "rec": 8}
-19:46:15 {"cp": 26357971, "catchup": {"state": "pending", "history_block": 26357971, "since": 1793994034.1821122, "cause": "reenabled"}, "silent": null, "run": {"block": 26357889, "reasons": ["interval"], "findings": 0}, "rec": 8}
-19:47:46 {"cp": 26357971, "catchup": {"state": "first_live", "history_block": 26357971, "since": 1793994034.1821122, "cause": "reenabled"}, "silent": "26357971", "run": {"block": 26357971, "reasons": ["backfill", "force", "interval"], "findings": 0}, "rec": 8}
-19:52:53 {"cp": 26358010, "catchup": {"state": "first_live", "history_block": 26357971, "since": 1793994034.1821122, "cause": "reenabled"}, "silent": "26357971", "run": {"block": 26357971, "reasons": ["backfill", "force", "interval"], "findings": 0}, "rec": 8}
-19:55:01 {"cp": 26358010, "catchup": null, "silent": "26357971", "run": {"block": 26358010, "reasons": ["force", "live"], "findings": 0}, "rec": 8}
-{"cp": 26358029, "catchup": null, "silent": "26357971", "run": {"block": 26358010, "reasons": ["force", "live"], "findings": 0}, "rec": 8}

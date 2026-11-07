@@ -1,9 +1,0 @@
-/private/tmp/cp1-qa2-independent-yoydhv0e: removed=True
-/private/tmp/cp1-qa2-repair-red-mfqg4eh3: removed=True
-/private/tmp/cp1-qa2-frozen-base-red-pf6srbdj: removed=True
-/private/tmp/cp1-qa2-code-base-red-tjwabqyv: removed=True
-/private/tmp/cp1-qa2-independent-final-gie3_sts: removed=True
-independent: /private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5248 removed=True
-repair-red: /private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5249 removed=True
-frozen-base-red: /private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5250 removed=True
-code-base-red: /private/var/folders/8t/k746_0dd5tb3f511hhtl_lz40000gn/T/pytest-of-marco/pytest-5251 removed=True

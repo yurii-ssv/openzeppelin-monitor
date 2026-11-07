@@ -1,5 +1,0 @@
-reconcile/eb_reconcile.py:910:        worker = Worker(cfg, None, db)
-reconcile/eb_reconcile.py:919:    worker = Worker(cfg, rpc, db, make_notifier(cfg.alerts))
-reconcile/scripts/fork_e2e.py:138:        self.w = Worker(cfg, Rpc(URL, batch_size=50), DB(cfg.db_path), notifier,
-reconcile/checks/registry.py:64:    never silently skips a check. Every configured id is checked (registered or not); `Worker()` calls this first."""
-exit=0

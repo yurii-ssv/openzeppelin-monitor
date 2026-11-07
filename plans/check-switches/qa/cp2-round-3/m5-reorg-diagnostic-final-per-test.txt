@@ -1,4 +1,0 @@
-reconcile.tests.test_qa3_diagnostic::test_m5_live_page_becomes_latent_during_silent_repeat[True]: FAIL
-AttributeError: 'builtin_function_or_method' object has no attribute 'advance'
-reconcile.tests.test_qa3_diagnostic::test_m5_live_page_becomes_latent_during_silent_repeat[False]: FAIL
-AttributeError: 'builtin_function_or_method' object has no attribute 'advance'
