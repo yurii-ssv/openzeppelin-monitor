@@ -112,6 +112,15 @@ checkpoint.
 
 ### Disable / re-enable a monitor
 
+Quick reference (details below):
+
+| Goal | Do | Verify |
+|---|---|---|
+| Silence a worker check (M1–M14) | `reconcile/config.json` → `"checks": {"m7": {"enabled": false}}`, restart the worker (Kubernetes: edit the worker ConfigMap, restart the pod) | `status` → `"disabled": ["m7"]`; open incidents closed as `disabled`, no message |
+| Turn it back on | `"enabled": true` (or remove the key), restart; keep `backfill.enabled` true | `status.checks.m7.catchup` while it catches up silently, then gone; still-true conditions are sent once |
+| Check what is off | `python eb_reconcile.py status` (or the daily digest: `Disabled checks: …`) | no metric reports a disabled check |
+| Silence a Monitor rule (M8, M10, M11, M13, M15) | `"paused": true` in `deploy/config/monitors/<rule>.json`, re-render (`deploy/render.sh --out config --strict`; Kubernetes: the Monitor ConfigMap), restart the Monitor | the worker switch does **not** silence these |
+
 A worker check (M1–M14) is switched in `reconcile/config.json`; the worker reads the switch at start (no live
 reload):
 
@@ -289,7 +298,10 @@ The Monitor container has a healthcheck (its last-block file rewritten within 5 
   `inbox/failed-tx.jsonl` (empty, `touch`, never truncate) before both start (the compose `inbox-init` service).
 - **Config**: ConfigMaps for the rendered Monitor config (`config/`, read-only at `/app/config`) and the worker's
   `config.json` (at `/app/config.json`). **Secrets**: a Secret exposed as environment variables (names as in
-  `.env.example`).
+  `.env.example`). The worker reads `config.json` only at start: switching a check
+  ([Disable / re-enable a monitor](#disable--re-enable-a-monitor)) = edit the worker ConfigMap, then restart the
+  pod (e.g. `kubectl rollout restart statefulset/<name>`; this restarts the Monitor too, which is harmless) and
+  check `status` in the worker container.
 - **Security**: `readOnlyRootFilesystem: true` for the worker (an `emptyDir` at `/tmp` is harmless; SQLite keeps
   temporary data in memory), non-root uid 10001, `allowPrivilegeEscalation: false`.
 - **Probes**: readiness = the compose healthcheck command (status file healthy and written within 10 min). Liveness

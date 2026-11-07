@@ -170,3 +170,10 @@ Decision: CP2 ACCEPTED WITH DEFERRALS. Next: delivery smoke (record-mode upgrade
 2026-11-06 · coordinator
 Outcome: Marco's go (source `ssv-network-monitor_watch-data`, internal mainnet RPC). Run by a coordinator subagent (Opus 5.5 medium) 19:01–19:58 UTC on copies `cs-smoke_watch-data`/`cs-smoke_monitor-data`, image `cs-smoke-reconcile:333de80` (`sha256:0d237749…`), record mode only, only `MAINNET_RPC_URL` passed. (1) upgrade: no catch-up/disabled/silent meta, 0 switch-caused records (8 records: 4 normal live, 4 health from the 7-day gap/absent Monitor) — PASS; (2) m3 disabled: `status.disabled == ["m3"]`, marker `closed 0` (no m3 incidents existed), 0 records — PASS; (3) m3 re-enabled: catchup pending → silent pinned run → forced first live → record removed, 0 findings, 0 records — PASS. Source hashes before/after identical. Limits: closure and send-once paths ran with zero m3 rows; internal RPC is not archive (worker failed over to public `rpc_urls`, no failed step). Evidence `evidence/smoke/` (report.md saved by the coordinator; spot-checks appended).
 Decision: delivery smoke recorded. Next: closure (move run dir to ssv-research, restore `.gitignore`, memory notes); `cs-smoke_*` volumes/image and worker worktrees kept until Marco decides.
+
+<a id="event-0025"></a>
+## Event 0025 — Docs: switch quick reference + Kubernetes step (Marco)
+
+2026-11-07 · coordinator
+Outcome: on Marco's request (D13 follow-up, docs only): `deploy/README.md` "Disable / re-enable a monitor" gains a quick-reference table (disable, re-enable, verify, Monitor `paused` rules with the render step); the Kubernetes section says the worker reads `config.json` only at start, so a switch = edit the worker ConfigMap + restart the pod. No code change; suite 2,519 passed.
+Decision: recorded; closure still pending Marco's go.

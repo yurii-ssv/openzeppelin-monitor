@@ -1,7 +1,7 @@
 # Current state — check-switches
 
 Contract: [plan.md](plan.md) · History: [execution-log.md](execution-log.md)
-Updated: 2026-11-06 · Last transition: [event-0024](execution-log.md#event-0024)
+Updated: 2026-11-06 · Last transition: [event-0025](execution-log.md#event-0025)
 Mode: executing (plan READY, sha256 c396a859a965…); Run `run_3869f8caafaa`
 Observed candidate: `/Users/marco/orca/workspaces/ssv-network-monitor/check-switches`, branch `plan/check-switches`, plan commit `00fe823`, CP1 frozen base `61307dd` (run directory tracked via the `.gitignore` exception)
 Accepted candidate: CP1 + CP2 → `plan/check-switches` merge `333de80` (both ACCEPTED WITH DEFERRALS: DF1 closed; DF2–DF4 open, owner Marco/follow-up)
