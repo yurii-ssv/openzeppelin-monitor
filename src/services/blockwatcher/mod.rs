@@ -6,12 +6,14 @@
 //! - Block storage implementations
 //! - Error handling specific to block watching operations
 //! - Missed block recovery functionality
+//! - Reporting of blocks that were fetched but not evaluated (filter failures)
 
 mod error;
 mod recovery;
 mod service;
 mod storage;
 mod tracker;
+mod unevaluated;
 
 pub use error::BlockWatcherError;
 pub use recovery::{process_missed_blocks, RecoveryResult};
@@ -20,3 +22,4 @@ pub use service::{
 };
 pub use storage::{BlockStorage, FileBlockStorage, MissedBlockEntry, MissedBlockStatus};
 pub use tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait};
+pub use unevaluated::{collect_unevaluated_blocks, report_unevaluated_block};

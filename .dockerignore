@@ -1,2 +1,11 @@
 # ignore all .git files and directories
 .git*
+
+# keep host build output, secrets and local runtime state out of the build context
+target
+.env
+config
+config.zip
+.local-dry
+logs
+data

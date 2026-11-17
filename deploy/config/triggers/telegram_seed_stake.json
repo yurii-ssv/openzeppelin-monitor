@@ -1,0 +1,18 @@
+{
+  "telegram_seed_stake": {
+    "name": "Seed Stake / Zero cSSV Supply",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "Seed Stake / Zero cSSV Supply",
+        "body": "M8 PAGE: FeesSynced with zero new fees, or the DAO Safe requested an unstake.\nEvents: ${events}\nSent by: ${transaction.from}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}

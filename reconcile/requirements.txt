@@ -1,0 +1,2 @@
+# Runtime: keccak256 only. Everything else is the Python standard library.
+pycryptodome==3.24.0

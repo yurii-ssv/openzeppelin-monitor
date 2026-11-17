@@ -5,18 +5,22 @@ WORKDIR /usr/app
 
 USER root
 RUN apk update && apk add openssl-dev
+# git over HTTP/2 gets a 401 from GitHub on git-upload-pack POSTs inside this image; cargo fetches git deps via the git CLI
+RUN git config --global http.version HTTP/1.1
 
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo install --root /usr/app --path . --profile release --locked
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/usr/app/target \
+    cargo install --root /usr/app --path . --profile release --locked --target-dir /usr/app/target
 
 # Wolfi image with latest tag digest
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:17ab0709456ce1a2aedd85e95f72e58d73133bb70c33ae945a4d4b2424e984f1
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:9c2092b053779e14c82fb50f77b37bcc38b7d2c83972352d5813280f9d035b03
 
 ARG version=3.12
 
-RUN apk add bash python-${version} py${version}-pip nodejs jq
+# the builder links against OpenSSL 3; current wolfi-base ships OpenSSL 4 (libssl.so.4)
+RUN apk add bash python-${version} py${version}-pip nodejs jq libssl3
 
 # removes apk and unneeded wolfi-base tools.
 RUN apk del wolfi-base apk-tools

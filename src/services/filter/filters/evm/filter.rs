@@ -739,7 +739,22 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 				let logs = logs_by_tx.get(&tx_hash).unwrap_or(&empty_logs);
 				let tx_hash_str = tx_hash.clone();
 
-				let receipt = if should_fetch_receipt {
+				// Only fetch receipts for transactions that can match this monitor: one call per
+				// transaction in the block would otherwise be made for every receipt-needing monitor.
+				// A failed transaction emits no logs, so `to`/`from` are what identify it.
+				let touches_monitored_address = transaction
+					.to
+					.into_iter()
+					.chain(transaction.from)
+					.chain(logs.iter().map(|log| log.address))
+					.any(|address| {
+						let address = h160_to_string(address);
+						monitored_addresses
+							.iter()
+							.any(|monitored| are_same_address(monitored, &address))
+					});
+
+				let receipt = if should_fetch_receipt && touches_monitored_address {
 					Some(client.get_transaction_receipt(tx_hash_str).await?)
 				} else {
 					None

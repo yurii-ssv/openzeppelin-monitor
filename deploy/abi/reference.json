@@ -1,0 +1,3342 @@
+{
+  "_provenance": {
+    "purpose": "Authoritative event/function layouts (name, type, indexed, order, outputs) for every contract that a deploy/config monitor carries a contract_spec for. deploy/check-abi.sh compares each monitor's contract_spec against this file, never against the monitor being checked. Regenerate with deploy/abi/derive.sh; derive.sh --check proves reference.json still equals its sources."
+  },
+  "contracts": {
+    "0xdd9bc35ae942ef0cfa76930954a156b3ff30a4e1": {
+      "name": "SSV Network proxy (ERC-1967 UUPS)",
+      "abi_of": "implementation 0xa72a8F31163d74D708664493d09167dfa13008E9 = contracts/upgrades/mainnet/SSVNetworkSSVStakingUpgrade.sol (SSVNetwork plus the one-shot initializeSSVStaking), which carries every module's external functions and events",
+      "source": {
+        "repo": "https://github.com/ssvlabs/ssv-network.git",
+        "commit": "f7ac4870074b9408855a7912f9c6e1f959996be8",
+        "label": "v2.0.0+f7ac487 (plan pin; ssv-network-triage/contracts.lock.json)",
+        "build": "forge build --skip test --skip script at that commit (its foundry.toml: auto-detected solc, via_ir, optimizer_runs 10000, evm cancun); .abi of out/SSVNetworkSSVStakingUpgrade.sol/SSVNetworkSSVStakingUpgrade.json",
+        "not_used": "abis/SSVNetwork.json at that commit is the plain SSVNetwork ABI and lacks initializeSSVStaking, which the deployed implementation has"
+      },
+      "onchain_verification": {
+        "endpoint": "https://eth.drpc.org",
+        "read_at_block": 26241166,
+        "eip1967_implementation_slot": "0xa72a8f31163d74d708664493d09167dfa13008e9",
+        "implementation_codehash": "0xf518bf4bb8fa630874f0c6cc737b963750d3ce081575b508da337f2d740f076b (equals contracts.lock.json)",
+        "selector_in_code": "0xd0937f03 (initializeSSVStaking(uint64,uint32[4],uint16)) occurs in the deployed code",
+        "real_logs": [
+          {
+            "event": "UnstakeRequested(address,uint256,uint256)",
+            "topic0": "0x57e41df54512c76148b5ba9b643d149752b0d35e493b969bd017d0a3fe5228cf",
+            "block": 24920762,
+            "tx": "0x17db798249174c2adce5a7604d8ac0c9965c4ee552a281f53f6d9f3c90db95a7",
+            "topics": 2,
+            "data_bytes": 64,
+            "means": "exactly one indexed input (user), two data words (amount, unlockTime)"
+          },
+          {
+            "event": "FeesSynced(uint256,uint256)",
+            "topic0": "0x9386d77e0bcb586105f5c2bee7cabc987f85e7c518f34e580fab935df5d3a9c6",
+            "block": 24920823,
+            "tx": "0xfefd5ebb52e4e543dd92be1d23fb3dd883ac43b18ad403fde28cc911ccc21a42",
+            "topics": 1,
+            "data_bytes": 64,
+            "means": "no indexed input, two data words"
+          }
+        ]
+      },
+      "abi": [
+        {
+          "type": "event",
+          "name": "AdminChanged",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "previousAdmin",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "newAdmin",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "BeaconUpgraded",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "beacon",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ClusterBalanceUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "blockNum",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "effectiveBalance",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ClusterDeposited",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ClusterLiquidated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ClusterMigratedToETH",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "ethDeposited",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "ssvRefunded",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "effectiveBalance",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ClusterReactivated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ClusterWithdrawn",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "CooldownDurationUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "newCooldownDuration",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "DeclareOperatorFeePeriodUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ERC20Rescued",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "token",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ExecuteOperatorFeePeriodUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "FeeRecipientAddressUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "recipientAddress",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "FeesSynced",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "newFeesWei",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "accEthPerShare",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "Initialized",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "version",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "LiquidationThresholdPeriodSSVUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "LiquidationThresholdPeriodUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "MinBlocksBetweenUpdatesUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "newMinBlocksBetweenUpdates",
+              "type": "uint32",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "MinimumLiquidationCollateralSSVUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "MinimumLiquidationCollateralUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "MinimumOperatorEthFeeUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "minFee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ModuleUpgraded",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "moduleId",
+              "type": "uint8",
+              "indexed": true
+            },
+            {
+              "name": "moduleAddress",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "NetworkEarningsWithdrawn",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "NetworkFeeUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "oldFee",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newFee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "NetworkFeeUpdatedSSV",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "oldFee",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newFee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorAdded",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "publicKey",
+              "type": "bytes",
+              "indexed": false
+            },
+            {
+              "name": "fee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorFeeDeclarationCancelled",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorFeeDeclared",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "blockNumber",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "fee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorFeeExecuted",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "blockNumber",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "fee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorFeeIncreaseLimitUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "value",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorMaximumFeeUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorMultipleWhitelistRemoved",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "whitelistAddresses",
+              "type": "address[]",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorMultipleWhitelistUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "whitelistAddresses",
+              "type": "address[]",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorPrivacyStatusUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "toPrivate",
+              "type": "bool",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorRemoved",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorWhitelistUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "whitelisted",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorWhitelistingContractUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "whitelistingContract",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorWithdrawn",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OperatorWithdrawnSSV",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorId",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OracleReplaced",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "oracleId",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "oldOracle",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "newOracle",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OwnershipTransferStarted",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "previousOwner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "newOwner",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "OwnershipTransferred",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "previousOwner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "newOwner",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "QuorumUpdated",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "newQuorum",
+              "type": "uint16",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "RewardsClaimed",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "user",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "RewardsSettled",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "user",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "pending",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "accrued",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "userIndex",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "RootCommitted",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "merkleRoot",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "blockNum",
+              "type": "uint64",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "SSVNetworkUpgradeBlock",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "version",
+              "type": "string",
+              "indexed": false
+            },
+            {
+              "name": "blockNumber",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "Staked",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "user",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "UnstakeRequested",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "user",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "unlockTime",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "UnstakedWithdrawn",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "user",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "Upgraded",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "implementation",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ValidatorAdded",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "publicKey",
+              "type": "bytes",
+              "indexed": false
+            },
+            {
+              "name": "shares",
+              "type": "bytes",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ValidatorExited",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "publicKey",
+              "type": "bytes",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ValidatorRemoved",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]",
+              "indexed": false
+            },
+            {
+              "name": "publicKey",
+              "type": "bytes",
+              "indexed": false
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ],
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "WeightedRootProposed",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "merkleRoot",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "blockNum",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "accumulatedWeight",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "quorum",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "oracleId",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "oracle",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "acceptOwnership",
+          "inputs": [],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "bulkExitValidator",
+          "inputs": [
+            {
+              "name": "publicKeys",
+              "type": "bytes[]"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "bulkRegisterValidator",
+          "inputs": [
+            {
+              "name": "publicKeys",
+              "type": "bytes[]"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "sharesData",
+              "type": "bytes[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "bulkRemoveValidator",
+          "inputs": [
+            {
+              "name": "publicKeys",
+              "type": "bytes[]"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "cancelDeclaredOperatorFee",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "claimEthRewards",
+          "inputs": [],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "commitRoot",
+          "inputs": [
+            {
+              "name": "merkleRoot",
+              "type": "bytes32"
+            },
+            {
+              "name": "blockNum",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "declareOperatorFee",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            },
+            {
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "deposit",
+          "inputs": [
+            {
+              "name": "clusterOwner",
+              "type": "address"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "executeOperatorFee",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "exitValidator",
+          "inputs": [
+            {
+              "name": "publicKey",
+              "type": "bytes"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "getVersion",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "version",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "initialize",
+          "inputs": [
+            {
+              "name": "token_",
+              "type": "address"
+            },
+            {
+              "name": "ssvOperators_",
+              "type": "address"
+            },
+            {
+              "name": "ssvClusters_",
+              "type": "address"
+            },
+            {
+              "name": "ssvDAO_",
+              "type": "address"
+            },
+            {
+              "name": "ssvViews_",
+              "type": "address"
+            },
+            {
+              "name": "params",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "minimumBlocksBeforeLiquidation",
+                  "type": "uint64"
+                },
+                {
+                  "name": "minimumLiquidationCollateral",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validatorsPerOperatorLimit",
+                  "type": "uint32"
+                },
+                {
+                  "name": "declareOperatorFeePeriod",
+                  "type": "uint64"
+                },
+                {
+                  "name": "executeOperatorFeePeriod",
+                  "type": "uint64"
+                },
+                {
+                  "name": "operatorMaxFeeIncrease",
+                  "type": "uint64"
+                },
+                {
+                  "name": "defaultOracleIds",
+                  "type": "uint32[4]"
+                },
+                {
+                  "name": "quorumBps",
+                  "type": "uint16"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "initializeSSVStaking",
+          "inputs": [
+            {
+              "name": "cooldownDuration",
+              "type": "uint64"
+            },
+            {
+              "name": "defaultOracleIds",
+              "type": "uint32[4]"
+            },
+            {
+              "name": "quorumBps",
+              "type": "uint16"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "liquidate",
+          "inputs": [
+            {
+              "name": "clusterOwner",
+              "type": "address"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "liquidateSSV",
+          "inputs": [
+            {
+              "name": "clusterOwner",
+              "type": "address"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "migrateClusterToETH",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "onCSSVTransfer",
+          "inputs": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "owner",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "pendingOwner",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "proxiableUUID",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "reactivate",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "reduceOperatorFee",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            },
+            {
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "registerOperator",
+          "inputs": [
+            {
+              "name": "publicKey",
+              "type": "bytes"
+            },
+            {
+              "name": "fee",
+              "type": "uint256"
+            },
+            {
+              "name": "setPrivate",
+              "type": "bool"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "id",
+              "type": "uint64"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "registerValidator",
+          "inputs": [
+            {
+              "name": "publicKey",
+              "type": "bytes"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "sharesData",
+              "type": "bytes"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "removeOperator",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "removeOperatorsWhitelistingContract",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "removeOperatorsWhitelists",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "whitelistAddresses",
+              "type": "address[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "removeValidator",
+          "inputs": [
+            {
+              "name": "publicKey",
+              "type": "bytes"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "renounceOwnership",
+          "inputs": [],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "replaceOracle",
+          "inputs": [
+            {
+              "name": "oracleId",
+              "type": "uint32"
+            },
+            {
+              "name": "newOracle",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "requestUnstake",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "rescueERC20",
+          "inputs": [
+            {
+              "name": "token",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setFeeRecipientAddress",
+          "inputs": [
+            {
+              "name": "recipientAddress",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setOperatorsPrivateUnchecked",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setOperatorsPublicUnchecked",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setOperatorsWhitelistingContract",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "whitelistingContract",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setOperatorsWhitelists",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "whitelistAddresses",
+              "type": "address[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "stake",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "syncFees",
+          "inputs": [],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "transferOwnership",
+          "inputs": [
+            {
+              "name": "newOwner",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateClusterBalance",
+          "inputs": [
+            {
+              "name": "blockNum",
+              "type": "uint64"
+            },
+            {
+              "name": "clusterOwner",
+              "type": "address"
+            },
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            },
+            {
+              "name": "effectiveBalance",
+              "type": "uint32"
+            },
+            {
+              "name": "merkleProof",
+              "type": "bytes32[]"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateDeclareOperatorFeePeriod",
+          "inputs": [
+            {
+              "name": "timeInSeconds",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateExecuteOperatorFeePeriod",
+          "inputs": [
+            {
+              "name": "timeInSeconds",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateLiquidationThresholdPeriod",
+          "inputs": [
+            {
+              "name": "blocks",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateLiquidationThresholdPeriodSSV",
+          "inputs": [
+            {
+              "name": "blocks",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateMaximumOperatorFee",
+          "inputs": [
+            {
+              "name": "maxFee",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateMinBlocksBetweenUpdates",
+          "inputs": [
+            {
+              "name": "blocks",
+              "type": "uint32"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateMinimumLiquidationCollateral",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateMinimumLiquidationCollateralSSV",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateMinimumOperatorEthFee",
+          "inputs": [
+            {
+              "name": "minFee",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateModule",
+          "inputs": [
+            {
+              "name": "moduleId",
+              "type": "uint8"
+            },
+            {
+              "name": "moduleAddress",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateNetworkFee",
+          "inputs": [
+            {
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateNetworkFeeSSV",
+          "inputs": [
+            {
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateOperatorFeeIncreaseLimit",
+          "inputs": [
+            {
+              "name": "percentage",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateQuorumBps",
+          "inputs": [
+            {
+              "name": "quorum",
+              "type": "uint16"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "updateUnstakeCooldownDuration",
+          "inputs": [
+            {
+              "name": "duration",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "upgradeTo",
+          "inputs": [
+            {
+              "name": "newImplementation",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "upgradeToAndCall",
+          "inputs": [
+            {
+              "name": "newImplementation",
+              "type": "address"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdraw",
+          "inputs": [
+            {
+              "name": "operatorIds",
+              "type": "uint64[]"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "name": "cluster",
+              "type": "tuple",
+              "components": [
+                {
+                  "name": "validatorCount",
+                  "type": "uint32"
+                },
+                {
+                  "name": "networkFeeIndex",
+                  "type": "uint64"
+                },
+                {
+                  "name": "index",
+                  "type": "uint64"
+                },
+                {
+                  "name": "active",
+                  "type": "bool"
+                },
+                {
+                  "name": "balance",
+                  "type": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawAllOperatorEarnings",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawAllOperatorEarningsSSV",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawAllVersionOperatorEarnings",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawNetworkSSVEarnings",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawOperatorEarnings",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawOperatorEarningsSSV",
+          "inputs": [
+            {
+              "name": "operatorId",
+              "type": "uint64"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "withdrawUnlocked",
+          "inputs": [],
+          "outputs": []
+        }
+      ]
+    },
+    "0xb35096b074fdb9bbac63e3adae0bbde512b2e6b6": {
+      "name": "SSV DAO Safe (Safe proxy, VERSION() = 1.3.0)",
+      "abi_of": "singleton 0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552 (read from the proxy's slot 0), Safe v1.3.0 GnosisSafe",
+      "source": {
+        "package": "@safe-global/safe-deployments@1.37.0 (npm), dist/assets/v1.3.0/gnosis_safe.json: .abi, and .networkAddresses[\"1\"] = 0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552 (the singleton above)"
+      },
+      "onchain_verification": {
+        "endpoint": "https://eth.drpc.org",
+        "read_at_block": 26241166,
+        "VERSION": "1.3.0",
+        "real_logs": [
+          {
+            "event": "ExecutionSuccess(bytes32,uint256)",
+            "topic0": "0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e",
+            "block": 24060370,
+            "tx": "0x6f6457d5a4626f1069fa2011c4fdc1efe7343808069255786266791517ef7a42",
+            "topics": 1,
+            "data_bytes": 64,
+            "means": "no indexed input (txHash is NOT indexed in 1.3.0; it is in 1.4.1), two data words"
+          }
+        ],
+        "note": "this Safe has emitted no ExecutionFailure; its layout (txHash, payment both non-indexed) is the 1.3.0 ABI's, the same family as the ExecutionSuccess log above"
+      },
+      "abi": [
+        {
+          "type": "event",
+          "name": "AddedOwner",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ApproveHash",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "approvedHash",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ChangedFallbackHandler",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "handler",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ChangedGuard",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "guard",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ChangedThreshold",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "threshold",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "DisabledModule",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "module",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "EnabledModule",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "module",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ExecutionFailure",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "txHash",
+              "type": "bytes32",
+              "indexed": false
+            },
+            {
+              "name": "payment",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ExecutionFromModuleFailure",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "module",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ExecutionFromModuleSuccess",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "module",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "ExecutionSuccess",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "txHash",
+              "type": "bytes32",
+              "indexed": false
+            },
+            {
+              "name": "payment",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "RemovedOwner",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "SafeReceived",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "sender",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "SafeSetup",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "initiator",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "owners",
+              "type": "address[]",
+              "indexed": false
+            },
+            {
+              "name": "threshold",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "initializer",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "fallbackHandler",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "SignMsg",
+          "anonymous": false,
+          "inputs": [
+            {
+              "name": "msgHash",
+              "type": "bytes32",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "VERSION",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "addOwnerWithThreshold",
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "name": "_threshold",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "approveHash",
+          "inputs": [
+            {
+              "name": "hashToApprove",
+              "type": "bytes32"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "approvedHashes",
+          "inputs": [
+            {
+              "name": "",
+              "type": "address"
+            },
+            {
+              "name": "",
+              "type": "bytes32"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "changeThreshold",
+          "inputs": [
+            {
+              "name": "_threshold",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "checkNSignatures",
+          "inputs": [
+            {
+              "name": "dataHash",
+              "type": "bytes32"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "signatures",
+              "type": "bytes"
+            },
+            {
+              "name": "requiredSignatures",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "checkSignatures",
+          "inputs": [
+            {
+              "name": "dataHash",
+              "type": "bytes32"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "signatures",
+              "type": "bytes"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "disableModule",
+          "inputs": [
+            {
+              "name": "prevModule",
+              "type": "address"
+            },
+            {
+              "name": "module",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "domainSeparator",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "enableModule",
+          "inputs": [
+            {
+              "name": "module",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "encodeTransactionData",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "operation",
+              "type": "uint8"
+            },
+            {
+              "name": "safeTxGas",
+              "type": "uint256"
+            },
+            {
+              "name": "baseGas",
+              "type": "uint256"
+            },
+            {
+              "name": "gasPrice",
+              "type": "uint256"
+            },
+            {
+              "name": "gasToken",
+              "type": "address"
+            },
+            {
+              "name": "refundReceiver",
+              "type": "address"
+            },
+            {
+              "name": "_nonce",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "execTransaction",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "operation",
+              "type": "uint8"
+            },
+            {
+              "name": "safeTxGas",
+              "type": "uint256"
+            },
+            {
+              "name": "baseGas",
+              "type": "uint256"
+            },
+            {
+              "name": "gasPrice",
+              "type": "uint256"
+            },
+            {
+              "name": "gasToken",
+              "type": "address"
+            },
+            {
+              "name": "refundReceiver",
+              "type": "address"
+            },
+            {
+              "name": "signatures",
+              "type": "bytes"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "success",
+              "type": "bool"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "execTransactionFromModule",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "operation",
+              "type": "uint8"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "success",
+              "type": "bool"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "execTransactionFromModuleReturnData",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "operation",
+              "type": "uint8"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "success",
+              "type": "bool"
+            },
+            {
+              "name": "returnData",
+              "type": "bytes"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "getChainId",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "getModulesPaginated",
+          "inputs": [
+            {
+              "name": "start",
+              "type": "address"
+            },
+            {
+              "name": "pageSize",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "array",
+              "type": "address[]"
+            },
+            {
+              "name": "next",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "getOwners",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address[]"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "getStorageAt",
+          "inputs": [
+            {
+              "name": "offset",
+              "type": "uint256"
+            },
+            {
+              "name": "length",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "getThreshold",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "getTransactionHash",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "operation",
+              "type": "uint8"
+            },
+            {
+              "name": "safeTxGas",
+              "type": "uint256"
+            },
+            {
+              "name": "baseGas",
+              "type": "uint256"
+            },
+            {
+              "name": "gasPrice",
+              "type": "uint256"
+            },
+            {
+              "name": "gasToken",
+              "type": "address"
+            },
+            {
+              "name": "refundReceiver",
+              "type": "address"
+            },
+            {
+              "name": "_nonce",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "isModuleEnabled",
+          "inputs": [
+            {
+              "name": "module",
+              "type": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bool"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "isOwner",
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bool"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "nonce",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "removeOwner",
+          "inputs": [
+            {
+              "name": "prevOwner",
+              "type": "address"
+            },
+            {
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "name": "_threshold",
+              "type": "uint256"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "requiredTxGas",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "operation",
+              "type": "uint8"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "setFallbackHandler",
+          "inputs": [
+            {
+              "name": "handler",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setGuard",
+          "inputs": [
+            {
+              "name": "guard",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "setup",
+          "inputs": [
+            {
+              "name": "_owners",
+              "type": "address[]"
+            },
+            {
+              "name": "_threshold",
+              "type": "uint256"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            },
+            {
+              "name": "fallbackHandler",
+              "type": "address"
+            },
+            {
+              "name": "paymentToken",
+              "type": "address"
+            },
+            {
+              "name": "payment",
+              "type": "uint256"
+            },
+            {
+              "name": "paymentReceiver",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "signedMessages",
+          "inputs": [
+            {
+              "name": "",
+              "type": "bytes32"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "simulateAndRevert",
+          "inputs": [
+            {
+              "name": "targetContract",
+              "type": "address"
+            },
+            {
+              "name": "calldataPayload",
+              "type": "bytes"
+            }
+          ],
+          "outputs": []
+        },
+        {
+          "type": "function",
+          "name": "swapOwner",
+          "inputs": [
+            {
+              "name": "prevOwner",
+              "type": "address"
+            },
+            {
+              "name": "oldOwner",
+              "type": "address"
+            },
+            {
+              "name": "newOwner",
+              "type": "address"
+            }
+          ],
+          "outputs": []
+        }
+      ]
+    }
+  }
+}

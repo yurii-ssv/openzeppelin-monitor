@@ -1,0 +1,16 @@
+{
+  "discord_validator_failed": {
+    "name": "Discord Validator Failed Alert",
+    "trigger_type": "discord",
+    "config": {
+      "discord_url": {
+        "type": "environment",
+        "value": "DISCORD_WEBHOOK_VALIDATOR_FAILED"
+      },
+      "message": {
+        "title": "FAILED Validator Action",
+        "body": "Function: ${functions.0.signature}\nCalled by: ${transaction.from}\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})\n\n${functions}"
+      }
+    }
+  }
+}

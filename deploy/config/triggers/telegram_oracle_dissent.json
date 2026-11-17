@@ -1,0 +1,18 @@
+{
+  "telegram_oracle_dissent": {
+    "name": "Oracle Dissent Alert",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "Oracle Dissent on Committed Root",
+        "body": "Snapshot block: ${events.0.args.blockNum}\nCommitted root: ${events.0.args.merkleRoot}\nAt least one oracle voted a different root for this snapshot (WeightedRootProposed). Committed by quorum anyway.\nCommit tx: [mainnet](https://etherscan.io/tx/${transaction.hash}) | [hoodi](https://hoodi.etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}

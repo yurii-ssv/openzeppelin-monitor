@@ -1,0 +1,18 @@
+{
+  "telegram_attacker_interaction": {
+    "name": "Attacker Address Interaction",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "environment",
+        "value": "TELEGRAM_TOKEN"
+      },
+      "chat_id": "${TELEGRAM_CHAT_ID}",
+      "disable_web_preview": true,
+      "message": {
+        "title": "Attacker Address Interaction",
+        "body": "M13 PAGE: a compromised/consolidation address interacted with an SSV contract or one of our wallets (reverted attempts included).\nFrom: ${transaction.from}\nTo: ${transaction.to}\nValue: ${transaction.value} wei\nEtherscan: [mainnet](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}
