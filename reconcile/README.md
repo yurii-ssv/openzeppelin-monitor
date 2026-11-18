@@ -27,7 +27,8 @@ The worker is read-only against the chain. Each step:
    §6.2](checks/README.md)).
    A failed read invalidates the parameters (checks that read them do not run) and is retried every
    step; see [checks/README.md §5.1](checks/README.md).
-4. Re-alerts open incidents (page 6 h, warn 24 h), sends the daily digest, delivers the outbox.
+4. Re-alerts open incidents (page 6 h, warn 24 h) of the checks it runs, sends the daily digest, delivers the
+   outbox.
 5. Reads the Monitor's last processed block (`monitor_watch.py`, D20): a Monitor that stalls, a missing or unreadable
    file, or an unknown head for 4 min is a `monitor-stall` health message (one per stall), `monitor-recovered` when it
    catches up, and every block range the Monitor skips is a `monitor-skipped` message naming it. It also reads the
@@ -98,7 +99,29 @@ Commands (also usable locally with `.venv/bin/python eb_reconcile.py <cmd> --con
 - `run`: the loop (default container command); serves `/metrics` when `metrics.enabled`
 - `once`: one step with every check forced, then exit (`--serve-metrics --hold N` keeps `/metrics` up N s)
 - `status`: phase (`backfill` with progress, or `live`), checkpoint, per-check last run, open incidents,
-  undelivered alerts (read-only: answers while a check runs)
+  undelivered alerts, `disabled` (the checks the config switches off, sorted), `checks.<id>.catchup` while a check
+  catches up (`state` `pending`|`first_live`, `history_block`, `since`, `cause` `reenabled`|`new`|`reorg`) (read-only:
+  answers while a check runs)
+
+Disabling a check (`checks.<id>.enabled: false`, read at start; any value other than `true`/`false` is a
+configuration error: `run`, `once` and `verify-layout` stop with it before the database is opened or created, so no
+file or row is written; `status` stops with it when it builds the worker; `export` and `audit` read no switch):
+the next start, i.e. the next `run`, `once` **or `verify-layout`** (each bootstraps the worker), closes the check's
+open incidents as state `disabled` in one transaction, with no message of any kind (no resolution, no notice), and
+records `disabled:<id>` in `meta` (the read-only `status` and `export` never close anything). The closed incidents
+are never re-alerted, leave `status.open_incidents`/`open`, the digest's open counts and `ssv_watch_open_incidents`,
+and `export` prints them with `state: disabled`. A message queued before the closure is still delivered. `status`
+lists the check under `disabled` (also before the closing start) and the daily digest adds `Disabled checks: <ids>`
+after "Open incidents". A check absent from `checks` is enabled. While the check is off, a reorg still rewinds its
+event cursor and records its pending reorg ancestor (replayed when it is enabled again). The start that enables it
+again clears `disabled:<id>`; a key it finds again opens a new incident. With `backfill.enabled` (the default) on a
+live database, the re-enabled check, like a check new to the database, first catches up silently: its first run
+evaluates everything since its last committed run without a message, pinned to its catch-up block; its next run, at a
+later block, sends what is still true (once); events and conditions of the disabled period are never sent (also
+after a later reorg below the catch-up block, which repeats the silent evaluation: `cause: reorg`), and the switch
+itself is never announced. Re-enabled while a new database still backfills (once its caught-up checkpoint is
+known), the check is evaluated again silently by the global backfill, pinned at the checkpoint of its first step after
+the start. Runbook: [Disable / re-enable a monitor](../deploy/README.md#disable--re-enable-a-monitor).
 - `export`: every incident and outbox message as JSON (soak evidence)
 - `audit`: M5 event-only history of every root window with post-S additions and matched removals
 - `verify-layout`: implementation, module addresses and codehashes against the pin
